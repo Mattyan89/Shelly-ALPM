@@ -59,6 +59,16 @@ pub fn initializePackageFromArchive(
     const archive = c.archive_read_new() orelse return error.OutOfMemory;
     defer _ = c.archive_read_free(archive);
 
+    //confirm actually correct package type
+    if (try c.archive_read_support_filter_zstd(archive) != c.ARCHIVE_OK) return error.ArchiveFailed;
+    if (try c.archive_read_support_format_tar(archive) != c.ARCHIVE_OK) return error.ArchiveFailed;
+    if (try c.archive_read_open_filename(archive, path.ptr, 64 * 1024)) return error.ArchiveFailed;
+
+    const flags = c.ARCHIVE_EXTRACT_TIME | c.ARCHIVE_EXTRACT_SECURE_NODOTDOT | c.ARCHIVE_EXTRACT_SECURE_NOABSOLUTEPATHS | c.ARCHIVE_EXTRACT_SECURE_SYMLINKS;
+
+    var entry: ?*c.struct_archive_entry = null;
+    _ = flags;
+    _ = entry;
     return .{};
 }
 
