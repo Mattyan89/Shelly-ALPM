@@ -3,6 +3,10 @@ const Package = @This();
 const std = @import("std");
 const Version = @import("Version.zig");
 const PackageRelation = @import("PackageRelation.zig");
+const c = @cImport({
+    @cInclude("archive.h");
+    @cInclude("archive_entry.h");
+});
 
 pub const InstallReason = enum {
     explicit,
@@ -45,8 +49,16 @@ groups: []const []const u8 = &.{},
 licenses: []const []const u8 = &.{},
 xdata: []const XData = &.{},
 
-pub fn initializePackage(path: []const u8) !Package {
-    _ = path;
+pub fn initializePackageFromArchive(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+) !Package {
+    const sentinenl_path = try allocator.dupeSentinel(u8, path, 0);
+    defer allocator.free(sentinenl_path);
+
+    const archive = c.archive_read_new() orelse return error.OutOfMemory;
+    defer _ = c.archive_read_free(archive);
+
     return .{};
 }
 
