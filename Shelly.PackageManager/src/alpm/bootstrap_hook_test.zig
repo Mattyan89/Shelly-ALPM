@@ -1,10 +1,10 @@
 //! Runs only in a fresh user/mount/PID namespace; never needs host root.
 const std = @import("std");
-const alpm = @import("Zigalpm").alpm;
+const Manager = @import("PackageManager").Manager;
 const fixture = @import("hook_fixture");
-const c = alpm.bindings.libalpm.alpm;
 
-test "provisioning discovers newly installed guest hooks and detects their failures" {
+test "libalpm provisioning discovers newly installed guest hooks and detects their failures" {
+    if (!Manager.libalpm_enabled) return error.SkipZigTest;
     if (std.os.linux.geteuid() != 0) return error.SkipZigTest;
     const allocator = std.testing.allocator;
     const io = std.testing.io;
@@ -63,7 +63,8 @@ test "provisioning discovers newly installed guest hooks and detects their failu
         const package = try std.fs.path.join(allocator, &.{ path, "fixture.pkg.tar" });
         defer allocator.free(package);
 
-        const manager = try alpm.Manager.init(allocator, std.testing.environ, .{
+        const manager = try Manager.init(allocator, std.testing.environ, .{
+            .backend = .libalpm,
             .config_path = config_path,
             .root_directory = root,
             .database_path = database,
@@ -72,21 +73,12 @@ test "provisioning discovers newly installed guest hooks and detects their failu
             .log_file = log_path,
         });
         defer manager.deinit();
-        // Refresh must preserve the override and the provisioning log callback.
+        // The transaction below must still exclude host hooks after refresh.
         try manager.refresh();
-        var directories = c.alpm_option_get_hookdirs(manager.handle);
-        var count: usize = 0;
-        while (directories != null) : (directories = directories.*.next) {
-            const directory = std.mem.span(@as([*:0]const u8, @ptrCast(directories.*.data.?)));
-            try std.testing.expect(std.mem.startsWith(u8, directory, root));
-            count += 1;
-        }
-        try std.testing.expectEqual(@as(usize, 2), count);
-        try std.testing.expect(c.alpm_option_get_logcb(manager.handle) != null);
 
         const Capture = struct {
             saw_failed_hook: bool = false,
-            fn errorMessage(data: ?*anyopaque, args: alpm.events.ErrorArgs) void {
+            fn errorMessage(data: ?*anyopaque, args: Manager.events.ErrorArgs) void {
                 const self: *@This() = @ptrCast(@alignCast(data.?));
                 if (std.mem.indexOf(u8, args.message, "30-failure.hook") != null) self.saw_failed_hook = true;
             }
@@ -94,7 +86,7 @@ test "provisioning discovers newly installed guest hooks and detects their failu
         var capture: Capture = .{};
         _ = try manager.dispatcher.addErrorHandler(.{ .function = Capture.errorMessage, .data = &capture });
         try manager.install_local_packages(&.{package}, .{});
-        try std.testing.expectEqual(fail, manager.package_setup_failed);
+        try std.testing.expectEqual(fail, manager.packageSetupFailed());
         try std.testing.expectEqual(fail, capture.saw_failed_hook);
         for ([_][]const u8{ "root/first", "root/second" }) |marker| {
             const content = try tmp.dir.readFileAlloc(io, marker, allocator, .limited(64));

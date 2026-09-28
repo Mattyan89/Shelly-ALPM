@@ -1,5 +1,5 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
 const standard_single_pane = @import("../output/standard_single_pane.zig");
@@ -19,12 +19,12 @@ const DowngradeError = error{
 };
 
 const CandidateSet = struct {
-    candidates: []Zigalpm.alpm.DowngradeCandidate,
+    candidates: []PackageManager.Manager.DowngradeCandidate,
     owns_candidates: bool = false,
 
     fn deinit(self: *CandidateSet, allocator: std.mem.Allocator) void {
         if (self.owns_candidates)
-            Zigalpm.alpm.DowngradeCandidate.deinitSlice(allocator, self.candidates);
+            PackageManager.Manager.DowngradeCandidate.deinitSlice(allocator, self.candidates);
         self.* = undefined;
     }
 };
@@ -33,10 +33,10 @@ const Real = struct {
     fn discover(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
         package_name: []const u8,
     ) !CandidateSet {
-        const manager = try Zigalpm.AlpmManager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
         defer manager.deinit();
         manager.setOperationContext(operation_context);
         defer manager.setOperationContext(null);
@@ -47,7 +47,7 @@ const Real = struct {
             return DowngradeError.PackageNotInstalled;
         defer installed.deinit(context.allocator);
 
-        var archive = Zigalpm.alpm.ArchiveManager.init(context.allocator, context.io, .{});
+        var archive = PackageManager.Manager.ArchiveManager.init(context.allocator, context.io, .{});
         defer archive.deinit();
         archive.setOperationContext(operation_context);
         defer archive.setOperationContext(null);
@@ -64,15 +64,15 @@ const Real = struct {
     fn install(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
-        candidate: *const Zigalpm.alpm.DowngradeCandidate,
+        operation_context: *PackageManager.OperationContext,
+        candidate: *const PackageManager.Manager.DowngradeCandidate,
     ) !void {
-        const manager = try Zigalpm.AlpmManager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
         defer manager.deinit();
         manager.setOperationContext(operation_context);
         defer manager.setOperationContext(null);
 
-        var archive = Zigalpm.alpm.ArchiveManager.init(context.allocator, context.io, .{});
+        var archive = PackageManager.Manager.ArchiveManager.init(context.allocator, context.io, .{});
         defer archive.deinit();
         archive.setOperationContext(operation_context);
         defer archive.setOperationContext(null);
@@ -82,10 +82,10 @@ const Real = struct {
     fn ignore(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
         package_name: []const u8,
     ) !void {
-        const manager = try Zigalpm.AlpmManager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
         defer manager.deinit();
         manager.setOperationContext(operation_context);
         defer manager.setOperationContext(null);
@@ -138,7 +138,7 @@ fn runWithRunner(
         try output.writeSuccess(context, looking_message);
     }
 
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
     var candidates = runner.discover(
@@ -272,9 +272,9 @@ fn reportFailure(
 fn selectCandidate(
     context: *runtime.RuntimeContext,
     invocation: *const parser.Invocation,
-    candidates: []const Zigalpm.alpm.DowngradeCandidate,
+    candidates: []const PackageManager.Manager.DowngradeCandidate,
     target: ?[]const u8,
-) !*const Zigalpm.alpm.DowngradeCandidate {
+) !*const PackageManager.Manager.DowngradeCandidate {
     if (target) |requested| return resolveTarget(candidates, requested);
     if (optionEnabled(invocation, "--oldest")) return &candidates[candidates.len - 1];
     if (invocation.globals.no_confirm) return &candidates[0];
@@ -282,9 +282,9 @@ fn selectCandidate(
 }
 
 fn resolveTarget(
-    candidates: []const Zigalpm.alpm.DowngradeCandidate,
+    candidates: []const PackageManager.Manager.DowngradeCandidate,
     target: []const u8,
-) DowngradeError!*const Zigalpm.alpm.DowngradeCandidate {
+) DowngradeError!*const PackageManager.Manager.DowngradeCandidate {
     const filename_target = std.mem.indexOf(u8, target, ".pkg.tar.") != null;
     for (candidates) |*candidate| {
         const value = if (filename_target) candidate.filename else candidate.version_release;
@@ -295,7 +295,7 @@ fn resolveTarget(
 
 fn promptForCandidate(
     context: *runtime.RuntimeContext,
-    candidates: []const Zigalpm.alpm.DowngradeCandidate,
+    candidates: []const PackageManager.Manager.DowngradeCandidate,
 ) !usize {
     const reader = context.stdin orelse return 0;
     try context.stdout.writeAll("Select Package\n");
@@ -348,7 +348,7 @@ fn confirm(
 fn executeStandard(
     context: *runtime.RuntimeContext,
     invocation: *const parser.Invocation,
-    candidate: *const Zigalpm.alpm.DowngradeCandidate,
+    candidate: *const PackageManager.Manager.DowngradeCandidate,
     runner: anytype,
 ) anyerror!bool {
     const opening = try std.fmt.allocPrint(
@@ -359,12 +359,12 @@ fn executeStandard(
     defer context.allocator.free(opening);
     const InstallAdapter = struct {
         runner: @TypeOf(runner),
-        candidate: *const Zigalpm.alpm.DowngradeCandidate,
+        candidate: *const PackageManager.Manager.DowngradeCandidate,
 
         pub fn run(
             self: @This(),
             runtime_context: *runtime.RuntimeContext,
-            operation_context: *Zigalpm.OperationContext,
+            operation_context: *PackageManager.OperationContext,
             _: *const parser.Invocation,
         ) !void {
             return self.runner.install(runtime_context, operation_context, self.candidate);
@@ -385,10 +385,10 @@ fn executeUi(
     context: *runtime.RuntimeContext,
     invocation: *const parser.Invocation,
     package_name: []const u8,
-    candidate: *const Zigalpm.alpm.DowngradeCandidate,
+    candidate: *const PackageManager.Manager.DowngradeCandidate,
     runner: anytype,
 ) anyerror!u8 {
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
     var question_responder: ui_operation.QuestionResponder = .{
@@ -448,7 +448,7 @@ fn executeIgnore(
     package_name: []const u8,
     runner: anytype,
 ) anyerror!bool {
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
     runner.ignore(context, &operation_context, package_name) catch |err| {
@@ -468,7 +468,7 @@ fn writeCandidates(
     context: *runtime.RuntimeContext,
     invocation: *const parser.Invocation,
     package_name: []const u8,
-    candidates: []const Zigalpm.alpm.DowngradeCandidate,
+    candidates: []const PackageManager.Manager.DowngradeCandidate,
 ) !void {
     if (invocation.globals.ui_mode) {
         var payload = std.Io.Writer.Allocating.init(context.allocator);
@@ -512,7 +512,7 @@ fn writeCandidates(
 
 fn writeCandidatesJson(
     writer: *std.Io.Writer,
-    candidates: []const Zigalpm.alpm.DowngradeCandidate,
+    candidates: []const PackageManager.Manager.DowngradeCandidate,
     ui_mode: bool,
 ) !void {
     var json: std.json.Stringify = .{ .writer = writer };
@@ -545,7 +545,7 @@ fn writeCandidatesJson(
     try json.endArray();
 }
 
-fn locationName(candidate: Zigalpm.alpm.DowngradeCandidate) []const u8 {
+fn locationName(candidate: PackageManager.Manager.DowngradeCandidate) []const u8 {
     return if (candidate.source.is_remote()) "Remote" else "Local";
 }
 
@@ -612,15 +612,15 @@ test "downgrade validation rejects missing packages and incompatible target mode
     defer tc.deinit();
     const manifest = try spec.Manifest.load(tc.arena.allocator());
     const Unused = struct {
-        fn discover(_: @This(), _: *runtime.RuntimeContext, _: *Zigalpm.OperationContext, _: []const u8) !CandidateSet {
+        fn discover(_: @This(), _: *runtime.RuntimeContext, _: *PackageManager.OperationContext, _: []const u8) !CandidateSet {
             return error.ShouldNotRun;
         }
 
-        fn install(_: @This(), _: *runtime.RuntimeContext, _: *Zigalpm.OperationContext, _: *const Zigalpm.alpm.DowngradeCandidate) !void {
+        fn install(_: @This(), _: *runtime.RuntimeContext, _: *PackageManager.OperationContext, _: *const PackageManager.Manager.DowngradeCandidate) !void {
             return error.ShouldNotRun;
         }
 
-        fn ignore(_: @This(), _: *runtime.RuntimeContext, _: *Zigalpm.OperationContext, _: []const u8) !void {
+        fn ignore(_: @This(), _: *runtime.RuntimeContext, _: *PackageManager.OperationContext, _: []const u8) !void {
             return error.ShouldNotRun;
         }
     };
@@ -649,7 +649,7 @@ test "downgrade lists candidates as C sharp compatible JSON and UI records" {
     tc.init();
     defer tc.deinit();
     const manifest = try spec.Manifest.load(tc.arena.allocator());
-    var candidates = [_]Zigalpm.alpm.DowngradeCandidate{
+    var candidates = [_]PackageManager.Manager.DowngradeCandidate{
         testCandidate("demo", "2.0", "1", "2.0-1", "x86_64", "demo-2.0-1-x86_64.pkg.tar.zst", "https://archive.example/demo-2.0-1-x86_64.pkg.tar.zst", .arch_linux, true),
         testCandidate("demo", "1.0", "2", "1.0-2", "x86_64", "demo-1.0-2-x86_64.pkg.tar.zst", "/var/cache/pacman/pkg/demo-1.0-2-x86_64.pkg.tar.zst", .local_cache, false),
     };
@@ -700,7 +700,7 @@ test "downgrade selects oldest and exact targets and updates IgnorePkg only when
     tc.init();
     defer tc.deinit();
     const manifest = try spec.Manifest.load(tc.arena.allocator());
-    var candidates = [_]Zigalpm.alpm.DowngradeCandidate{
+    var candidates = [_]PackageManager.Manager.DowngradeCandidate{
         testCandidate("demo", "3.0", "1", "3.0-1", "x86_64", "demo-3.0-1-x86_64.pkg.tar.zst", "https://archive.example/demo-3.0-1-x86_64.pkg.tar.zst", .arch_linux, true),
         testCandidate("demo", "2.0", "4", "2.0-4", "x86_64", "demo-2.0-4-x86_64.pkg.tar.zst", "/cache/demo-2.0-4-x86_64.pkg.tar.zst", .local_cache, false),
         testCandidate("demo", "1.0", "2", "1.0-2", "x86_64", "demo-1.0-2-x86_64.pkg.tar.zst", "https://archive.example/demo-1.0-2-x86_64.pkg.tar.zst", .arch_linux, false),
@@ -730,7 +730,7 @@ test "interactive downgrade selection and confirmations are honored" {
     tc.init();
     defer tc.deinit();
     const manifest = try spec.Manifest.load(tc.arena.allocator());
-    var candidates = [_]Zigalpm.alpm.DowngradeCandidate{
+    var candidates = [_]PackageManager.Manager.DowngradeCandidate{
         testCandidate("demo", "2.0", "1", "2.0-1", "x86_64", "demo-2.0-1-x86_64.pkg.tar.zst", "https://archive.example/demo-2.0-1-x86_64.pkg.tar.zst", .arch_linux, true),
         testCandidate("demo", "1.0", "1", "1.0-1", "x86_64", "demo-1.0-1-x86_64.pkg.tar.zst", "/cache/demo-1.0-1-x86_64.pkg.tar.zst", .local_cache, false),
     };
@@ -756,14 +756,14 @@ test "interactive downgrade selection and confirmations are honored" {
 }
 
 const TestRunner = struct {
-    candidates: []Zigalpm.alpm.DowngradeCandidate,
+    candidates: []PackageManager.Manager.DowngradeCandidate,
     installed_filename: ?[]const u8 = null,
     ignore_calls: usize = 0,
 
     fn discover(
         self: *TestRunner,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
+        _: *PackageManager.OperationContext,
         _: []const u8,
     ) !CandidateSet {
         return .{ .candidates = self.candidates };
@@ -772,8 +772,8 @@ const TestRunner = struct {
     fn install(
         self: *TestRunner,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
-        candidate: *const Zigalpm.alpm.DowngradeCandidate,
+        _: *PackageManager.OperationContext,
+        candidate: *const PackageManager.Manager.DowngradeCandidate,
     ) !void {
         self.installed_filename = candidate.filename;
     }
@@ -781,7 +781,7 @@ const TestRunner = struct {
     fn ignore(
         self: *TestRunner,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
+        _: *PackageManager.OperationContext,
         _: []const u8,
     ) !void {
         self.ignore_calls += 1;
@@ -796,9 +796,9 @@ fn testCandidate(
     architecture: [:0]const u8,
     filename: []const u8,
     location: []const u8,
-    source: Zigalpm.alpm.ArchiveSource,
+    source: PackageManager.Manager.ArchiveSource,
     is_installed: bool,
-) Zigalpm.alpm.DowngradeCandidate {
+) PackageManager.Manager.DowngradeCandidate {
     return .{
         .name = @constCast(name),
         .version = @constCast(version),

@@ -5,7 +5,7 @@
 //! bind mounted into the container.
 
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 
 pub const build_uid = "1000";
 pub const build_user = "shelly-build";
@@ -51,10 +51,10 @@ pub const guest_source_keys = "/" ++ source_keys_relative;
 const operation_parent = "/var/lib/shelly/build-roots/v1/operations";
 
 const BootstrapOutputContext = struct {
-    operation: *const Zigalpm.Operation,
+    operation: *const PackageManager.Operation,
     stage: []const u8 = "build.isolation.bootstrap",
 
-    fn handle(data: ?*anyopaque, stream: Zigalpm.process_runner.StreamKind, line: []const u8) void {
+    fn handle(data: ?*anyopaque, stream: PackageManager.process_runner.StreamKind, line: []const u8) void {
         const self: *BootstrapOutputContext = @ptrCast(@alignCast(data.?));
         self.operation.status(
             if (stream == .stderr) .warning else .information,
@@ -100,7 +100,7 @@ pub const Root = struct {
         try createGuestLayout(allocator, io, root_path);
         try std.Io.Dir.cwd().createDirPath(io, source_path);
         try std.Io.Dir.cwd().createDirPath(io, artifact_path);
-        const marker_path = try std.fs.path.join(allocator, &.{ root_path, Zigalpm.alpm.bootstrap.marker_name });
+        const marker_path = try std.fs.path.join(allocator, &.{ root_path, PackageManager.Manager.bootstrap.marker_name });
         defer allocator.free(marker_path);
         try std.Io.Dir.cwd().writeFile(io, .{
             .sub_path = marker_path,
@@ -137,7 +137,7 @@ pub const Root = struct {
         environ: std.process.Environ,
         executable: []const u8,
         extra_packages: []const []const u8,
-        operation: *const Zigalpm.Operation,
+        operation: *const PackageManager.Operation,
     ) !void {
         const argv = try shellystrapArguments(
             self.allocator,
@@ -147,7 +147,7 @@ pub const Root = struct {
         );
         defer self.allocator.free(argv);
         var output_context: BootstrapOutputContext = .{ .operation = operation };
-        const exit_code = try Zigalpm.process_runner.runStreamingWithEnvironmentOperation(
+        const exit_code = try PackageManager.process_runner.runStreamingWithEnvironmentOperation(
             self.allocator,
             self.io,
             environ,
@@ -159,7 +159,7 @@ pub const Root = struct {
         );
         try checkIsolatedExit(operation, .bootstrap, exit_code);
 
-        const marker_path = try self.rootJoin(Zigalpm.alpm.bootstrap.marker_name);
+        const marker_path = try self.rootJoin(PackageManager.Manager.bootstrap.marker_name);
         defer self.allocator.free(marker_path);
         std.Io.Dir.cwd().deleteFile(self.io, marker_path) catch {};
 
@@ -209,7 +209,7 @@ pub const Root = struct {
         environ: std.process.Environ,
         pkgbuild_contents: []const u8,
         reviewed_files: anytype,
-        operation: *const Zigalpm.Operation,
+        operation: *const PackageManager.Operation,
     ) !void {
         try self.writeReviewedInput("PKGBUILD", pkgbuild_contents, 0o644);
         for (reviewed_files) |file|
@@ -282,7 +282,7 @@ pub const Root = struct {
         self: *Root,
         environ: std.process.Environ,
         child_arguments: []const []const u8,
-        operation: *const Zigalpm.Operation,
+        operation: *const PackageManager.Operation,
     ) !void {
         const argv = try nspawnArguments(self.allocator, self.root_path, child_arguments);
         defer self.allocator.free(argv);
@@ -299,7 +299,7 @@ pub const Root = struct {
         var reader = file.reader(self.io, &buffer);
         const updated = try reader.interface.allocRemaining(self.allocator, .limited(32 * 1024 * 1024));
         defer self.allocator.free(updated);
-        return Zigalpm.builder.pkgver_update.extractChange(self.allocator, original, updated);
+        return PackageManager.builder.pkgver_update.extractChange(self.allocator, original, updated);
     }
 
     pub fn exportArtifacts(
@@ -413,11 +413,11 @@ pub const Root = struct {
         self: *Root,
         environ: std.process.Environ,
         argv: []const []const u8,
-        operation: *const Zigalpm.Operation,
+        operation: *const PackageManager.Operation,
         stage: IsolatedStage,
     ) !void {
         var output_context: BootstrapOutputContext = .{ .operation = operation, .stage = stage.name() };
-        const exit_code = try Zigalpm.process_runner.runStreamingWithEnvironmentOperation(
+        const exit_code = try PackageManager.process_runner.runStreamingWithEnvironmentOperation(
             self.allocator,
             self.io,
             environ,
@@ -445,7 +445,7 @@ const IsolatedStage = enum {
     }
 };
 
-fn checkIsolatedExit(operation: *const Zigalpm.Operation, stage: IsolatedStage, exit_code: u8) !void {
+fn checkIsolatedExit(operation: *const PackageManager.Operation, stage: IsolatedStage, exit_code: u8) !void {
     if (exit_code == 0) return;
     const failure = switch (stage) {
         .bootstrap => error.IsolatedBootstrapFailed,
@@ -463,7 +463,7 @@ test "isolated command failures preserve the stage and native exit code" {
         domain: ?[]const u8 = null,
         code: ?i64 = null,
 
-        fn handle(data: ?*anyopaque, event: Zigalpm.OperationEvent) void {
+        fn handle(data: ?*anyopaque, event: PackageManager.OperationEvent) void {
             const self: *@This() = @ptrCast(@alignCast(data.?));
             if (event == .failure) {
                 self.count += 1;
@@ -473,7 +473,7 @@ test "isolated command failures preserve the stage and native exit code" {
             }
         }
     };
-    var context = Zigalpm.OperationContext.init(std.testing.allocator, std.testing.io);
+    var context = PackageManager.OperationContext.init(std.testing.allocator, std.testing.io);
     defer context.deinit();
     var capture: Capture = .{};
     _ = try context.subscribe(.{ .function = Capture.handle, .data = &capture });
@@ -529,9 +529,9 @@ pub fn shellystrapArguments(
         "--kill-child=KILL",
         "--forward-signals",
         executable,
-        Zigalpm.alpm.bootstrap.wrapper_argument,
+        PackageManager.Manager.bootstrap.wrapper_argument,
         "--backend",
-        @tagName(Zigalpm.AlpmManager.defaultBackend()),
+        @tagName(PackageManager.Manager.defaultBackend()),
         "--root",
         root_path,
         "--config",
@@ -628,7 +628,7 @@ test "shellystrap invocation uses a private cancellable namespace and native hel
     try std.testing.expect(containsArgument(argv, "private"));
     try std.testing.expect(containsArgument(argv, "--kill-child=KILL"));
     try std.testing.expect(containsArgument(argv, "--forward-signals"));
-    try std.testing.expect(containsArgument(argv, Zigalpm.alpm.bootstrap.wrapper_argument));
+    try std.testing.expect(containsArgument(argv, PackageManager.Manager.bootstrap.wrapper_argument));
     try std.testing.expect(containsArgument(argv, root_path));
     try std.testing.expect(containsArgument(argv, "base-devel"));
     try std.testing.expect(containsArgument(argv, "cmake"));
@@ -683,7 +683,7 @@ test "isolated pkgver guest transport rejects unrelated edits and symlinks" {
         .artifact_path = source_path,
     };
     const original = "pkgname=demo\npkgver=1\npkgrel=7\narch=('any')\npackage() { :; }\n";
-    const updated = try Zigalpm.builder.pkgver_update.render(allocator, original, "r2.gabc");
+    const updated = try PackageManager.builder.pkgver_update.render(allocator, original, "r2.gabc");
     defer allocator.free(updated);
     try temporary.dir.writeFile(io, .{ .sub_path = "PKGBUILD", .data = updated });
     const version = (try root.readPkgverChange(original)).?;
@@ -773,9 +773,9 @@ test "staged reviewed inputs preserve the host digest and reject real changes" {
     try host.dir.writeFile(io, .{ .sub_path = "PKGBUILD", .data = content });
     try host.dir.writeFile(io, .{ .sub_path = "related.txt", .data = "reviewed\n" });
     try host.dir.setFilePermissions(io, "related.txt", .fromMode(0o660), .{});
-    var host_build = try (Zigalpm.pkgbuild.Parser{ .allocator = allocator, .io = io }).parser_content(content, host_path);
+    var host_build = try (PackageManager.pkgbuild.Parser{ .allocator = allocator, .io = io }).parser_content(content, host_path);
     defer host_build.deinit(allocator);
-    var review = try Zigalpm.builder.preparePkgbuildReview(allocator, io, host_path, content, &.{host_build});
+    var review = try PackageManager.builder.preparePkgbuildReview(allocator, io, host_path, content, &.{host_build});
     defer review.deinit();
     try std.testing.expectEqual(@as(usize, 1), review.reviewed_files.len);
     try std.testing.expectEqual(@as(u32, 0o660), review.reviewed_files[0].permissions);
@@ -795,9 +795,9 @@ test "staged reviewed inputs preserve the host digest and reject real changes" {
 
     const staged_content = try guest.dir.readFileAlloc(io, "PKGBUILD", allocator, .limited(1024));
     defer allocator.free(staged_content);
-    var guest_build = try (Zigalpm.pkgbuild.Parser{ .allocator = allocator, .io = io }).parser_content(staged_content, guest_path);
+    var guest_build = try (PackageManager.pkgbuild.Parser{ .allocator = allocator, .io = io }).parser_content(staged_content, guest_path);
     defer guest_build.deinit(allocator);
-    var guest_review = try Zigalpm.builder.preparePkgbuildReview(allocator, io, guest_path, staged_content, &.{guest_build});
+    var guest_review = try PackageManager.builder.preparePkgbuildReview(allocator, io, guest_path, staged_content, &.{guest_build});
     defer guest_review.deinit();
     try std.testing.expectEqualSlices(u8, &review.digest, &guest_review.digest);
     try review.verifyCurrent(allocator, io, guest_pkgbuild, guest_path);

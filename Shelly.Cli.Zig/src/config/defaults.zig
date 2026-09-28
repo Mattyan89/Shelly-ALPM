@@ -1,7 +1,7 @@
 // Authoritative defaults for the native Zig CLI. Keep this schema stable so
 // existing configuration files can be overlaid without migration tooling.
 pub const json =
-    "{\n  \"NativePackageBackend\": \"" ++ @tagName(@import("Zigalpm").alpm.default_backend) ++ "\",\n" ++
+    "{\n  \"NativePackageBackend\": \"" ++ @tagName(@import("PackageManager").Manager.default_backend) ++ "\",\n" ++
     \\  "FileSizeDisplay": "Megabytes",
     \\  "ParallelDownloadCount": 100,
     \\  "DownloadAddressFamilyPolicy": "PreferIPv4",

@@ -1,5 +1,5 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 const parser = @import("../cli/parser.zig");
 const log = @import("log.zig");
 
@@ -25,7 +25,7 @@ pub const RuntimeContext = struct {
     stdin_is_tty: bool = false,
     stdout_is_tty: bool = false,
     dispatcher: Dispatcher = .{},
-    preparation_diagnostic: ?*?Zigalpm.pkgbuild.parser.Diagnostic = null,
+    preparation_diagnostic: ?*?PackageManager.pkgbuild.parser.Diagnostic = null,
     transaction_log: ?*log.TransactionLog = null,
     tray_refresh_requested: bool = false,
 
@@ -35,7 +35,7 @@ pub const RuntimeContext = struct {
 
     pub fn attachTransactionLog(
         self: *RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
     ) void {
         if (self.transaction_log) |transaction_log|
             _ = transaction_log.attach(operation_context) catch return;

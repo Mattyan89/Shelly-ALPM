@@ -1,13 +1,13 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 const parser = @import("../cli/parser.zig");
 const runtime = @import("../runtime/context.zig");
 
-const PacfileManager = Zigalpm.PacfileManager;
-const Pacfile = Zigalpm.alpm.Pacfile;
+const PacfileManager = PackageManager.PacfileManager;
+const Pacfile = PackageManager.Manager.Pacfile;
 
 const WorkflowOptions = struct {
-    search_mode: Zigalpm.alpm.PacfileSearchMode = .pacman_database,
+    search_mode: PackageManager.Manager.PacfileSearchMode = .pacman_database,
     backup: bool = false,
     output_only: bool = false,
     three_way: bool = false,
@@ -35,7 +35,7 @@ pub fn run(
         return 1;
     }
 
-    var config = try Zigalpm.alpm.configuration.Configuration.parse(
+    var config = try PackageManager.Manager.configuration.Configuration.parse(
         context.allocator,
         context.io,
         "/etc/pacman.conf",
@@ -387,7 +387,7 @@ fn flushForExternalTool(context: *runtime.RuntimeContext) !void {
     try context.stderr.flush();
 }
 
-fn kindLabel(kind: Zigalpm.alpm.PacfileKind) []const u8 {
+fn kindLabel(kind: PackageManager.Manager.PacfileKind) []const u8 {
     return switch (kind) {
         .pacnew => "pacnew",
         .pacorig => "pacorig",
@@ -409,7 +409,7 @@ test "pacfile option parsing defaults to pacman DB and rejects search conflicts"
         .globals = .{},
     };
     const parsed = parseWorkflowOptions(&standard).?;
-    try std.testing.expectEqual(Zigalpm.alpm.PacfileSearchMode.pacman_database, parsed.search_mode);
+    try std.testing.expectEqual(PackageManager.Manager.PacfileSearchMode.pacman_database, parsed.search_mode);
     try std.testing.expect(parsed.backup);
     try std.testing.expect(parsed.three_way);
 

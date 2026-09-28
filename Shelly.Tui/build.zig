@@ -96,14 +96,14 @@ pub fn build(b: *std.Build) void {
     mod.addImport("vaxis", vaxis_module);
     exe.root_module.addImport("vaxis", vaxis_module);
 
-    const zigalpm_dependency = b.dependency("zigalpm", .{
+    const package_manager_dependency = b.dependency("package_manager", .{
         .libalpm = enable_libalpm,
         .target = target,
         .optimize = optimize,
     });
-    const zigalpm = zigalpm_dependency.module("Zigalpm");
-    mod.addImport("Zigalpm", zigalpm);
-    exe.root_module.addImport("Zigalpm", zigalpm);
+    const package_manager = package_manager_dependency.module("PackageManager");
+    mod.addImport("PackageManager", package_manager);
+    exe.root_module.addImport("PackageManager", package_manager);
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default

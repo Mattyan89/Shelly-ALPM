@@ -12,15 +12,15 @@ pub fn build(b: *std.Build) void {
         "Absolute path to the Shelly Flatpak backend shared library",
     ) orelse "/usr/lib/shelly/libshelly-flatpak-backend.so.1";
 
-    const zigalpm_dependency = b.dependency("zigalpm", .{
+    const package_manager_dependency = b.dependency("package_manager", .{
         .libalpm = enable_libalpm,
         .target = target,
         .optimize = optimize,
         .@"flatpak-backend-path" = flatpak_backend_path,
     });
-    const zigalpm = zigalpm_dependency.module("Zigalpm");
-    b.installArtifact(zigalpm_dependency.artifact("shelly-rlpm-action-worker"));
-    b.installArtifact(zigalpm_dependency.artifact("shelly-download-worker"));
+    const package_manager = package_manager_dependency.module("PackageManager");
+    b.installArtifact(package_manager_dependency.artifact("shelly-rlpm-action-worker"));
+    b.installArtifact(package_manager_dependency.artifact("shelly-download-worker"));
 
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "version", package_manifest.version);
@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     cli.addImport("diagnostics", diagnostics);
-    cli.addImport("Zigalpm", zigalpm);
+    cli.addImport("PackageManager", package_manager);
     cli.addOptions("build_options", build_options);
 
     const executable_module = b.createModule(.{
@@ -41,7 +41,7 @@ pub fn build(b: *std.Build) void {
     });
     executable_module.addImport("diagnostics", diagnostics);
     executable_module.addImport("Shelly_Cli_Zig", cli);
-    executable_module.addImport("Zigalpm", zigalpm);
+    executable_module.addImport("PackageManager", package_manager);
 
     const executable = b.addExecutable(.{
         .name = "shelly",
@@ -101,7 +101,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     builder_test_module.addImport("diagnostics", diagnostics);
-    builder_test_module.addImport("Zigalpm", zigalpm);
+    builder_test_module.addImport("PackageManager", package_manager);
     builder_test_module.addOptions("build_options", build_options);
     const builder_tests = b.addTest(.{
         .name = "builder-command-test",
@@ -135,7 +135,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     isolated_test_module.addImport("diagnostics", diagnostics);
-    isolated_test_module.addImport("Zigalpm", zigalpm);
+    isolated_test_module.addImport("PackageManager", package_manager);
     const isolated_tests = b.addTest(.{
         .name = "isolated-build-test",
         .root_module = isolated_test_module,

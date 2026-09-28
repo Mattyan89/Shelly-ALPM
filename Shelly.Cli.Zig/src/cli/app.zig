@@ -4,9 +4,9 @@ const parser = @import("parser.zig");
 const shortcodes = @import("shortcodes.zig");
 const spec = @import("spec.zig");
 const runtime = @import("../runtime/context.zig");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 
-pub const sandbox_wrapper_argument = Zigalpm.builder.sandbox.wrapper_argument;
+pub const sandbox_wrapper_argument = PackageManager.builder.sandbox.wrapper_argument;
 
 pub fn run(context: *runtime.RuntimeContext, arguments: []const []const u8) !u8 {
     const manifest = try spec.Manifest.load(context.allocator);
@@ -129,7 +129,7 @@ pub fn runSandboxExec(
     stderr: *std.Io.Writer,
     arguments: []const []const u8,
 ) u8 {
-    const sandbox = Zigalpm.builder.sandbox;
+    const sandbox = PackageManager.builder.sandbox;
     const parsed = sandbox.parseWrapperArguments(allocator, arguments) catch |err| {
         stderr.print("Could not start the build sandbox because its wrapper arguments are invalid. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) }) catch {};
         return 1;
@@ -139,7 +139,7 @@ pub fn runSandboxExec(
         allocator.free(parsed.read_only_paths);
     }
 
-    Zigalpm.builder.setNoNewPrivs() catch {
+    PackageManager.builder.setNoNewPrivs() catch {
         stderr.print("Could not start the build sandbox because process privileges could not be locked.\n", .{}) catch {};
         return 1;
     };

@@ -55,9 +55,9 @@ remain needed for signature verification; disabling libalpm does not remove them
 
 ## Library boundary
 
-`Zigalpm.AlpmManager.init(allocator, environ, .{ .backend = .rlpm, ... })` selects an
-engine explicitly. An omitted backend captures `AlpmManager.defaultBackend()`.
-`alpm.Backend.available()`, `alpm.libalpm_enabled`, and `alpm.default_backend`
+`PackageManager.Manager.init(allocator, environ, .{ .backend = .rlpm, ... })` selects an
+engine explicitly. An omitted backend captures `PackageManager.Manager.defaultBackend()`.
+`PackageManager.Manager.Backend.available()`, `PackageManager.Manager.libalpm_enabled`, and `PackageManager.Manager.default_backend`
 expose compiled availability. Changing the process default affects future managers;
 release the existing manager before switching engines for the same operation.
 Both use the database's common `db.lck` transaction lock.

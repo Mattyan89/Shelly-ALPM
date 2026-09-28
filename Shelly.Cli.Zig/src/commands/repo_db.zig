@@ -1,18 +1,18 @@
 //! `shelly repo-db add|remove|list|verify`: the CLI surface of
-//! `Zigalpm.repo.Database`. Lines are bare text with a fixed shape: stdout
+//! `PackageManager.repo.Database`. Lines are bare text with a fixed shape: stdout
 //! carries progress and results, stderr carries warnings and errors.
 
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 const parser = @import("../cli/parser.zig");
 const runtime = @import("../runtime/context.zig");
 const spec = @import("../cli/spec.zig");
 const test_support = @import("test_support.zig");
 
-const Database = Zigalpm.repo.Database;
-const Failure = Zigalpm.repo.database.Failure;
-const Warning = Zigalpm.source_pgp_verifier.Warning;
-const archive = Zigalpm.shared.archive;
+const Database = PackageManager.repo.Database;
+const Failure = PackageManager.repo.database.Failure;
+const Warning = PackageManager.source_pgp_verifier.Warning;
+const archive = PackageManager.shared.archive;
 
 const command_prefix = "shelly repo-db ";
 
@@ -66,7 +66,7 @@ fn executeAdd(
     invocation: *const parser.Invocation,
     db: *Database,
 ) !u8 {
-    const options: Zigalpm.repo.AddOptions = .{
+    const options: PackageManager.repo.AddOptions = .{
         .new_only = optionEnabled(invocation, "--new"),
         .prevent_downgrade = optionEnabled(invocation, "--prevent-downgrade"),
         .remove_old_files = optionEnabled(invocation, "--remove-old-files"),
@@ -112,7 +112,7 @@ fn executeRemove(
     invocation: *const parser.Invocation,
     db: *Database,
 ) !u8 {
-    const options: Zigalpm.repo.RemoveOptions = .{
+    const options: PackageManager.repo.RemoveOptions = .{
         .remove_old_files = optionEnabled(invocation, "--remove-old-files"),
         .wait_for_lock = optionEnabled(invocation, "--wait"),
         .signer = signerFor(context, invocation),
@@ -146,7 +146,7 @@ fn executeList(
 ) !u8 {
     const entries = db.listEntries() catch |err|
         return try reportError(context, err, Targets.fromDatabase(db), "read");
-    defer Zigalpm.repo.database.freeEntries(context.allocator, entries);
+    defer PackageManager.repo.database.freeEntries(context.allocator, entries);
 
     if (invocation.globals.json) {
         try writeEntriesJson(context.stdout, entries);
@@ -162,7 +162,7 @@ fn executeVerify(
     db: *Database,
 ) !u8 {
     // No key ids are pinned, so only an ultimately trusted key verifies.
-    const verifier: Zigalpm.source_pgp_verifier.Verifier = .{
+    const verifier: PackageManager.source_pgp_verifier.Verifier = .{
         .allocator = context.allocator,
         .io = context.io,
         .environ = context.environ,
@@ -200,7 +200,7 @@ fn operationForPath(path: []const u8) ?Operation {
 fn signerFor(
     context: *runtime.RuntimeContext,
     invocation: *const parser.Invocation,
-) ?Zigalpm.package_signer.Signer {
+) ?PackageManager.package_signer.Signer {
     if (!optionEnabled(invocation, "--sign")) return null;
     return .{
         .allocator = context.allocator,
@@ -234,7 +234,7 @@ fn printWarning(context: *runtime.RuntimeContext, warning: Warning) !void {
     }
 }
 
-fn writeEntriesJson(writer: *std.Io.Writer, entries: []Zigalpm.repo.EntryInfo) !void {
+fn writeEntriesJson(writer: *std.Io.Writer, entries: []PackageManager.repo.EntryInfo) !void {
     var json: std.json.Stringify = .{ .writer = writer };
     try json.beginArray();
     for (entries) |entry| {

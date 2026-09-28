@@ -1,13 +1,13 @@
 const std = @import("std");
-const pm = @import("Zigalpm");
+const pm = @import("PackageManager");
 const t = std.testing;
 
 const Fixture = struct {
     temp: t.TmpDir,
     arena: std.heap.ArenaAllocator,
-    options: pm.alpm.InitOptions,
+    options: pm.Manager.InitOptions,
     archive: []const u8,
-    fn init(backend: pm.alpm.Backend) !Fixture {
+    fn init(backend: pm.Manager.Backend) !Fixture {
         var temp = t.tmpDir(.{});
         errdefer temp.cleanup();
         var arena = std.heap.ArenaAllocator.init(t.allocator);
@@ -28,7 +28,7 @@ const Fixture = struct {
         try tar.finishPedantically();
         try writer.interface.flush();
         const archive_path = try std.fs.path.join(a, &.{ path, "fixture.pkg.tar" });
-        const options: pm.alpm.InitOptions = .{
+        const options: pm.Manager.InitOptions = .{
             .backend = backend,
             .config_path = try std.fs.path.join(a, &.{ path, "pacman.conf" }),
             .root_directory = try std.fs.path.join(a, &.{ path, "root" }),
@@ -44,18 +44,18 @@ const Fixture = struct {
         self.temp.cleanup();
         self.arena.deinit();
     }
-    fn manager(self: *Fixture) !*pm.AlpmManager {
-        return pm.AlpmManager.init(t.allocator, t.environ, self.options);
+    fn manager(self: *Fixture) !*pm.Manager {
+        return pm.Manager.init(t.allocator, t.environ, self.options);
     }
 };
 
 test "native backend explicit unavailable selection fails before opening configuration" {
-    if (pm.alpm.libalpm_enabled) return;
-    try t.expectError(error.BackendUnavailable, pm.AlpmManager.init(t.allocator, t.environ, .{ .backend = .libalpm, .config_path = "/nonexistent/config" }));
+    if (pm.Manager.libalpm_enabled) return;
+    try t.expectError(error.BackendUnavailable, pm.Manager.init(t.allocator, t.environ, .{ .backend = .libalpm, .config_path = "/nonexistent/config" }));
 }
 
 test "native backend archive install query reason and removal in private roots" {
-    for ([_]pm.alpm.Backend{ .libalpm, .rlpm }) |backend| {
+    for ([_]pm.Manager.Backend{ .libalpm, .rlpm }) |backend| {
         if (!backend.available()) continue;
         var fixture = try Fixture.init(backend);
         defer fixture.deinit();
@@ -74,7 +74,7 @@ test "native backend archive install query reason and removal in private roots" 
         try manager.refresh();
         var changed = (try manager.get_single_installed_package("backend-fixture")).?;
         defer changed.deinit(t.allocator);
-        try t.expectEqual(pm.alpm.types.PackageReason.Dependency, changed.reason_value);
+        try t.expectEqual(pm.Manager.types.PackageReason.Dependency, changed.reason_value);
         const payload = try fixture.temp.dir.readFileAlloc(t.io, "root/usr/share/backend-fixture", t.allocator, .limited(64));
         defer t.allocator.free(payload);
         try t.expectEqualStrings("fixture\n", payload);
@@ -86,7 +86,7 @@ test "native backend archive install query reason and removal in private roots" 
 }
 
 test "native backend missing backup members match libalpm and preserve unrelated files" {
-    for ([_]pm.alpm.Backend{ .libalpm, .rlpm }) |backend| {
+    for ([_]pm.Manager.Backend{ .libalpm, .rlpm }) |backend| {
         if (!backend.available()) continue;
         var fixture = try Fixture.init(backend);
         defer fixture.deinit();
@@ -122,8 +122,8 @@ test "native backend missing backup members match libalpm and preserve unrelated
 }
 
 test "native backend switching reopens compatible state and respects the shared lock" {
-    if (!pm.alpm.libalpm_enabled) return;
-    for ([_]pm.alpm.Backend{ .libalpm, .rlpm }) |first| {
+    if (!pm.Manager.libalpm_enabled) return;
+    for ([_]pm.Manager.Backend{ .libalpm, .rlpm }) |first| {
         var fixture = try Fixture.init(first);
         defer fixture.deinit();
         {
@@ -162,7 +162,7 @@ fn addRepository(fixture: *Fixture) !void {
 }
 
 test "native backend repository queries preserve priority groups versions and owned records" {
-    for ([_]pm.alpm.Backend{ .libalpm, .rlpm }) |backend| {
+    for ([_]pm.Manager.Backend{ .libalpm, .rlpm }) |backend| {
         if (!backend.available()) continue;
         var fixture = try Fixture.init(backend);
         defer fixture.deinit();
@@ -171,10 +171,10 @@ test "native backend repository queries preserve priority groups versions and ow
         defer manager.deinit();
         try manager.install_local_packages(&.{fixture.archive}, .{ .nohooks = true, .noscriptlet = true });
         const available = try manager.get_available_packages();
-        defer pm.alpm.OwnedPackage.deinitSlice(t.allocator, available);
+        defer pm.Manager.OwnedPackage.deinitSlice(t.allocator, available);
         try t.expectEqual(@as(usize, 3), available.len);
         const group = try manager.get_available_packages_from_group("tools");
-        defer pm.alpm.OwnedPackage.deinitSlice(t.allocator, group);
+        defer pm.Manager.OwnedPackage.deinitSlice(t.allocator, group);
         try t.expectEqual(@as(usize, 3), group.len);
         const literal = try manager.find_remote_satisfier_for_dependency_details("needed>=1");
         try t.expectEqualStrings("needed", literal.real_name);
@@ -183,7 +183,7 @@ test "native backend repository queries preserve priority groups versions and ow
         try t.expectEqualStrings("provider", provider.real_name);
         try t.expect(provider.via_provides);
         const updates = try manager.get_updates_available();
-        defer pm.alpm.OwnedPackageWithUpdate.deinitSlice(t.allocator, updates);
+        defer pm.Manager.OwnedPackageWithUpdate.deinitSlice(t.allocator, updates);
         try t.expectEqual(@as(usize, 1), updates.len);
         try t.expectEqualStrings("2-1", updates[0].new_package.version_value);
         try manager.refresh();
@@ -194,7 +194,7 @@ test "native backend repository queries preserve priority groups versions and ow
 }
 
 test "native backend needed no-op and declined plan preserve state and release the lock" {
-    for ([_]pm.alpm.Backend{ .libalpm, .rlpm }) |backend| {
+    for ([_]pm.Manager.Backend{ .libalpm, .rlpm }) |backend| {
         if (!backend.available()) continue;
         var fixture = try Fixture.init(backend);
         defer fixture.deinit();
@@ -234,18 +234,18 @@ test "native backend needed no-op and declined plan preserve state and release t
 }
 
 test "native backend default changes apply only to subsequently initialized managers" {
-    const previous = pm.AlpmManager.defaultBackend();
-    defer pm.AlpmManager.setDefaultBackend(previous) catch unreachable;
+    const previous = pm.Manager.defaultBackend();
+    defer pm.Manager.setDefaultBackend(previous) catch unreachable;
     var fixture = try Fixture.init(.rlpm);
     defer fixture.deinit();
     const existing = try fixture.manager();
     defer existing.deinit();
-    try pm.AlpmManager.setDefaultBackend(pm.alpm.default_backend);
-    try t.expectEqual(pm.alpm.Backend.rlpm, existing.backend());
+    try pm.Manager.setDefaultBackend(pm.Manager.default_backend);
+    try t.expectEqual(pm.Manager.Backend.rlpm, existing.backend());
     fixture.options.backend = null;
     const next = try fixture.manager();
     defer next.deinit();
-    try t.expectEqual(pm.alpm.default_backend, next.backend());
+    try t.expectEqual(pm.Manager.default_backend, next.backend());
 }
 
 test "native backend RLPM uses staged workers when installed beside the executable" {
@@ -336,7 +336,7 @@ test "native backend RLPM sync reports repository causes through both event inte
                 else => {},
             }
         }
-        fn legacy(data: ?*anyopaque, value: pm.alpm.events.ErrorArgs) void {
+        fn legacy(data: ?*anyopaque, value: pm.Manager.events.ErrorArgs) void {
             const self: *@This() = @ptrCast(@alignCast(data.?));
             self.legacy_reported = std.mem.indexOf(u8, value.message, "unavailable") != null and
                 std.mem.indexOf(u8, value.message, "NoServers") != null;
@@ -356,7 +356,7 @@ test "native backend RLPM sync reports repository causes through both event inte
 
 test "native backend configuration maps extended options and rejects invalid parallelism" {
     const text = "[options]\nArchitecture = auto x86_64_v3\nCacheDir = /cache/first /cache/second\nCacheDir = /cache/third\nAssumeInstalled = virtual=2\nParallelDownloads = 7\nDownloadUser = nobody\nDisableDownloadTimeout\nDisableSandboxFilesystem\nDisableSandboxSyscalls\nDisableSandboxNetwork\nNoUpgrade = etc/demo\nNoExtract = usr/share/skip/*\n[testing]\nUsage = Search Install\nCacheServer = https://cache.example/$repo/$arch\nServer = https://mirror.example/$repo/$arch\n";
-    var config = try pm.alpm.configuration.Configuration.parse_string(t.allocator, t.io, text);
+    var config = try pm.Manager.configuration.Configuration.parse_string(t.allocator, t.io, text);
     defer config.deinitialize();
     try t.expectEqual(@as(usize, 3), config.cache_directories.items.len);
     try t.expectEqual(@as(usize, 2), config.architectures.items.len);
@@ -367,7 +367,7 @@ test "native backend configuration maps extended options and rejects invalid par
     try t.expectEqualStrings("etc/demo", config.no_upgrade.items[0]);
     try t.expectEqualStrings("usr/share/skip/*", config.no_extract.items[0]);
     try t.expectEqual(@as(u32, 6), config.repositories.items[0].usage);
-    for ([_]pm.alpm.Backend{ .libalpm, .rlpm }) |backend| {
+    for ([_]pm.Manager.Backend{ .libalpm, .rlpm }) |backend| {
         if (!backend.available()) continue;
         var fixture = try Fixture.init(backend);
         defer fixture.deinit();
@@ -381,7 +381,7 @@ test "native backend configuration maps extended options and rejects invalid par
 }
 
 test "native backend cancelled operations fail without switching or writing a lock" {
-    for ([_]pm.alpm.Backend{ .libalpm, .rlpm }) |backend| {
+    for ([_]pm.Manager.Backend{ .libalpm, .rlpm }) |backend| {
         if (!backend.available()) continue;
         var fixture = try Fixture.init(backend);
         defer fixture.deinit();
@@ -404,7 +404,7 @@ test "native backend auto architecture and default hook paths survive refresh" {
         for (names) |name| t.allocator.free(name);
         t.allocator.free(names);
     };
-    for ([_]pm.alpm.Backend{ .rlpm, .libalpm }) |backend| {
+    for ([_]pm.Manager.Backend{ .rlpm, .libalpm }) |backend| {
         if (!backend.available()) continue;
         var fixture = try Fixture.init(backend);
         defer fixture.deinit();

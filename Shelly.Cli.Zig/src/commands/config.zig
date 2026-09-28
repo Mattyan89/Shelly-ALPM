@@ -1,6 +1,6 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
-const environment = Zigalpm.appimage.environment;
+const PackageManager = @import("PackageManager");
+const environment = PackageManager.appimage.environment;
 const xdg = @import("../runtime/xdg.zig");
 const config_manager = @import("../config/manager.zig");
 const output = @import("../output/config.zig");
@@ -176,7 +176,7 @@ fn configureAppImage(context: *runtime.RuntimeContext, invocation: *const parser
     defer context.allocator.free(config_home);
     const database = try std.fs.path.join(context.allocator, &.{ config_home, "shelly", "appimage-metadata-v2.db" });
     defer context.allocator.free(database);
-    var manager = Zigalpm.AppImageManager{
+    var manager = PackageManager.AppImageManager{
         .allocator = context.allocator,
         .io = context.io,
         .environ = context.environ,

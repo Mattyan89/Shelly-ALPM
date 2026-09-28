@@ -2,7 +2,7 @@ const std = @import("std");
 const Io = std.Io;
 
 const Shelly_Cli_Zig = @import("Shelly_Cli_Zig");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 
 pub fn main(init: std.process.Init) !void {
     const arena: std.mem.Allocator = init.arena.allocator();
@@ -37,9 +37,9 @@ pub fn main(init: std.process.Init) !void {
     // coordinator launches this reserved mode inside a private mount/PID
     // namespace; it performs one target-root libalpm transaction and emits no
     // normal command output.
-    if (arguments.len > 0 and std.mem.eql(u8, arguments[0], Zigalpm.alpm.bootstrap.wrapper_argument)) {
-        Zigalpm.HttpClient.setDefaultProxyEnvironment(init.environ_map);
-        const exit_code = Zigalpm.alpm.bootstrap.runInternal(
+    if (arguments.len > 0 and std.mem.eql(u8, arguments[0], PackageManager.Manager.bootstrap.wrapper_argument)) {
+        PackageManager.HttpClient.setDefaultProxyEnvironment(init.environ_map);
+        const exit_code = PackageManager.Manager.bootstrap.runInternal(
             arena,
             io,
             init.minimal.environ,
@@ -58,7 +58,7 @@ pub fn main(init: std.process.Init) !void {
     );
     const effective_arguments = proxy_environment.arguments;
     const effective_environment_map = proxy_environment.map(init.environ_map);
-    Zigalpm.HttpClient.setDefaultProxyEnvironment(effective_environment_map);
+    PackageManager.HttpClient.setDefaultProxyEnvironment(effective_environment_map);
 
     const graceful_cancellation = Shelly_Cli_Zig.signals.argumentsRequestGracefulCancellation(
         effective_arguments,
@@ -87,7 +87,7 @@ pub fn main(init: std.process.Init) !void {
     };
     Shelly_Cli_Zig.download_policy.applyProcessDefault(&context);
     const command_exit_code = Shelly_Cli_Zig.app.run(&context, effective_arguments) catch |err| code: {
-        const message = Zigalpm.user_errors.format(arena, err, .{}) catch "Could not complete the package operation. Shelly could not allocate memory to explain the error.";
+        const message = PackageManager.user_errors.format(arena, err, .{}) catch "Could not complete the package operation. Shelly could not allocate memory to explain the error.";
         var ui_mode = false;
         for (effective_arguments) |argument| {
             if (std.mem.eql(u8, argument, "--ui-mode")) ui_mode = true;

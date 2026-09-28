@@ -153,7 +153,7 @@ fn convertValue(
         return .{ .string = try parseTime(allocator, text) };
     }
     if (std.mem.eql(u8, key, "NativePackageBackend")) {
-        const backend = try @import("Zigalpm").alpm.Backend.parse(text);
+        const backend = try @import("PackageManager").Manager.Backend.parse(text);
         try backend.validate();
         return .{ .string = @tagName(backend) };
     }
@@ -269,7 +269,7 @@ fn canonicalChoice(choices: []const []const u8, text: []const u8) ?[]const u8 {
 }
 
 fn enumChoices(key: []const u8) ?[]const []const u8 {
-    if (std.mem.eql(u8, key, "NativePackageBackend")) return if (@import("Zigalpm").alpm.libalpm_enabled) &.{ "libalpm", "rlpm" } else &.{"rlpm"};
+    if (std.mem.eql(u8, key, "NativePackageBackend")) return if (@import("PackageManager").Manager.libalpm_enabled) &.{ "libalpm", "rlpm" } else &.{"rlpm"};
     if (std.mem.eql(u8, key, "FileSizeDisplay")) return &.{ "Bytes", "Megabytes", "Gigabytes" };
     if (std.mem.eql(u8, key, "DefaultExecution")) return &.{
         "UpgradeStandard",

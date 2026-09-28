@@ -1,5 +1,5 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
 const ui_operation = @import("../output/ui_operation.zig");
@@ -24,7 +24,7 @@ const Real = struct {
     fn list(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
     ) !std.ArrayList([]const u8) {
         return listReal(context, operation_context);
     }
@@ -32,7 +32,7 @@ const Real = struct {
     fn mutate(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
         action: Action,
         name: []const u8,
         url: ?[]const u8,
@@ -43,7 +43,7 @@ const Real = struct {
     fn sync(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
     ) !void {
         return syncReal(context, operation_context);
     }
@@ -101,7 +101,7 @@ fn executeList(
     invocation: *const parser.Invocation,
     runner: anytype,
 ) anyerror!u8 {
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
 
@@ -150,7 +150,7 @@ fn executeMutation(
     const url: ?[]const u8 = if (invocation.positionals.len > 1) invocation.positionals[1] else null;
     const lsign_key = optionValue(invocation, "--lsign-key");
 
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
 
@@ -359,9 +359,9 @@ fn reportFailure(
 
 fn listReal(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
 ) !std.ArrayList([]const u8) {
-    const manager = try Zigalpm.AlpmManager.init(
+    const manager = try PackageManager.Manager.init(
         context.allocator,
         context.environ,
         .{ .use_root = false, .operation_context = operation_context },
@@ -374,13 +374,13 @@ fn listReal(
 
 fn mutateReal(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
     action: Action,
     name: []const u8,
     url: ?[]const u8,
 ) !void {
     {
-        const manager = try Zigalpm.AlpmManager.init(
+        const manager = try PackageManager.Manager.init(
             context.allocator,
             context.environ,
             .{ .use_root = true, .operation_context = operation_context },
@@ -409,11 +409,11 @@ fn mutateReal(
 
 fn syncReal(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
 ) !void {
     // A fresh manager is intentionally built here so that libalpm registers the
     // updated repository list before the databases are refreshed.
-    const manager = try Zigalpm.AlpmManager.init(
+    const manager = try PackageManager.Manager.init(
         context.allocator,
         context.environ,
         .{ .use_root = true, .operation_context = operation_context },
@@ -626,11 +626,11 @@ const TestRunner = struct {
     fn lsign(_: TestRunner, _: *runtime.RuntimeContext, _: []const u8) !u8 {
         return 0;
     }
-    fn list(_: TestRunner, _: *runtime.RuntimeContext, _: *Zigalpm.OperationContext) !std.ArrayList([]const u8) {
+    fn list(_: TestRunner, _: *runtime.RuntimeContext, _: *PackageManager.OperationContext) !std.ArrayList([]const u8) {
         return .empty;
     }
-    fn mutate(_: TestRunner, _: *runtime.RuntimeContext, _: *Zigalpm.OperationContext, _: Action, _: []const u8, _: ?[]const u8) !void {}
-    fn sync(_: TestRunner, _: *runtime.RuntimeContext, _: *Zigalpm.OperationContext) !void {}
+    fn mutate(_: TestRunner, _: *runtime.RuntimeContext, _: *PackageManager.OperationContext, _: Action, _: []const u8, _: ?[]const u8) !void {}
+    fn sync(_: TestRunner, _: *runtime.RuntimeContext, _: *PackageManager.OperationContext) !void {}
 };
 
 const TestCapture = struct {
@@ -652,7 +652,7 @@ const TestCapture = struct {
         return self.lsign_code;
     }
 
-    fn list(self: *TestCapture, context: *runtime.RuntimeContext, _: *Zigalpm.OperationContext) !std.ArrayList([]const u8) {
+    fn list(self: *TestCapture, context: *runtime.RuntimeContext, _: *PackageManager.OperationContext) !std.ArrayList([]const u8) {
         var result: std.ArrayList([]const u8) = .empty;
         // Use the runtime allocator (an arena in tests) so deinit(context.allocator)
         // in executeList frees the backing store with the matching allocator.
@@ -663,7 +663,7 @@ const TestCapture = struct {
     fn mutate(
         self: *TestCapture,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
+        _: *PackageManager.OperationContext,
         action: Action,
         name: []const u8,
         url: ?[]const u8,
@@ -675,7 +675,7 @@ const TestCapture = struct {
         self.mutate_url = url;
     }
 
-    fn sync(self: *TestCapture, _: *runtime.RuntimeContext, _: *Zigalpm.OperationContext) !void {
+    fn sync(self: *TestCapture, _: *runtime.RuntimeContext, _: *PackageManager.OperationContext) !void {
         self.manager_inits += 1;
         self.sync_called = true;
     }

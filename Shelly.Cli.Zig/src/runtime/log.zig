@@ -1,5 +1,5 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 
 const log_path = "/var/log/shelly.log";
 const rotated_log_path = "/var/log/shelly.log.1";
@@ -23,7 +23,7 @@ pub const SessionLog = struct {
         // Elevated processes must not follow a caller-controlled state path.
         // Their fallback uses the effective account's NSS home; the original
         // unprivileged CLI keeps its own session log across elevation.
-        const account = (Zigalpm.user_account.byUid(allocator, uid) catch null) orelse return null;
+        const account = (PackageManager.user_account.byUid(allocator, uid) catch null) orelse return null;
         defer account.deinit(allocator);
         const configured = if (uid != 0) environ.getPosix("XDG_STATE_HOME") else null;
         const state = if (configured) |path| blk: {
@@ -147,7 +147,7 @@ pub const TransactionLog = struct {
 
     pub fn attach(
         self: *TransactionLog,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
     ) !u64 {
         return operation_context.subscribe(.{
             .function = handleEvent,
@@ -181,12 +181,12 @@ pub const TransactionLog = struct {
         self.session.append(buffer.writer.buffered());
     }
 
-    fn handleEvent(data: ?*anyopaque, event: Zigalpm.OperationEvent) void {
+    fn handleEvent(data: ?*anyopaque, event: PackageManager.OperationEvent) void {
         const self: *TransactionLog = @ptrCast(@alignCast(data.?));
         self.writeEvent(event);
     }
 
-    fn writeEvent(self: *TransactionLog, event: Zigalpm.OperationEvent) void {
+    fn writeEvent(self: *TransactionLog, event: PackageManager.OperationEvent) void {
         const envelope = switch (event) {
             inline else => |payload| payload.envelope,
         };
@@ -262,7 +262,7 @@ fn writeUtcTime(
     );
 }
 
-fn sourceForBackend(backend: Zigalpm.operation.Backend) Source {
+fn sourceForBackend(backend: PackageManager.operation.Backend) Source {
     return switch (backend) {
         .alpm => .standard,
         .aur => .aur,
@@ -273,7 +273,7 @@ fn sourceForBackend(backend: Zigalpm.operation.Backend) Source {
     };
 }
 
-fn logsTransactionKind(kind: Zigalpm.operation.OperationKind) bool {
+fn logsTransactionKind(kind: PackageManager.operation.OperationKind) bool {
     return switch (kind) {
         .install, .remove, .update, .sync, .build, .cleanup, .configure => true,
         .search, .download, .inspect, .launch => false,
@@ -448,7 +448,7 @@ test "transaction log records operation lifecycle without progress noise" {
     var session = SessionLog.tryOpenAt(std.testing.io, path, rotated_path) orelse
         return error.CouldNotOpenTestLog;
     var transaction = TransactionLog.init(&session, allocator);
-    var operation_context = Zigalpm.OperationContext.init(allocator, std.testing.io);
+    var operation_context = PackageManager.OperationContext.init(allocator, std.testing.io);
     defer operation_context.deinit();
     _ = try transaction.attach(&operation_context);
 

@@ -1,5 +1,5 @@
 const std = @import("std");
-const user_account = @import("Zigalpm").user_account;
+const user_account = @import("PackageManager").user_account;
 const test_support = @import("test_support.zig");
 const completions = @import("../cli/completions.zig");
 const documentation = @import("../cli/documentation.zig");

@@ -3,9 +3,6 @@ const std = @import("std");
 const contract = @import("contract.zig");
 const selection = @import("backend.zig");
 const libalpm = @import("types.zig");
-const TransFlag = libalpm.TransFlag;
-const configuration = @import("configuration.zig");
-const events = @import("events.zig");
 const downloader = @import("../shared/downloader.zig");
 const operation_api = @import("operation_context");
 const Native = if (selection.libalpm_enabled) @import("libalpm_manager.zig").Manager else void;
@@ -27,6 +24,65 @@ pub const RestartCheckOptions = contract.RestartCheckOptions;
 pub const InitOptions = contract.InitOptions;
 
 pub const Manager = struct {
+    pub const bootstrap = @import("bootstrap.zig");
+    pub const types = @import("types.zig");
+    pub const Backend = @import("backend.zig").Backend;
+    pub const default_backend = @import("backend.zig").default_backend;
+    pub const libalpm_enabled = @import("backend.zig").libalpm_enabled;
+    pub const events = @import("events.zig");
+    pub const configuration = @import("configuration.zig");
+    pub const cache_manager = @import("cache_manager.zig");
+    pub const archive_manager = @import("archive_manager.zig");
+    pub const pacfile_manager = @import("pacfile_manager.zig");
+
+    pub const InitOptions = contract.InitOptions;
+    pub const BootstrapOptions = bootstrap.Options;
+    pub const BootstrapResult = bootstrap.Result;
+    pub const TransFlag = types.TransFlag;
+    pub const SigLevel = types.SigLevel;
+    pub const OwnedPackage = types.OwnedPackage;
+    pub const OwnedPackageWithUpdate = types.OwnedPackageWithUpdate;
+    pub const ReverseDependencyOptions = contract.ReverseDependencyOptions;
+    pub const DependencySatisfier = contract.DependencySatisfier;
+    pub const RestartReport = contract.RestartReport;
+    pub const AffectedProcess = contract.AffectedProcess;
+    pub const ServiceRestartFailure = contract.ServiceRestartFailure;
+    pub const ServiceRestartFailureKind = contract.ServiceRestartFailureKind;
+    pub const Repository = configuration.Configuration.Repository;
+    pub const ArchiveManager = archive_manager.ArchiveManager;
+    pub const ArchiveManagerOptions = archive_manager.Options;
+    pub const ArchiveError = archive_manager.Error;
+    pub const ArchiveDiscoveryError = archive_manager.DiscoveryError;
+    pub const ArchiveInstallError = archive_manager.InstallError;
+    pub const ArchiveSource = archive_manager.Source;
+    pub const ArchiveEndpoint = archive_manager.ArchiveEndpoint;
+    pub const DowngradeCandidate = archive_manager.DowngradeCandidate;
+    pub const PreparedDowngradePackage = archive_manager.PreparedPackage;
+    pub const parse_archive_listing = archive_manager.parseArchiveListing;
+    pub const CacheManager = cache_manager.CacheManager;
+    pub const CacheManagerOptions = cache_manager.Options;
+    pub const CacheCleanOptions = cache_manager.CleanOptions;
+    pub const CacheInstalledFilter = cache_manager.InstalledFilter;
+    pub const CacheEntry = cache_manager.Entry;
+    pub const CacheRemovalItem = cache_manager.RemovalItem;
+    pub const CacheRemovalPlan = cache_manager.RemovalPlan;
+    pub const CacheExecutionResult = cache_manager.ExecutionResult;
+    pub const CacheError = cache_manager.Error;
+    pub const parse_cache_package_filename = cache_manager.parsePackageFilename;
+    pub const PacfileManager = pacfile_manager.PacfileManager;
+    pub const PacfileManagerOptions = pacfile_manager.Options;
+    pub const PacfileError = pacfile_manager.Error;
+    pub const PacfileSearchMode = pacfile_manager.SearchMode;
+    pub const PacfileKind = pacfile_manager.Kind;
+    pub const PacfileState = pacfile_manager.State;
+    pub const PacfileDiffMode = pacfile_manager.DiffMode;
+    pub const ParsedPacfilePath = pacfile_manager.ParsedPath;
+    pub const Pacfile = pacfile_manager.Pacfile;
+    pub const PacfileToolResult = pacfile_manager.ToolResult;
+    pub const PacfileViewResult = pacfile_manager.ViewResult;
+    pub const PreparedPacfileMerge = pacfile_manager.PreparedMerge;
+    pub const parse_pacfile_path = pacfile_manager.parsePacfilePath;
+
     const Engine = union(selection.Backend) { libalpm: if (selection.libalpm_enabled) *Native else void, rlpm: *Rlpm };
     engine: ?Engine = null,
     allocator: std.mem.Allocator,
@@ -35,7 +91,7 @@ pub const Manager = struct {
     show_hidden_packages: bool = false,
     pub const RemovalConfirmation = contract.RemovalConfirmation;
 
-    pub fn init(allocator: std.mem.Allocator, environ: std.process.Environ, options: InitOptions) InitError!*Manager {
+    pub fn init(allocator: std.mem.Allocator, environ: std.process.Environ, options: contract.InitOptions) InitError!*Manager {
         const chosen = options.backend orelse selection.selectedDefault();
         try chosen.validate();
         const self = allocator.create(Manager) catch return error.InitFailed;
@@ -158,7 +214,7 @@ pub const Manager = struct {
     }
     pub fn get_installed_packages_with_reverse_dependencies(
         self: *Manager,
-        reverse_dependencies: ReverseDependencyOptions,
+        reverse_dependencies: contract.ReverseDependencyOptions,
     ) TransactionError![]libalpm.OwnedPackage {
         return switch (self.engine orelse {
             return error.NoHandle;
@@ -238,7 +294,7 @@ pub const Manager = struct {
             .rlpm => |value| value.remove_packages_with_confirmation(packages_names, flags, keep_optional_dependencis, confirmation) catch |err| return mapTransaction(err),
         };
     }
-    pub fn sync_system_update(self: *Manager, flags: TransFlag) TransactionError!RestartReport {
+    pub fn sync_system_update(self: *Manager, flags: TransFlag) TransactionError!contract.RestartReport {
         return switch (self.engine orelse {
             return error.NoHandle;
         }) {
@@ -297,7 +353,7 @@ pub const Manager = struct {
     pub fn find_remote_satisfier_for_dependency_details(
         self: *Manager,
         dependency: [:0]const u8,
-    ) QueryError!DependencySatisfier {
+    ) QueryError!contract.DependencySatisfier {
         return switch (self.engine orelse {
             return error.NoHandle;
         }) {

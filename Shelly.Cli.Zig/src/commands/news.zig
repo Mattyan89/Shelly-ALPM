@@ -1,5 +1,5 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 const output = @import("../output/config.zig");
 const colors = @import("../output/colors.zig");
 const parser = @import("../cli/parser.zig");
@@ -115,7 +115,7 @@ fn fetchFeed(
     url: []const u8,
 ) ![]u8 {
     const uri = try std.Uri.parse(url);
-    var client: Zigalpm.HttpClient = .{ .allocator = context.allocator, .io = context.io };
+    var client: PackageManager.HttpClient = .{ .allocator = context.allocator, .io = context.io };
     defer client.deinit();
 
     const accept_headers = [_]std.http.Header{.{

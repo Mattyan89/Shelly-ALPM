@@ -1,5 +1,5 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
 const standard_single_pane = @import("../output/standard_single_pane.zig");
@@ -29,7 +29,7 @@ const Real = struct {
     pub fn run(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
         invocation: *const parser.Invocation,
     ) !void {
         if (std.mem.eql(u8, invocation.command.path, standard_command_path))
@@ -56,7 +56,7 @@ const Partition = struct {
 };
 
 const DependencyRemoval = struct {
-    flags: Zigalpm.alpm.TransFlag,
+    flags: PackageManager.Manager.TransFlag,
     remove_optional_dependencies: bool,
     keep_optional_dependencies: bool,
 };
@@ -133,10 +133,10 @@ fn executeUi(
 
 fn runStandard(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
     invocation: *const parser.Invocation,
 ) !void {
-    var local_manager = Zigalpm.LocalManager.init(context.allocator, context.io, .{});
+    var local_manager = PackageManager.LocalManager.init(context.allocator, context.io, .{});
     defer local_manager.deinit();
     local_manager.setOperationContext(operation_context);
     defer local_manager.setOperationContext(null);
@@ -144,8 +144,8 @@ fn runStandard(
     const local_only = optionEnabled(invocation, "--local");
     var local_names: std.ArrayList([]const u8) = .empty;
     defer local_names.deinit(context.allocator);
-    var installed: ?[]Zigalpm.local.Package = null;
-    defer if (installed) |packages| Zigalpm.local.Package.deinitSlice(context.allocator, packages);
+    var installed: ?[]PackageManager.local.Package = null;
+    defer if (installed) |packages| PackageManager.local.Package.deinitSlice(context.allocator, packages);
     if (!local_only) {
         installed = try local_manager.getInstalledBinaryPackages();
         for (installed.?) |package| try local_names.append(context.allocator, package.name);
@@ -161,7 +161,7 @@ fn runStandard(
 
     if (partition.alpm.len > 0) {
         const dependency_removal = dependencyRemoval(invocation, true, true);
-        const manager = try Zigalpm.AlpmManager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
         defer manager.deinit();
         manager.setOperationContext(operation_context);
         defer manager.setOperationContext(null);
@@ -182,12 +182,12 @@ fn runStandard(
 
 fn runAur(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
     invocation: *const parser.Invocation,
 ) !void {
     const dependency_removal = dependencyRemoval(invocation, false, false);
     const aur_base = try aur_url.resolveFor(context, invocation);
-    const manager = try Zigalpm.AurManager.init(context.allocator, context.environ, .{
+    const manager = try PackageManager.AurManager.init(context.allocator, context.environ, .{
         .aur_git_base_url = aur_base,
         .root = true,
         .operation_context = operation_context,
@@ -204,7 +204,7 @@ fn runAur(
 
 fn runAppImage(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
     invocation: *const parser.Invocation,
 ) !void {
     if (elevation.isRoot()) {
@@ -231,7 +231,7 @@ fn runAppImage(
         &.{ try xdg.configHome(context), "shelly", "appimage-metadata-v2.db" },
     );
     defer context.allocator.free(local_db_path);
-    var manager = Zigalpm.AppImageManager{
+    var manager = PackageManager.AppImageManager{
         .allocator = context.allocator,
         .io = context.io,
         .environ = context.environ,
@@ -259,10 +259,10 @@ fn runAppImage(
 
 fn runFlatpak(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
     invocation: *const parser.Invocation,
 ) !void {
-    var manager = Zigalpm.FlatpakManager{ .allocator = context.allocator, .io = context.io };
+    var manager = PackageManager.FlatpakManager{ .allocator = context.allocator, .io = context.io };
     defer manager.deinit();
     try manager.setOperationContext(operation_context);
     defer manager.setOperationContext(null) catch {};
@@ -307,7 +307,7 @@ fn containsIgnoreCase(values: []const []const u8, target: []const u8) bool {
     return false;
 }
 
-fn removalFlags(cascade: bool, ripple: bool, force: bool) Zigalpm.alpm.TransFlag {
+fn removalFlags(cascade: bool, ripple: bool, force: bool) PackageManager.Manager.TransFlag {
     if (force) return .{ .nodeps = true, .nodepversion = true };
     if (cascade) return .{ .nosave = true, .recurse = true };
     if (ripple) return .{ .cascade = true };
@@ -360,7 +360,7 @@ fn resolveAppImage(
     io: std.Io,
     query: []const u8,
     search_paths: []const []const u8,
-    app_images: []const Zigalpm.appimage.AppImage,
+    app_images: []const PackageManager.appimage.AppImage,
 ) !AppImageRemovalTarget {
     var candidates: std.ArrayList(AppImageRemovalTarget) = .empty;
     defer {
@@ -722,7 +722,7 @@ test "routes every removal backend through shared output lifecycles" {
         pub fn run(
             self: *@This(),
             _: *runtime.RuntimeContext,
-            _: *Zigalpm.OperationContext,
+            _: *PackageManager.OperationContext,
             invocation: *const parser.Invocation,
         ) !void {
             self.calls += 1;
@@ -819,12 +819,12 @@ test "remove confirmation accepts Enter but cancels on EOF and input failure" {
             const outcome = try parser.parse(allocator, &manifest, translated);
             const Runner = struct {
                 committed: bool = false,
-                pub fn run(self: *@This(), _: *runtime.RuntimeContext, context: *Zigalpm.OperationContext, invocation: *const parser.Invocation) !void {
+                pub fn run(self: *@This(), _: *runtime.RuntimeContext, context: *PackageManager.OperationContext, invocation: *const parser.Invocation) !void {
                     try std.testing.expectEqualStrings(standard_command_path, invocation.command.path);
                     try std.testing.expect(optionEnabled(invocation, "--opt-deps"));
                     var operation = context.begin(.{ .backend = .alpm, .kind = .remove, .subject = "demo" });
                     defer operation.finish(if (self.committed) .success else .cancelled);
-                    const packages = [_]Zigalpm.OperationTransactionPackage{
+                    const packages = [_]PackageManager.OperationTransactionPackage{
                         .{ .name = "demo", .version = "1.0-1", .source = .local, .role = .requested, .installed_size = 1024 },
                         .{ .name = "demo-helper", .version = "2.0-1", .source = .local, .role = .optional_dependency, .installed_size = 2048 },
                     };
@@ -869,7 +869,7 @@ test "remove backend failures return a nonzero status" {
         "remove", "standard", "--no-confirm", "demo",
     });
     const Failure = struct {
-        pub fn run(_: @This(), _: *runtime.RuntimeContext, _: *Zigalpm.OperationContext, _: *const parser.Invocation) !void {
+        pub fn run(_: @This(), _: *runtime.RuntimeContext, _: *PackageManager.OperationContext, _: *const parser.Invocation) !void {
             return error.TestBackendFailure;
         }
     };
@@ -1007,7 +1007,7 @@ test "AppImage removal preserves unrelated installations and cleans stale identi
         const target_path = try std.fs.path.join(allocator, &.{ bin_home, case.filename });
         const other_filename = try std.fmt.allocPrint(allocator, "{s}.AppImage", .{if (std.mem.eql(u8, case.other_name, "Editor")) "Editor-old" else case.other_name});
         const other_path = try std.fs.path.join(allocator, &.{ bin_home, other_filename });
-        const records = [_]Zigalpm.appimage.AppImage{
+        const records = [_]PackageManager.appimage.AppImage{
             .{ .name = "Editor", .path = if (case.omit_path) "" else target_path },
             .{ .name = case.other_name, .path = other_path },
             .{ .name = "Editor", .path = if (case.omit_path) "" else target_path },
@@ -1049,7 +1049,7 @@ test "AppImage removal preserves unrelated installations and cleans stale identi
         else
             &.{ "remove", "appimage", "--no-confirm", case.query };
         const outcome = try parser.parse(allocator, &manifest, arguments);
-        var operation_context = Zigalpm.OperationContext.init(allocator, io);
+        var operation_context = PackageManager.OperationContext.init(allocator, io);
         defer operation_context.deinit();
         if (case.failure) |err| {
             try std.testing.expectError(err, runAppImage(&context, &operation_context, &outcome.dispatch));
@@ -1059,7 +1059,7 @@ test "AppImage removal preserves unrelated installations and cleans stale identi
             if (case.installed) try std.Io.Dir.cwd().access(io, target_path, .{});
         } else {
             try runAppImage(&context, &operation_context, &outcome.dispatch);
-            const db_manager = Zigalpm.AppImageManager{
+            const db_manager = PackageManager.AppImageManager{
                 .allocator = allocator,
                 .io = io,
                 .environ = environ,

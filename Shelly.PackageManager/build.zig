@@ -108,7 +108,7 @@ pub fn build(b: *std.Build) void {
     // to our consumers. We must give it a name because a Zig package can expose
     // multiple modules and consumers will need to be able to specify which
     // module they want to access.
-    const mod = b.addModule("Zigalpm", .{
+    const mod = b.addModule("PackageManager", .{
         // The root source file is the "entry point" of this module. Users of
         // this module will only be able to access public declarations contained
         // in this file, which means that if you have declarations that you
@@ -182,7 +182,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/alpm/backend_test.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "Zigalpm", .module = mod }},
+        .imports = &.{.{ .name = "PackageManager", .module = mod }},
     }) });
     b.step("native-backend-test", "Test native selection, transactions and interoperability in private roots").dependOn(&b.addRunArtifact(native_backend_tests).step);
     const staged_native = b.addWriteFiles();
@@ -221,7 +221,7 @@ pub fn build(b: *std.Build) void {
     // If neither case applies to you, feel free to delete the declaration you
     // don't need and to put everything under a single module.
     const exe = b.addExecutable(.{
-        .name = "Zigalpm",
+        .name = "PackageManager",
         .root_module = b.createModule(.{
             // b.createModule defines a new module just like b.addModule but,
             // unlike b.addModule, it does not expose the module to consumers of
@@ -236,12 +236,12 @@ pub fn build(b: *std.Build) void {
             // List of modules available for import in source files part of the
             // root module.
             .imports = &.{
-                // Here "Zigalpm" is the name you will use in your source code to
-                // import this module (e.g. `@import("Zigalpm")`). The name is
+                // Here "PackageManager" is the name you will use in your source code to
+                // import this module (e.g. `@import("PackageManager")`). The name is
                 // repeated because you are allowed to rename your imports, which
                 // can be extremely useful in case of collisions (which can happen
                 // importing modules from different packages).
-                .{ .name = "Zigalpm", .module = mod },
+                .{ .name = "PackageManager", .module = mod },
             },
         }),
     });
@@ -342,7 +342,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    hook_test_module.addImport("Zigalpm", mod);
+    hook_test_module.addImport("PackageManager", mod);
     hook_test_module.addOptions("hook_fixture", hook_fixture);
     const hook_tests = b.addTest(.{ .root_module = hook_test_module });
     const run_hook_tests = b.addSystemCommand(&.{ "unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork" });

@@ -1,5 +1,5 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
 const ui_operation = @import("../output/ui_operation.zig");
@@ -43,7 +43,7 @@ const Real = struct {
     fn list(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
         kind: MarkKind,
     ) !PackageList {
         return listReal(context, operation_context, kind);
@@ -52,7 +52,7 @@ const Real = struct {
     fn mutate(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
         kind: MarkKind,
         action: ListAction,
         packages: []const []const u8,
@@ -63,7 +63,7 @@ const Real = struct {
     fn reason(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
         kind: MarkKind,
         package: []const u8,
     ) !void {
@@ -130,7 +130,7 @@ fn executeList(
     kind: MarkKind,
     runner: anytype,
 ) anyerror!u8 {
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
     var packages = runner.list(context, &operation_context, kind) catch |err| {
@@ -175,7 +175,7 @@ fn executeMutation(
     action: ListAction,
     runner: anytype,
 ) anyerror!u8 {
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
     runner.mutate(
@@ -212,7 +212,7 @@ fn executeReason(
     runner: anytype,
 ) anyerror!u8 {
     const package = invocation.positionals[0];
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
 
@@ -411,10 +411,10 @@ fn confirm(
 
 fn listReal(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
     kind: MarkKind,
 ) !PackageList {
-    const manager = try Zigalpm.AlpmManager.init(context.allocator, context.environ, .{ .use_root = false, .operation_context = operation_context });
+    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = false, .operation_context = operation_context });
     defer manager.deinit();
     manager.setOperationContext(operation_context);
     defer manager.setOperationContext(null);
@@ -437,12 +437,12 @@ fn listReal(
 
 fn mutateReal(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
     kind: MarkKind,
     action: ListAction,
     packages: []const []const u8,
 ) !void {
-    const manager = try Zigalpm.AlpmManager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
     defer manager.deinit();
     manager.setOperationContext(operation_context);
     defer manager.setOperationContext(null);
@@ -478,11 +478,11 @@ fn mutateReal(
 
 fn reasonReal(
     context: *runtime.RuntimeContext,
-    operation_context: *Zigalpm.OperationContext,
+    operation_context: *PackageManager.OperationContext,
     kind: MarkKind,
     package: []const u8,
 ) !void {
-    const manager = try Zigalpm.AlpmManager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
     defer manager.deinit();
     manager.setOperationContext(operation_context);
     defer manager.setOperationContext(null);
@@ -628,7 +628,7 @@ const TestRunner = struct {
     fn list(
         _: TestRunner,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
+        _: *PackageManager.OperationContext,
         _: MarkKind,
     ) !PackageList {
         return .{ .items = &.{ "linux", "mesa" } };
@@ -637,7 +637,7 @@ const TestRunner = struct {
     fn mutate(
         _: TestRunner,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
+        _: *PackageManager.OperationContext,
         _: MarkKind,
         _: ListAction,
         _: []const []const u8,
@@ -646,7 +646,7 @@ const TestRunner = struct {
     fn reason(
         _: TestRunner,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
+        _: *PackageManager.OperationContext,
         _: MarkKind,
         _: []const u8,
     ) !void {}
@@ -660,7 +660,7 @@ const TestCapture = struct {
     fn list(
         _: *TestCapture,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
+        _: *PackageManager.OperationContext,
         _: MarkKind,
     ) !PackageList {
         return .{ .items = &.{} };
@@ -669,7 +669,7 @@ const TestCapture = struct {
     fn mutate(
         self: *TestCapture,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
+        _: *PackageManager.OperationContext,
         kind: MarkKind,
         action: ListAction,
         _: []const []const u8,
@@ -681,7 +681,7 @@ const TestCapture = struct {
     fn reason(
         self: *TestCapture,
         _: *runtime.RuntimeContext,
-        _: *Zigalpm.OperationContext,
+        _: *PackageManager.OperationContext,
         kind: MarkKind,
         _: []const u8,
     ) !void {
