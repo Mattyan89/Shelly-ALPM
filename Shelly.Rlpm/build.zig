@@ -45,6 +45,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
     mod.addImport("Shelly_Key", shelly_key.module("Shelly_Key"));
+    mod.link_libc = true;
+    mod.linkSystemLibrary("archive", .{});
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
@@ -169,6 +171,16 @@ pub fn build(b: *std.Build) void {
         }),
     });
     b.step("test-version", "Run hermetic version tests").dependOn(&b.addRunArtifact(version_tests).step);
+
+    const package_module = b.createModule(.{
+        .root_source_file = b.path("src/structs/Package.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    package_module.linkSystemLibrary("archive", .{});
+    const package_tests = b.addTest(.{ .root_module = package_module });
+    b.step("test-package", "Run hermetic package archive tests").dependOn(&b.addRunArtifact(package_tests).step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
