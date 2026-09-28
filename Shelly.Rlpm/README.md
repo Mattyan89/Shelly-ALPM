@@ -3,7 +3,7 @@
 RLPM is the native Zig package backend under development. The
 [completion plan](../docs/rlpm-libalpm-completion-plan.md) targets libalpm's
 functional behavior **including CachyOS extensions**, following the existing
-Owner/Database/Package design. M0–M7 are accepted; M8 is implemented and awaiting acceptance before M9. RLPM is not yet a replacement for libalpm.
+Owner/Database/Package design. M0–M8 are accepted; M9 is implemented and awaiting acceptance before M10. RLPM is not yet a replacement for libalpm.
 
 M1 exports an owning `Owner` with copied options, ordered repository registration,
 read-only local queries, stable database identity, package cache generations,
@@ -32,20 +32,24 @@ provider questions, future-state checks and dependency ordering. The
 M6 adds owned transactions, exclusive locks, frozen preparation, typed lifecycle
 events and PackageManager deferred-question/cancellation support. The
 [transaction guide](transactions.md) covers the state machine and lock contract.
-Normal nonempty commit remains unavailable until M9–M10 supply execution.
-Provenance writes and hook/scriptlet network isolation remain required
-later milestones.
+Normal nonempty commit remains unavailable until M10 supplies file/database execution.
+Installed-repository provenance writes remain required.
 
 M7 adds the shared PackageManager transport, verified cache acquisition, repository
 refresh and DOWNLOADONLY transactions. See [downloads.md](downloads.md) for APIs,
 publication/recovery, privilege controls, reference differences and validation.
 The root-only sandbox fixture is compile-checked; its execution still requires
-privileges unavailable in the local session. Normal installation remains M9–M10.
+privileges unavailable in the local session. Normal installation remains M10.
 
 M8 adds full-archive verification and an owned filesystem preflight manifest,
 including file conflicts, backup/pattern decisions, root-relative inspection and
 space/access checks. See [preflight.md](preflight.md) for the API, executor
 contract, pinned reference evidence and compatibility boundaries.
+
+M9 adds native Zig hook discovery/matching, chrooted hook/scriptlet execution,
+linker-cache maintenance and CachyOS network controls. Outcomes retain nonfatal
+failures; cancellation terminates action process groups. See [actions.md](actions.md)
+for the executor contract, worker deployment, reference comparisons and limits.
 
 ## Build and tests
 
@@ -64,6 +68,9 @@ module dependency. From this directory:
 | `zig build test-verification` | M4 policy/status, checksums, reference cases, imports and sealed-file tests |
 | `zig build test-resolver` | M5 plans, flags, questions, removal/upgrade behavior and 314 reference scenarios |
 | `zig build test-transaction` | M6 lifecycle, locks/process contention, archive ownership, cancellation and 16 reference scenarios |
+| `zig build test-hooks` | M9 hermetic parser, precedence, matching and ownership fixtures |
+| `zig build test-actions` | M9 real disposable-root actions under user namespaces, including 19 pinned oracle cases |
+| `zig build check-actions` | Compile the action integration without running it |
 | `zig build test-preflight` | M8 private-root conflicts, backups, links, current policies, space and 15 pinned oracle cases |
 | `zig build test-download` | M7 cache, refresh, URL batches, DOWNLOADONLY and six pinned oracle cases |
 | `zig build check-download-sandbox` | Compile privileged sandbox fixture; run explicitly as root with `test-download-sandbox` |
@@ -108,7 +115,7 @@ bytes. Sealed snapshots require RAM/swap proportional to archive size.
   [Reference documentation](src/tests/reference/README.md) explains attribution,
   corpus provenance and optional capture on disposable roots.
 - The [ledger](src/tests/compatibility-ledger.tsv) tracks 493 public symbols and
-  25 behavioral contracts. There are 127 missing, 358 partial and 33
+  25 behavioral contracts. There are 109 missing, 376 partial and 33
   representation-only rows. No row claims verified full compatibility, and
   every CachyOS extension remains required.
 - [Owner reference fixtures](src/tests/fixtures/owner-reference.json) capture
@@ -140,7 +147,7 @@ M8 validation on 2026-09-28: `test` passes **167 tests** in Debug and ReleaseSaf
 preflight tests overlap that suite and replay **15** pinned native outcomes.
 PackageManager downloader/adapter regressions pass **65 tests** in both modes.
 All **15 real GPG tests** pass, including M8 policy retention and reverification.
-M8 is awaiting acceptance; M9 has not started. See [preflight.md](preflight.md)
+M8 is accepted. See [preflight.md](preflight.md)
 for stricter archive checks, conservative space estimates and the unexecuted
 privileged mount/extraction validation boundary. CI has not run remotely.
 
@@ -207,3 +214,9 @@ dynamic dependency, and GPG fixture homes were cleaned up. Formatting and local
 documentation links were checked. M0's historical counts were 54 ordinary tests
 and five GPG cases. CI is configured but has not been run remotely. Each milestone
 needs user acceptance before implementation proceeds to the next.
+
+M9 validation on 2026-09-28: `test` passes **174 tests** (49 library, 121 public API,
+4 ledger) and `test-actions` passes **18 real-process tests**, including **19 pinned
+CachyOS oracle cases**, in Debug and ReleaseSafe. PackageManager's downloader and
+RLPM adapter targets pass **65 tests** in each mode. M9 awaits acceptance before
+M10; normal package commit remains unavailable. See [actions.md](actions.md).

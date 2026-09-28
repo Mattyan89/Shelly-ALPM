@@ -2,7 +2,7 @@
 
 M8 adds `Transaction.preflight()`, `manifest()` and `revalidatePreflight()`.
 `filesystem_preflight` is enabled in capabilities; `transactions` remains false.
-M7 is accepted. M8 awaits acceptance before M9 hooks and scriptlets. Normal
+M8 is accepted. M9 adds [hook and scriptlet stages](actions.md). Normal
 nonempty commit still returns `CommitUnavailable` until the M10 executor exists.
 
 ```zig

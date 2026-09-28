@@ -259,3 +259,27 @@ backup/pattern decisions and resulting inventory through the RLPM manifest;
 they do not run an RLPM executor or load libalpm. The original frozen assets and
 manifest remain unchanged. See [preflight.md](../../../preflight.md) for safety
 differences and remaining executor/privileged-mount validation.
+
+M9 adds [record_actions.py](record_actions.py) and [actions.json](actions.json):
+
+```sh
+unshare --user --map-root-user --mount \
+  python3 src/tests/reference/record_actions.py --library /usr/lib/libalpm.so.16.0.1
+```
+
+Nineteen cases capture hook tokenization, NeedsTargets, network permission,
+AbortOnFail, dependencies, repeated actions, empty masking, scriptlet source and
+version arguments, DBONLY, NOHOOKS and NOSCRIPTLET. Each native commit is guarded
+by the pinned library hash and private root/DB/hook-directory checks. Only trusted
+bash and runtime libraries are copied into the root; scripts are generated fixture
+text. Host hook directories, services and ldconfig are never invoked. Run in an
+environment that permits local Unix socket sendto: a transport sandbox that
+blocks it makes native NeedsTargets input appear empty and invalidates capture.
+
+`zig build test-actions` compares the frozen decisions and traces with real RLPM
+stages. It uses a fixture executor to place the new local install member between
+pre/post stages; production file and DB mutation remains M10. The original frozen
+manifest/assets are unchanged. Source review additionally checked
+`src/common/ini.c` and `util-common.c` from the exact downstream tarball identified
+by `manifest.json` (download SHA-256 verified), since they were not included in the
+original reduced source bundle. See [actions.md](../../../actions.md).

@@ -11,6 +11,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    const action_worker = b.addExecutable(.{
+        .name = "shelly-rlpm-action-worker",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/actions/worker.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    const action_options = b.addOptions();
+    action_options.addOptionPath("worker_path", action_worker.getEmittedBin());
+    mod.addOptions("action_worker", action_options);
+    b.installArtifact(action_worker);
     const download = b.dependency("shelly_download", .{ .target = target, .optimize = optimize });
     mod.addImport("Shelly_Download", download.module("Shelly_Download"));
     const worker_options = b.addOptions();
@@ -88,6 +101,13 @@ pub fn build(b: *std.Build) void {
     }) });
     b.step("test-resolver", "Run M5 resolution, removal, system-upgrade and reference fixtures").dependOn(&b.addRunArtifact(resolver_tests).step);
 
+    const hook_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/hooks.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    b.step("test-hooks", "Run hermetic M9 parser, discovery, matching and ownership fixtures").dependOn(&b.addRunArtifact(hook_tests).step);
     const preflight_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/preflight.zig"),
         .target = target,
@@ -153,6 +173,35 @@ pub fn build(b: *std.Build) void {
         .path = .{ .cwd_relative = b.pathJoin(&.{ b.graph.zig_lib_directory.path.?, "compiler/test_runner.zig" }) },
         .mode = .simple,
     };
+    const action_filter = b.addExecutable(.{ .name = "rlpm-action-filter-fixture", .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/action_filter.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }) });
+    action_filter.root_module.addOptions("worker_path", action_options);
+    const action_probe = b.addExecutable(.{ .name = "rlpm-action-probe-fixture", .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/action_probe.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }) });
+    const action_fixture_options = b.addOptions();
+    action_fixture_options.addOptionPath("filter", action_filter.getEmittedBin());
+    action_fixture_options.addOptionPath("probe", action_probe.getEmittedBin());
+    const action_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/actions.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }), .test_runner = terminal_runner });
+    action_tests.root_module.addOptions("action_fixtures", action_fixture_options);
+    const run_actions = b.addSystemCommand(&.{ "unshare", "--user", "--map-root-user", "--mount", "env", "BASH_ENV=/injected-startup", "SHLVL=7" });
+    run_actions.addArtifactArg(action_tests);
+    run_actions.stdio = .inherit;
+    run_actions.has_side_effects = true;
+    b.step("test-actions", "Run real M9 actions in disposable chroots under a user namespace").dependOn(&run_actions.step);
+    b.step("check-actions", "Compile M9 integration without executing it").dependOn(&action_tests.step);
     const signature_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/tests/signature.zig"),

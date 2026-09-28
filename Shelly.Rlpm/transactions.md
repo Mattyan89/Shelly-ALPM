@@ -1,10 +1,9 @@
 # Transactions, locks and callbacks
 
-M0–M7 are accepted. M7 adds verified acquisition and DOWNLOADONLY commits through
-[the shared download layer](downloads.md). `transaction_lifecycle`, `downloads` and `filesystem_preflight`
+M0–M8 are accepted. M7 adds verified acquisition and DOWNLOADONLY commits through
+[the shared download layer](downloads.md). `transaction_lifecycle`, `downloads`, `filesystem_preflight` and `transaction_actions`
 are enabled; `transactions` remains false. Normal nonempty `commit()` still returns
-`CommitUnavailable`, retaining the prepared plan and lock. M8 provides [filesystem preflight](preflight.md); M9–M10 supply
-hooks and installed-state changes. DOWNLOADONLY can complete with zero packages
+`CommitUnavailable`, retaining the prepared plan and lock. M8 provides [filesystem preflight](preflight.md); M9 provides [hook/scriptlet stages](actions.md); M10 supplies installed-state changes. DOWNLOADONLY can complete with zero packages
 committed to the installed database.
 
 ```zig
@@ -121,8 +120,8 @@ Callbacks run synchronously and borrow payloads. Reentry fails with
 `CallbackReentry`. `Owner.requestCancellation` is the only cross-thread operation;
 it sets an atomic flag. Preparation checks it during hashing/solving, before and
 after questions/events, and before the commit boundary. Release remains available
-after cancellation. Download cancellation is connected in M7; preflight and mutation interruption
-points remain for M8–M10; M6 makes no rollback or partial-commit claim.
+after cancellation. Download cancellation is connected in M7; M8 preflight and M9 action cancellation are implemented; payload mutation interruption
+remains M10; M6 makes no rollback or partial-commit claim.
 
 PackageManager exports the opt-in `RlpmOperationAdapter`; the default backend
 selection is unchanged. Attach it at a stable address before initialization and
@@ -155,3 +154,10 @@ six shared-context regressions. The deferred tests use a real responder thread
 and both cancellation routes. Debug and ReleaseSafe each pass 132 RLPM tests and nine adapter/context tests;
 all 12 real-GPG regressions pass. These checks support M6 acceptance; they do not
 establish full backend equivalence.
+
+M9 adds transaction-owned action stages and `actions()` outcomes. An internal
+`startActions()` entry requires committing state, the Owner busy guard and the
+transaction lock. It is reserved for the executor and does not enable normal
+commit. Hooks, scriptlets and ldconfig retain process setup/exit/signal and cleanup
+failures, with cancellation terminating the child group. See [actions.md](actions.md)
+for stage order, independent flags and CachyOS network semantics.

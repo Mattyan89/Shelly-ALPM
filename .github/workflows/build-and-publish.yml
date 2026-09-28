@@ -242,20 +242,22 @@ jobs:
       contents: read
     container:
       image: archlinux:latest
+      # M9 creates a nested user/network namespace and disposable chroot.
+      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined
     strategy:
       matrix:
         optimize: [Debug, ReleaseSafe]
     steps:
       - run: |
           pacman -Syu --noconfirm
-          pacman -S --needed --noconfirm zig base-devel glibc git libarchive sqlite gnupg curl
+          pacman -S --needed --noconfirm zig base-devel glibc git libarchive sqlite gnupg curl util-linux
       - uses: actions/checkout@v6
-      - name: Build and run hermetic RLPM tests
+      - name: Build and run RLPM unit and disposable-root action tests
         working-directory: Shelly.Rlpm
         run: |
           zig version
           zig build -Doptimize=${{ matrix.optimize }}
-          zig build test test-download check-download-sandbox -Doptimize=${{ matrix.optimize }} --summary all
+          zig build test test-actions test-download check-download-sandbox -Doptimize=${{ matrix.optimize }} --summary all
       - name: Verify shared transfer and queue regressions
         working-directory: Shelly.Download
         run: zig build test check-sandbox -Doptimize=${{ matrix.optimize }} --summary all

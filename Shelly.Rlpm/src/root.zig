@@ -1,5 +1,9 @@
 //! Independent native package metadata and lifecycle API. Operational capability
 //! reporting is intentionally narrower than the eventual libalpm target.
+pub const TransactionActions = @import("structs/TransactionActions.zig");
+pub const Scriptlets = @import("structs/Scriptlets.zig");
+pub const Hooks = @import("structs/Hooks.zig");
+pub const ActionProcess = @import("structs/ActionProcess.zig");
 pub const Downloads = @import("structs/Downloads.zig");
 pub const Owner = @import("structs/Owner.zig");
 pub const OwnerConfiguration = @import("structs/OwnerConfiguration.zig");
@@ -52,6 +56,8 @@ pub const Capabilities = struct {
     transaction_lifecycle: bool = true,
     downloads: bool = true,
     filesystem_preflight: bool = true,
+    /// Executor stages are available; normal commit still requires M10.
+    transaction_actions: bool = true,
     transactions: bool = false,
     localization: bool = false,
 };

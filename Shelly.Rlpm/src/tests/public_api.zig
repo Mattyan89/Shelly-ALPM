@@ -69,4 +69,5 @@ test {
 test {
     _ = @import("download.zig");
     _ = @import("preflight.zig");
+    _ = @import("hooks.zig");
 }

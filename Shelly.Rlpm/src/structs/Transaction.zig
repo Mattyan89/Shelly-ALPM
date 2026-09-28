@@ -25,9 +25,22 @@ allow_downgrade: bool = false,
 owned_plan: ?Plan = null,
 downloaded_files: ?[]@import("Downloads.zig").File = null,
 owned_manifest: ?@import("ExecutionManifest.zig") = null,
+owned_actions: ?@import("TransactionActions.zig") = null,
 snapshot: [32]u8,
 lock: ?@import("DatabaseLock.zig") = null,
 
+/// Borrowed action outcomes, including nonfatal process and cleanup failures.
+pub fn actions(self: *const Transaction) ?*const @import("TransactionActions.zig") {
+    return if (self.owned_actions) |*value| value else null;
+}
+/// Internal executor entry, requires committing state and the Owner busy guard.
+/// Normal commit remains gated until M10 supplies payload/database operations.
+pub fn startActions(self: *Transaction) !*@import("TransactionActions.zig") {
+    if (self.owned_actions != null) return error.InvalidActionState;
+    self.owned_actions = try @import("TransactionActions.zig").init(self);
+    try self.owned_actions.?.begin();
+    return &self.owned_actions.?;
+}
 pub fn result(self: *const Transaction) Result {
     return .{ .state = self.state, .cause = self.cause };
 }
@@ -220,6 +233,7 @@ pub fn destroy(self: *Transaction) !void {
     defer self.storage.deinit();
     defer self.targets.deinit(allocator);
     defer self.removals.deinit(allocator);
+    if (self.owned_actions) |*value| value.deinit();
     if (self.owned_manifest) |*value| value.deinit();
     if (self.downloaded_files) |files| {
         for (files) |*file| file.deinit();
