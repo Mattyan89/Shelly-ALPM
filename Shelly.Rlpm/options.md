@@ -32,7 +32,7 @@ if (try owner.findPackage(local, "example")) |reference| {
 Root and database path must already be directories. Both are canonicalized with
 realpath and receive a terminal slash; an explicitly supplied DB path is
 independent of root. Local metadata uses `<dbpath>/local/`, sync registrations use
-`<dbpath>/sync/<name><database_extension>`, and the future lock uses
+`<dbpath>/sync/<name><database_extension>`, and the transaction/refresh lock uses
 `<dbpath>/db.lck`. Repository registration performs no download and does not
 require an existing sync archive.
 
@@ -68,8 +68,8 @@ these rows partial until the consuming milestones' fixtures pass.
 | --- | --- | --- |
 | `root`, `database_path` | Independent canonical directory paths; immutable after initialization | M8–M10 execution |
 | `local_database_mode` | Default creation/validation or explicit read-only local opening | — |
-| `database_extension` | Sync registration paths and replacement; rejects NUL/path separators | M7 refresh |
-| `cache_directories` | Owned ordered list and directory spelling | M7 cache selection, verification and downloads |
+| `database_extension` | Sync registration paths and replacement; rejects NUL/path separators | — |
+| `cache_directories` | Ordered cache search, current-policy verification and writable selection | — |
 | `hook_directories` | Owned ordered list and root-relative library default | M9 discovery, overrides and execution |
 | `gpg_directory` | Explicit home for verification and consented key operations; null uses system pacman keyring | — |
 | `key_acquisition` | Owned single-key source paths, WKD/keyserver controls; import requires callback consent and reverification | Live server interoperability |
@@ -79,13 +79,14 @@ these rows partial until the consuming milestones' fixtures pass.
 | `assume_installed` | Owned unversioned/exact provisions, permissive raw versions, descriptions and M5 dependency checks | — |
 | `no_upgrade`, `no_extract`, `overwrite_files` | Owned patterns, including negation spelling | M8 matching/preflight; M10 file effects |
 | `check_space` | Boolean setting | M8 filesystem capacity checks |
-| `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Enforced inheritance, presence, crypto validity and trust; sealed package/database snapshots | M7/M8 integration with transfers and transactions |
-| `disable_download_timeout`, `parallel_downloads` | Validated settings; concurrency must be at least one | M7 existing PackageManager downloader/queue integration |
-| `sandbox_user` | Owned name; no account lookup during read-only initialization | M7 account validation and privilege separation |
-| `sandbox.disable_filesystem`, `sandbox.disable_syscalls` | Independent settings | M7 download sandbox |
+| `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Enforced inheritance, presence, crypto validity and trust; sealed package/database snapshots | M8 package preflight |
+| `disable_download_timeout`, `parallel_downloads` | Shared bounded queue and cancellable setup/header/body deadlines | — |
+| `download_worker` | Optional installed helper path; default is the matching build artifact | M11 deployment wiring |
+| `sandbox_user` | Account lookup and child credential changes when native applicability requires it | Root-only integration must run in a privileged environment |
+| `sandbox.disable_filesystem`, `sandbox.disable_syscalls` | Independent Landlock and syscall filter controls in the child | Privileged integration |
 | `sandbox.disable_network` | CachyOS setting; global `setDisabled` updates all three switches | M9 hook/scriptlet/ldconfig behavior |
-| `callbacks` | Typed callbacks, owned deferred questions, transaction ordering and guarded dispatch | M7–M10 execution producers, download/fetch and audit logging |
-| Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned lists, queries, resolver usage/priority, enforced inherited/explicit policy | M7 transfer |
+| `callbacks` | Typed callbacks, owned deferred questions, transaction ordering and guarded dispatch | M8–M10 execution producers and audit logging |
+| Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned lists, queries, resolver usage/priority, enforced inherited/explicit policy | — |
 
 `setOptions` constructs a complete replacement before publishing it. Failed
 allocation or validation leaves the old configuration and registrations intact.

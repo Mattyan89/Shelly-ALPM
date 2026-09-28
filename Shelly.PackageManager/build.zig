@@ -64,6 +64,7 @@ pub fn build(b: *std.Build) void {
     rlpm_adapter_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = operation_context_mod })).step);
     // Validate this opt-in adapter without building the other native backends.
     if (b.option(bool, "rlpm-adapter-only", "Build only the RLPM callback adapter") orelse false) return;
+    const shelly_download = b.dependency("shelly_download", .{ .target = target, .optimize = optimize }).module("Shelly_Download");
     const shelly_http = b.dependency("shelly_http", .{
         .target = target,
         .optimize = optimize,
@@ -129,6 +130,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     mod.addImport("diagnostics", diagnostics);
+    mod.addImport("Shelly_Download", shelly_download);
     mod.addImport("alpm_c", alpm_c);
     mod.addImport("archive", archive_mod);
     mod.addImport("operation_context", operation_context_mod);
@@ -342,6 +344,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     shellybuild_test_module.addImport("diagnostics", diagnostics);
+    shellybuild_test_module.addImport("Shelly_Download", shelly_download);
     shellybuild_test_module.addImport("toml", toml_module);
     shellybuild_test_module.addImport("operation_context", operation_context_mod);
     shellybuild_test_module.addImport("user_account", user_account_mod);
@@ -366,6 +369,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     local_test_module.addImport("diagnostics", diagnostics);
+    local_test_module.addImport("Shelly_Download", shelly_download);
     local_test_module.addImport("archive", archive_mod);
     local_test_module.addImport("operation_context", operation_context_mod);
     const local_tests = b.addTest(.{ .root_module = local_test_module });
@@ -461,6 +465,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     downloader_test_module.addImport("diagnostics", diagnostics);
+    downloader_test_module.addImport("Shelly_Download", shelly_download);
     downloader_test_module.addImport("operation_context", operation_context_mod);
     downloader_test_module.addImport("ShellyHttp", shelly_http.module("ShellyHttp"));
     const downloader_tests = b.addTest(.{ .name = "downloader-test", .root_module = downloader_test_module });
@@ -472,6 +477,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     }) });
+    download_queue_tests.root_module.addImport("Shelly_Download", shelly_download);
+    downloader_test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = shelly_download })).step);
     const run_download_queue_tests = b.addRunArtifact(download_queue_tests);
     downloader_test_step.dependOn(&run_download_queue_tests.step);
     const download_limit_tests = b.addTest(.{
@@ -488,6 +495,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     cache_test_module.addImport("diagnostics", diagnostics);
+    cache_test_module.addImport("Shelly_Download", shelly_download);
     cache_test_module.addImport("alpm_c", alpm_c);
     cache_test_module.addImport("operation_context", operation_context_mod);
     const cache_tests = b.addTest(.{ .name = "cache-test", .root_module = cache_test_module });

@@ -49,6 +49,7 @@ pub const Options = struct {
     md5: ?[]const u8 = null,
     sha256: ?[]const u8 = null,
     base64_signature: ?[]const u8 = null,
+    detached_signature: union(enum) { read_from_path, bytes: ?[]const u8 } = .read_from_path,
     /// alpm_pkg_load refreshes expired keys before detached file validation;
     /// database/repository verification instead applies the KEY_EXPIRED policy.
     refresh_expired_keys: bool = false,
@@ -61,7 +62,13 @@ pub fn clearReport(report: *?Report) void {
 /// completed processes retain termination, raw statuses and stderr in the report.
 pub fn check(allocator: std.mem.Allocator, io: std.Io, context: Context, snapshot: *const Snapshot, source: []const u8, options: Options, report: *?Report) !Package.Validation {
     clearReport(report);
-    const signature = if (options.requirement == .disabled) null else if (options.base64_signature) |encoded| try OpenPgp.decode(allocator, encoded) else try OpenPgp.readDetached(allocator, io, source);
+    const signature = if (options.requirement == .disabled) null else if (options.base64_signature) |encoded| try OpenPgp.decode(allocator, encoded) else switch (options.detached_signature) {
+        .read_from_path => try OpenPgp.readDetached(allocator, io, source),
+        .bytes => |value| if (value) |bytes| blk: {
+            if (bytes.len > OpenPgp.max_signature_size) return error.SignatureTooLarge;
+            break :blk try allocator.dupe(u8, bytes);
+        } else null,
+    };
     defer if (signature) |bytes| allocator.free(bytes);
     var performed: Package.Validation = .{};
     // libalpm prefers SHA256 to MD5, and skips repository digests only when

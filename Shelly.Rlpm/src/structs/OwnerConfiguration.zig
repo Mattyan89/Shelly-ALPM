@@ -33,6 +33,8 @@ remote_file_signature_policy: ?SignaturePolicy = disabled_signatures,
 disable_download_timeout: bool = false,
 parallel_downloads: u32 = 1,
 sandbox_user: ?[]const u8 = null,
+/// Installed worker override; default resolves the matching build artifact.
+download_worker: ?[]const u8 = null,
 sandbox: Sandbox = .{},
 callbacks: Callbacks = .{},
 
@@ -96,6 +98,7 @@ pub fn copy(self: OwnerConfiguration, allocator: std.mem.Allocator, io: std.Io) 
     result.key_acquisition.key_files = try copyStrings(allocator, self.key_acquisition.key_files, false);
     result.key_acquisition.keyserver = try copyOptional(allocator, self.key_acquisition.keyserver);
     result.log_file = try copyOptional(allocator, self.log_file);
+    result.download_worker = try copyOptional(allocator, self.download_worker);
     result.sandbox_user = try copyOptional(allocator, self.sandbox_user);
     const assumed = try allocator.alloc(PackageRelation, self.assume_installed.len);
     for (self.assume_installed, assumed) |relation, *owned| {

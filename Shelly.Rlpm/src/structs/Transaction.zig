@@ -23,6 +23,7 @@ removals: std.ArrayList([]const u8) = .empty,
 system_upgrade: bool = false,
 allow_downgrade: bool = false,
 owned_plan: ?Plan = null,
+downloaded_files: ?[]@import("Downloads.zig").File = null,
 snapshot: [32]u8,
 lock: ?@import("DatabaseLock.zig") = null,
 
@@ -141,8 +142,9 @@ pub fn commit(self: *Transaction) !void {
     const reviewed = &self.owned_plan.?;
     // M7–M10 supply acquisition, preflight, hooks, and the mutation executor.
     // Preserve the review/lock on this recoverable capability error.
-    if (reviewed.additions.len != 0 or reviewed.removals.len != 0) return self.owner.transactionFailure(error.CommitUnavailable);
+    if (!self.flags.download_only and (reviewed.additions.len != 0 or reviewed.removals.len != 0)) return self.owner.transactionFailure(error.CommitUnavailable);
     self.transition(.committing, null);
+    if (self.flags.download_only) self.downloadInternal() catch |err| return self.failed(err);
     self.owner.checkCancelled() catch |err| return self.failed(err);
     self.transition(.completed, null);
 }
@@ -178,10 +180,55 @@ pub fn destroy(self: *Transaction) !void {
     defer self.storage.deinit();
     defer self.targets.deinit(allocator);
     defer self.removals.deinit(allocator);
+    if (self.downloaded_files) |files| {
+        for (files) |*file| file.deinit();
+        allocator.free(files);
+    }
     if (self.owned_plan) |*value| value.deinit();
     for (self.targets.items) |target| if (target == .archive) {
         target.archive.deinit();
         allocator.destroy(target.archive);
     };
     if (self.lock) |*lock| try lock.release(allocator);
+}
+
+/// Acquire and verify the reviewed packages without executing filesystem work.
+pub fn download(self: *Transaction) !void {
+    try self.begin(.prepared);
+    defer self.owner.busy = false;
+    self.downloadInternal() catch |err| return self.failed(err);
+}
+fn downloadInternal(self: *Transaction) !void {
+    try self.checkSnapshot();
+    if (self.downloaded_files != null) return;
+    const Downloads = @import("Downloads.zig");
+    var requests: std.ArrayList(Downloads.Request) = .empty;
+    defer requests.deinit(self.owner.allocator);
+    try self.downloadRequests(&requests);
+    self.owner.transactionEvent(.{ .phase = .{ .phase = .package_retrieve, .boundary = .start, .total_packages = requests.items.len } });
+    errdefer self.owner.transactionEvent(.{ .phase = .{ .phase = .package_retrieve, .boundary = .failed } });
+    self.downloaded_files = try Downloads.acquire(self.owner, self.io, requests.items);
+    try self.checkSnapshot();
+    self.owner.transactionEvent(.{ .phase = .{ .phase = .package_retrieve, .boundary = .done } });
+}
+
+fn downloadRequests(self: *Transaction, requests: *std.ArrayList(@import("Downloads.zig").Request)) !void {
+    const reviewed = &self.owned_plan.?;
+    for (reviewed.additions) |addition| {
+        const candidate = &reviewed.candidates[@intFromEnum(addition.package)];
+        const package = &candidate.package;
+        if (package.origin != .sync) continue;
+        const db = &self.owner.sync_databases.items[candidate.repository.?];
+        try requests.append(self.owner.allocator, .{ .name = package.repository_filename orelse return error.InvalidPackageFilename, .servers = db.servers.items, .cache_servers = db.cache_servers.items, .package = package, .policy = db.signature_policy });
+    }
+}
+pub fn downloadSize(self: *Transaction) !@import("Downloads.zig").Sizes {
+    try self.begin(.prepared);
+    errdefer |err| self.recordFailure(err);
+    defer self.owner.busy = false;
+    try self.checkSnapshot();
+    var requests: std.ArrayList(@import("Downloads.zig").Request) = .empty;
+    defer requests.deinit(self.owner.allocator);
+    try self.downloadRequests(&requests);
+    return @import("Downloads.zig").sizes(self.owner, self.io, requests.items);
 }

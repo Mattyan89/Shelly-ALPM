@@ -55,10 +55,25 @@ pub fn fromBytes(bytes: []const u8) !ImmutableFile {
     return result;
 }
 pub fn copy(io: std.Io, source: []const u8) !ImmutableFile {
-    const input = try std.Io.Dir.cwd().openFile(io, source, .{});
+    return copyOptions(io, source, .{}, null);
+}
+/// Untrusted worker outputs must be regular files, never followed symlinks.
+pub fn copyRegular(io: std.Io, source: []const u8, maximum: ?u64) !ImmutableFile {
+    // O_PATH inspects FIFOs/devices without blocking or opening the device.
+    // Reopen the retained regular inode, never the replaceable worker pathname.
+    const input = try std.Io.Dir.cwd().openFile(io, source, .{ .path_only = true, .follow_symlinks = false });
+    defer input.close(io);
+    if ((try input.stat(io)).kind != .file) return error.NotRegularFile;
+    var buffer: [80]u8 = undefined;
+    const retained = try std.fmt.bufPrint(&buffer, "/proc/{d}/fd/{d}", .{ c.getpid(), input.handle });
+    return copyOptions(io, retained, .{}, maximum);
+}
+fn copyOptions(io: std.Io, source: []const u8, options: std.Io.Dir.OpenFileOptions, maximum: ?u64) !ImmutableFile {
+    const input = try std.Io.Dir.cwd().openFile(io, source, options);
     defer input.close(io);
     const stat = try input.stat(io);
     if (stat.kind != .file) return error.NotRegularFile;
+    if (maximum) |max| if (stat.size > max) return error.SizeExceeded;
     var result = try create();
     errdefer result.deinit();
     var buffer: [64 * 1024]u8 = undefined;
@@ -74,6 +89,8 @@ pub fn copy(io: std.Io, source: []const u8) !ImmutableFile {
         remaining -= n;
     }
     if ((try input.stat(io)).size != stat.size) return error.FileChanged;
+    const output: std.Io.File = .{ .handle = result.fd, .flags = .{ .nonblocking = false } };
+    try output.setTimestamps(io, .{ .modify_timestamp = .{ .new = stat.mtime } });
     try result.seal();
     return result;
 }

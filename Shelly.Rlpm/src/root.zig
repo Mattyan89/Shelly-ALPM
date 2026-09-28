@@ -1,5 +1,6 @@
 //! Independent native package metadata and lifecycle API. Operational capability
 //! reporting is intentionally narrower than the eventual libalpm target.
+pub const Downloads = @import("structs/Downloads.zig");
 pub const Owner = @import("structs/Owner.zig");
 pub const OwnerConfiguration = @import("structs/OwnerConfiguration.zig");
 pub const Backend = @import("structs/Backend.zig").Backend;
@@ -47,7 +48,7 @@ pub const Capabilities = struct {
     signature_policy_enforcement: bool = true,
     resolution_plans: bool = true,
     transaction_lifecycle: bool = true,
-    downloads: bool = false,
+    downloads: bool = true,
     transactions: bool = false,
     localization: bool = false,
 };

@@ -13,11 +13,34 @@ pub fn decode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
 pub fn readDetached(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !?[]u8 {
     const sigpath = try std.fmt.allocPrint(allocator, "{s}.sig", .{path});
     defer allocator.free(sigpath);
-    return std.Io.Dir.cwd().readFileAlloc(io, sigpath, allocator, .limited(max_signature_size)) catch |err| switch (err) {
-        error.FileNotFound => null,
-        error.StreamTooLong => error.SignatureTooLarge,
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, sigpath, allocator, .limited(max_signature_size + 1)) catch |err| switch (err) {
+        error.FileNotFound => return null,
+        error.StreamTooLong => return error.SignatureTooLarge,
         else => return err,
     };
+    if (bytes.len > max_signature_size) {
+        allocator.free(bytes);
+        return error.SignatureTooLarge;
+    }
+    return bytes;
+}
+
+test "detached signatures accept the size boundary and reject larger files" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const directory = try temporary.dir.realPathFileAlloc(io, ".", a);
+    defer a.free(directory);
+    const path = try std.fs.path.join(a, &.{ directory, "package" });
+    defer a.free(path);
+    const bytes = [_]u8{0} ** (max_signature_size + 1);
+    try temporary.dir.writeFile(io, .{ .sub_path = "package.sig", .data = bytes[0..max_signature_size] });
+    const accepted = (try readDetached(a, io, path)).?;
+    defer a.free(accepted);
+    try std.testing.expectEqual(max_signature_size, accepted.len);
+    try temporary.dir.writeFile(io, .{ .sub_path = "package.sig", .data = &bytes });
+    try std.testing.expectError(error.SignatureTooLarge, readDetached(a, io, path));
 }
 pub const Issuers = struct {
     arena: std.heap.ArenaAllocator,

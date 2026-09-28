@@ -65,3 +65,7 @@ test {
     _ = @import("resolver.zig");
     _ = @import("transaction.zig");
 }
+
+test {
+    _ = @import("download.zig");
+}

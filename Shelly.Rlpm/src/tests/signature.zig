@@ -514,3 +514,72 @@ test "M4 real signed database is authenticated before publication and failed rel
     try std.testing.expectEqualStrings("demo", (try owner.package(package)).name);
     try std.testing.expectEqual(.invalid, (try owner.database(db)).last_verification.?.signatures[0].status);
 }
+
+test "M7 signed downloads acquire unknown keys only with consent and revalidate cache" {
+    var fixture = try SignatureFixture.init();
+    defer fixture.deinit() catch unreachable;
+    const io = std.testing.io;
+    const a = std.testing.allocator;
+    try fixture.temporary.dir.createDirPath(io, "cache");
+    const cache = try fixture.dataPath("cache");
+    defer a.free(cache);
+    const key = try fixture.dataPath("public-key.gpg");
+    defer a.free(key);
+    const url = try std.fmt.allocPrint(a, "file://{s}/test.db", .{fixture.path});
+    defer a.free(url);
+    var answer: ImportAnswer = .{};
+    var owner = try rlpm.Owner.init(io, a, .{
+        .root = fixture.path,
+        .database_path = fixture.path,
+        .cache_directories = &.{cache},
+        .gpg_directory = fixture.unknown_home,
+        .remote_file_signature_policy = .{ .package_trust = .{ .allow_unknown = true } },
+        .key_acquisition = .{ .key_files = &.{key}, .allow_keyserver = false, .allow_wkd = false },
+        .callbacks = .{ .question = ImportAnswer.callback, .question_context = &answer },
+    }, &.{});
+    defer owner.deinit() catch unreachable;
+    answer.owner = &owner;
+    try std.testing.expectError(error.KeyImportDeclined, owner.fetchPackage(io, url));
+    try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "cache/test.db", .{}));
+    answer.accept = true;
+    var file = try owner.fetchPackage(io, url);
+    defer file.deinit();
+    try std.testing.expect(file.validation.pgp);
+    var cached = try owner.fetchPackage(io, url);
+    defer cached.deinit();
+    try std.testing.expect(cached.cached and cached.validation.pgp);
+    try owner.setCallbacks(.{});
+    try fixture.temporary.dir.writeFile(io, .{ .sub_path = "cache/test.db", .data = "tampered" });
+    try fixture.temporary.dir.writeFile(io, .{ .sub_path = "test.db", .data = "tampered too" });
+    try std.testing.expectError(error.InvalidSignature, owner.fetchPackage(io, url));
+    const pinned = try std.Io.Dir.cwd().readFileAlloc(io, file.snapshot.path(), a, .limited(1000));
+    defer a.free(pinned);
+    try std.testing.expectEqualStrings(SignatureFixture.contents, pinned);
+}
+
+test "M7 signed refresh publishes a matched pair and preserves it after bad signatures" {
+    var fixture = try SignatureFixture.init();
+    defer fixture.deinit() catch unreachable;
+    const io = std.testing.io;
+    const a = std.testing.allocator;
+    var archive = try @import("archive_fixture.zig").init(&.{.{ .path = "demo-1-1/desc", .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n" }}, .none);
+    defer archive.deinit();
+    const source = try fixture.dataPath("core.db");
+    defer a.free(source);
+    try std.Io.Dir.cwd().copyFile(archive.path, .cwd(), source, io, .{});
+    try fixture.sign("core.db", SignatureFixture.identity, &.{});
+    const server = try std.fmt.allocPrint(a, "file://{s}", .{fixture.path});
+    defer a.free(server);
+    var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .gpg_directory = fixture.signer_home, .default_signature_policy = .{} }, &.{.{ .database_name = "core", .servers = &.{server} }});
+    defer owner.deinit() catch unreachable;
+    var refresh = try owner.refreshDatabases(io, true);
+    defer refresh.deinit();
+    try refresh.check();
+    try owner.reloadDatabase(io, owner.findDatabase("core").?);
+    try fixture.temporary.dir.writeFile(io, .{ .sub_path = "core.db.sig", .data = "invalid signature" });
+    var rejected = try owner.refreshDatabases(io, true);
+    defer rejected.deinit();
+    try std.testing.expectEqual(.failed, rejected.databases[0].outcome);
+    try owner.reloadDatabase(io, owner.findDatabase("core").?);
+    try std.testing.expect((try owner.findPackage(owner.findDatabase("core").?, "demo")) != null);
+}

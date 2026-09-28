@@ -1,11 +1,11 @@
 # Transactions, locks and callbacks
 
-M6 adds an Owner-owned transaction and the prepare/commit boundary. It is ready
-for acceptance; M7 has not started. `transaction_lifecycle` is enabled, while
-`transactions` and `downloads` remain false. A nonempty `commit()` returns
-`CommitUnavailable` and retains the prepared plan and lock. Acquisition,
-preflight, hooks, filesystem changes and database persistence belong to M7–M10.
-No package-operation or transaction-success event is fabricated for that call.
+M6 is accepted. M7 adds verified acquisition and DOWNLOADONLY commits through
+[the shared download layer](downloads.md). `transaction_lifecycle` and `downloads`
+are enabled; `transactions` remains false. Normal nonempty `commit()` still returns
+`CommitUnavailable`, retaining the prepared plan and lock. M8–M10 supply preflight,
+hooks and installed-state changes. DOWNLOADONLY can complete with zero packages
+committed to the installed database.
 
 ```zig
 var owner = try rlpm.Owner.init(io, allocator, configuration, repositories);
@@ -33,7 +33,7 @@ active pointer: do not retry cleanup using the old pointer.
 | --- | --- |
 | `initialized` | `addTarget`, `addPackage`, `takeArchive`, `remove`, `systemUpgrade`, `prepare`, release |
 | `preparing` | Synchronous callbacks; atomic cancellation only |
-| `prepared` | Read the plan, `commit`, release |
+| `prepared` | Read the plan, `downloadSize`, `download`, `commit`, release |
 | `committing` | Synchronous callbacks; atomic cancellation only |
 | `completed`, `failed`, `interrupted` | Read retained outcome/diagnostics, release |
 | `released` | Final lifecycle notification; pointer expires after callback |
@@ -121,8 +121,8 @@ Callbacks run synchronously and borrow payloads. Reentry fails with
 `CallbackReentry`. `Owner.requestCancellation` is the only cross-thread operation;
 it sets an atomic flag. Preparation checks it during hashing/solving, before and
 after questions/events, and before the commit boundary. Release remains available
-after cancellation. Downloads, preflight and mutation interruption points must be
-connected when those stages exist; M6 makes no rollback or partial-commit claim.
+after cancellation. Download cancellation is connected in M7; preflight and mutation interruption
+points remain for M8–M10; M6 makes no rollback or partial-commit claim.
 
 PackageManager exports the opt-in `RlpmOperationAdapter`; the default backend
 selection is unchanged. Attach it at a stable address before initialization and

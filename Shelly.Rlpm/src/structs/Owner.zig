@@ -29,6 +29,8 @@ cancelled: std.atomic.Value(bool) = .init(false),
 last_diagnostic: ?Diagnostic = null,
 last_verification: ?@import("SignatureResult.zig") = null,
 active_transaction: ?*Transaction = null,
+fallback_cache: ?[]const u8 = null,
+download_servers: std.ArrayList(@import("Downloads.zig").ServerState) = .empty,
 
 var next_owner_id: std.atomic.Value(u64) = .init(1);
 
@@ -75,6 +77,9 @@ pub fn deinit(self: *Owner) !void {
     if (self.active_transaction != null) return error.TransactionActive;
     Verification.clearReport(&self.last_verification);
     self.destroyDatabases();
+    for (self.download_servers.items) |entry| self.allocator.free(entry.host);
+    self.download_servers.deinit(self.allocator);
+    if (self.fallback_cache) |path| self.allocator.free(path);
     self.configuration_arena.deinit();
     self.* = undefined;
 }
@@ -414,7 +419,7 @@ fn loadPackageInternal(self: *Owner, io: std.Io, path: []const u8, source: Packa
     loaded.verified_archive = snapshot;
     return loaded;
 }
-fn verificationContext(self: *Owner) Verification.Context {
+pub fn verificationContext(self: *Owner) Verification.Context {
     return .{ .gpg_directory = self.configuration.gpg_directory, .acquisition = self.configuration.key_acquisition, .question_context = self, .question = importQuestion, .check_cancelled = verificationCancellation };
 }
 fn importQuestion(context: ?*anyopaque, question: *Callbacks.Question) !void {
@@ -720,7 +725,7 @@ pub fn ask(self: *Owner, question: *Callbacks.Question) !void {
     if (std.meta.activeTag(original) != std.meta.activeTag(question.*)) return self.fail(.callback, error.InvalidAnswer, null);
     if (question.* == .select_provider and question.select_provider.selected >= question.select_provider.candidates.len) return self.fail(.callback, error.InvalidAnswer, null);
 }
-fn askInternal(self: *Owner, question: *Callbacks.Question) !void {
+pub fn askInternal(self: *Owner, question: *Callbacks.Question) !void {
     try self.checkCancelled();
     var answer = question.*;
     if (self.configuration.callbacks.question_with_error) |callback| {
@@ -833,4 +838,54 @@ pub fn transactionEvent(self: *Owner, event: Callbacks.Event) void {
         defer self.in_callback = false;
         callback(self.configuration.callbacks.event_context, event);
     }
+}
+
+/// Download callbacks are always dispatched on the owning thread.
+pub fn downloadEvent(self: *Owner, event: Callbacks.Download) void {
+    if (self.configuration.callbacks.download) |callback| {
+        self.in_callback = true;
+        defer self.in_callback = false;
+        callback(self.configuration.callbacks.download_context, event);
+    }
+}
+pub fn fetchPackage(self: *Owner, io: std.Io, url: []const u8) !@import("Downloads.zig").File {
+    try self.begin(.download);
+    defer self.busy = false;
+    return self.fetchPackageInternal(io, url) catch |err| return self.fail(.download, err, null);
+}
+fn fetchPackageInternal(self: *Owner, io: std.Io, url: []const u8) !@import("Downloads.zig").File {
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    defer arena.deinit();
+    const Downloads = @import("Downloads.zig");
+    const name = try Downloads.urlFilename(arena.allocator(), url);
+    const files = try Downloads.acquire(self, io, &.{.{ .name = name, .url = url, .servers = &.{}, .policy = self.configuration.effectiveRemoteSignaturePolicy() }});
+    defer self.allocator.free(files);
+    return files[0];
+}
+
+/// Aggregate refresh attempts every enabled repository; inspect result.check().
+pub fn refreshDatabases(self: *Owner, io: std.Io, force: bool) !@import("Downloads.zig").RefreshResult {
+    try self.begin(.refresh);
+    defer self.busy = false;
+    return @import("Downloads.zig").refresh(self, io, force) catch |err| return self.fail(.refresh, err, null);
+}
+
+/// Bounded acquisition of a URL batch; the caller owns the returned FileSet.
+pub fn fetchPackageUrls(self: *Owner, io: std.Io, urls: []const []const u8) !@import("Downloads.zig").FileSet {
+    try self.begin(.download);
+    defer self.busy = false;
+    errdefer |err| {
+        self.last_diagnostic = Diagnostic.init(.download, err, null);
+    }
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    defer arena.deinit();
+    const Downloads = @import("Downloads.zig");
+    const requests = try arena.allocator().alloc(Downloads.Request, urls.len);
+    for (urls, requests) |url, *request| request.* = .{
+        .name = try Downloads.urlFilename(arena.allocator(), url),
+        .url = url,
+        .servers = &.{},
+        .policy = self.configuration.effectiveRemoteSignaturePolicy(),
+    };
+    return .{ .allocator = self.allocator, .files = try Downloads.acquire(self, io, requests) };
 }

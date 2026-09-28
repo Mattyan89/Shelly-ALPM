@@ -36,6 +36,7 @@ pub const PackageIndex = struct {
 };
 
 allocator: std.mem.Allocator,
+last_refresh_updated: bool = false,
 arena: std.heap.ArenaAllocator,
 cache_arena: std.heap.ArenaAllocator,
 kind: Kind = .local,
@@ -223,18 +224,40 @@ pub fn reloadWithVerification(self: *Database, io: std.Io, context: Verification
     old.deinit();
 }
 fn populate(self: *Database, io: std.Io, context: Verification.Context) !void {
+    if (self.backend == .sync) {
+        const Publication = @import("Publication.zig");
+        var guard = Publication.DirectoryLock.acquire(std.fs.path.dirname(self.path).?, false, false) catch |err| {
+            std.Io.Dir.cwd().access(io, self.path, .{}) catch |failure| return failure;
+            return err;
+        };
+        defer guard.deinit();
+        try Publication.ensureReadable(io, self.allocator, self.path);
+        return self.populateStaged(io, context);
+    }
+    return self.populateStaged(io, context);
+}
+/// Internal: caller owns exclusive access to this private staging directory.
+pub fn populateStaged(self: *Database, io: std.Io, context: Verification.Context) !void {
     switch (self.backend) {
         .local => |local| try local.populate(io, self),
         .sync => {
             var snapshot = try @import("ImmutableFile.zig").copy(io, self.path);
             defer snapshot.deinit();
-            _ = try Verification.check(self.allocator, io, context, &snapshot, self.path, .{
-                .requirement = self.signature_policy.database,
-                .trust = self.signature_policy.database_trust,
-            }, &self.last_verification);
-            try @import("SyncBackend.zig").populateFromPath(self, snapshot.path());
+            return self.populateSealed(io, context, &snapshot, .read_from_path);
         },
     }
+    self.finishPopulation();
+}
+pub fn populateSealed(self: *Database, io: std.Io, context: Verification.Context, snapshot: *const @import("ImmutableFile.zig"), signature: @FieldType(Verification.Options, "detached_signature")) !void {
+    _ = try Verification.check(self.allocator, io, context, snapshot, self.path, .{
+        .requirement = self.signature_policy.database,
+        .trust = self.signature_policy.database_trust,
+        .detached_signature = signature,
+    }, &self.last_verification);
+    try @import("SyncBackend.zig").populateFromPath(self, snapshot.path());
+    self.finishPopulation();
+}
+fn finishPopulation(self: *Database) void {
     std.mem.sort(PackageId, self.packages.ordered.items, self, struct {
         fn lessThan(db: *Database, a: PackageId, b: PackageId) bool {
             return std.mem.lessThan(u8, db.packages.packages.items[@intFromEnum(a)].name, db.packages.packages.items[@intFromEnum(b)].name);

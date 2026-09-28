@@ -4,6 +4,8 @@ const std = @import("std");
 const DatabaseRef = @import("DatabaseRef.zig");
 
 pub const Operation = enum {
+    download,
+    refresh,
     configure,
     register_database,
     unregister_database,

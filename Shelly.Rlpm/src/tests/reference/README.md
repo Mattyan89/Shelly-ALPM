@@ -234,3 +234,10 @@ The production executor remains M7–M10. `test-transaction` replays the fixture
 normal builds never load the reference library. See the
 [transaction guide](../../../transactions.md) for representation and safety
 differences, independent process tests and deferred UI integration.
+
+M7 adds `record_download.py` and `download-oracle.jsonl`. The recorder checks the
+frozen library hash and uses private roots, caches and file mirrors. Its only
+nonempty commits independently require DOWNLOADONLY and an empty removal list.
+Six outcomes are replayed by `src/tests/download.zig`; rejected-file cache retention
+is an explicitly documented staging difference. These additions do not change
+any original frozen asset.

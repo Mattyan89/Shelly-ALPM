@@ -11,10 +11,17 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    const download = b.dependency("shelly_download", .{ .target = target, .optimize = optimize });
+    mod.addImport("Shelly_Download", download.module("Shelly_Download"));
+    const worker_options = b.addOptions();
+    worker_options.addOptionPath("worker_path", download.artifact("shelly-download-worker").getEmittedBin());
+    mod.addOptions("download_worker", worker_options);
+    b.installArtifact(download.artifact("shelly-download-worker"));
     mod.addImport("Shelly_Key", shelly_key.module("Shelly_Key"));
     mod.linkSystemLibrary("archive", .{});
     mod.linkSystemLibrary("sqlite3", .{});
     mod.addCSourceFile(.{ .file = b.path("src/native/regex.c"), .flags = &.{"-std=c11"} });
+    mod.addCSourceFile(.{ .file = b.path("src/native/publication.c"), .flags = &.{"-std=c11"} });
     mod.addCSourceFile(.{ .file = b.path("src/native/lock.c"), .flags = &.{"-std=c11"} });
 
     const exe = b.addExecutable(.{
@@ -81,6 +88,23 @@ pub fn build(b: *std.Build) void {
     }) });
     b.step("test-resolver", "Run M5 resolution, removal, system-upgrade and reference fixtures").dependOn(&b.addRunArtifact(resolver_tests).step);
 
+    const sandbox_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/download_sandbox.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    const sandbox_run = b.addRunArtifact(sandbox_tests);
+    sandbox_run.has_side_effects = true;
+    b.step("test-download-sandbox", "Opt-in root-only sandbox integration, private /tmp roots").dependOn(&sandbox_run.step);
+    b.step("check-download-sandbox", "Compile the root-only integration fixture").dependOn(&sandbox_tests.step);
+    const download_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/download.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    b.step("test-download", "Run M7 private-cache, acquisition, refresh and DOWNLOADONLY fixtures").dependOn(&b.addRunArtifact(download_tests).step);
     const transaction_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/transaction.zig"),
         .target = target,
@@ -143,6 +167,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
         .imports = &.{.{ .name = "Shelly_Key", .module = shelly_key.module("Shelly_Key") }},
     });
+    host_mod.addCSourceFile(.{ .file = b.path("src/native/publication.c"), .flags = &.{"-std=c11"} });
     host_mod.linkSystemLibrary("archive", .{});
     host_mod.linkSystemLibrary("sqlite3", .{});
     const host_tests = b.addTest(.{
