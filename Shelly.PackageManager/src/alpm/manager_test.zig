@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const manager = @import("manager.zig");
+// This suite exercises native handles and callbacks directly.
+const manager = @import("libalpm_manager.zig");
 const bindings = @import("bindings.zig");
 const events = @import("events.zig");
 const operations = @import("operation_context");
@@ -3288,14 +3289,11 @@ test "get_allowed_architecture returns the resolved host architecture and any" {
         allocator.free(architectures);
     }
 
-    const expected_host = switch (builtin.cpu.arch) {
-        .x86_64 => "x86_64",
-        .aarch64 => "aarch64",
-        else => "x86_64",
-    };
-    try testing.expectEqual(@as(usize, 2), architectures.len);
-    try testing.expectEqualStrings(expected_host, architectures[0]);
-    try testing.expectEqualStrings("any", architectures[1]);
+    var physical = try @import("Shelly_Rlpm").PhysicalArchitectures.init(allocator);
+    defer physical.deinit();
+    try testing.expectEqual(physical.names.len + 1, architectures.len);
+    for (physical.names, architectures[0..physical.names.len]) |expected, actual| try testing.expectEqualStrings(expected, actual);
+    try testing.expectEqualStrings("any", architectures[physical.names.len]);
 }
 
 // ---------------------------------------------------------------------------
@@ -3453,7 +3451,7 @@ test "Manager.init registers and deduplicates repository microarchitectures" {
     const config = try std.fmt.allocPrint(
         allocator,
         "[options]\n" ++
-            "Architecture = auto\n" ++
+            "Architecture = x86_64\n" ++
             "SigLevel = Never\n" ++
             "DBPath = {s}\n" ++
             "\n" ++
@@ -3479,11 +3477,7 @@ test "Manager.init registers and deduplicates repository microarchitectures" {
         allocator.free(architectures);
     }
 
-    const host = switch (builtin.cpu.arch) {
-        .x86_64 => "x86_64",
-        .aarch64 => "aarch64",
-        else => "x86_64",
-    };
+    const host = "x86_64";
     const expected = [_][]const u8{
         host,
         "any",
@@ -3593,7 +3587,7 @@ test "Manager.init ignores malformed and sub-v2 microarchitecture suffixes" {
     const config = try std.fmt.allocPrint(
         allocator,
         "[options]\n" ++
-            "Architecture = auto\n" ++
+            "Architecture = x86_64\n" ++
             "SigLevel = Never\n" ++
             "DBPath = {s}\n" ++
             "\n" ++

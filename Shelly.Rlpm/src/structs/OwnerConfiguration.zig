@@ -32,6 +32,7 @@ local_file_signature_policy: ?SignaturePolicy = disabled_signatures,
 remote_file_signature_policy: ?SignaturePolicy = disabled_signatures,
 disable_download_timeout: bool = false,
 parallel_downloads: u32 = 1,
+address_family_policy: @import("Shelly_Download").AddressFamilyPolicy = .prefer_ipv4,
 sandbox_user: ?[]const u8 = null,
 /// Installed worker override; default resolves the matching build artifact.
 download_worker: ?[]const u8 = null,

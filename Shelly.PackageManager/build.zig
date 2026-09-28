@@ -42,6 +42,8 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+    const enable_libalpm = b.option(bool, "libalpm", "Include the libalpm backend alongside RLPM") orelse true;
+    const rlpm_dependency = b.dependency("shelly_rlpm", .{ .target = target, .optimize = optimize });
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
     const operation_context_mod = b.createModule(.{
         .root_source_file = b.path("src/shared/operation_context.zig"),
@@ -55,7 +57,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "operation_context", .module = operation_context_mod },
-            .{ .name = "Shelly_Rlpm", .module = b.dependency("shelly_rlpm", .{ .target = target, .optimize = optimize }).module("Shelly_Rlpm") },
+            .{ .name = "Shelly_Rlpm", .module = rlpm_dependency.module("Shelly_Rlpm") },
         },
     });
     const rlpm_adapter_tests = b.addRunArtifact(b.addTest(.{ .root_module = rlpm_adapter }));
@@ -81,16 +83,6 @@ pub fn build(b: *std.Build) void {
 
     // Generate the raw libalpm bindings from the installed system headers.
     // Zig caches the generated module and regenerates it when its inputs change.
-    const translate_alpm = b.addTranslateC(.{
-        .root_source_file = b.path("src/alpm/alpm_include.h"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
-    translate_alpm.linkSystemLibrary("alpm", .{
-        .use_pkg_config = .force,
-    });
-    const alpm_c = translate_alpm.createModule();
 
     const user_account_mod = b.createModule(.{
         .root_source_file = b.path("src/shared/user_account.zig"),
@@ -131,7 +123,23 @@ pub fn build(b: *std.Build) void {
     });
     mod.addImport("diagnostics", diagnostics);
     mod.addImport("Shelly_Download", shelly_download);
-    mod.addImport("alpm_c", alpm_c);
+    if (enable_libalpm) {
+        const translate_alpm = b.addTranslateC(.{
+            .root_source_file = b.path("src/alpm/alpm_include.h"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        translate_alpm.linkSystemLibrary("alpm", .{
+            .use_pkg_config = .force,
+        });
+        const alpm_c = translate_alpm.createModule();
+        mod.addImport("alpm_c", alpm_c);
+    }
+    mod.addImport("Shelly_Rlpm", rlpm_dependency.module("Shelly_Rlpm"));
+    b.installArtifact(rlpm_dependency.artifact("shelly-rlpm-action-worker"));
+    const download_dependency = b.dependency("shelly_download", .{ .target = target, .optimize = optimize });
+    b.installArtifact(download_dependency.artifact("shelly-download-worker"));
     mod.addImport("archive", archive_mod);
     mod.addImport("operation_context", operation_context_mod);
     mod.addImport("rlpm_operation_adapter", rlpm_adapter);
@@ -143,6 +151,7 @@ pub fn build(b: *std.Build) void {
     // Keep this generated module distinct from consumers that independently
     // expose an identically-valued `version` option.
     package_options.addOption(bool, "is_package_manager", true);
+    package_options.addOption(bool, "libalpm", enable_libalpm);
     mod.addOptions("package_options", package_options);
 
     // PackageManager imports only the backend's data-only protocol module.
@@ -167,6 +176,32 @@ pub fn build(b: *std.Build) void {
         ) orelse "/usr/lib/shelly/libshelly-flatpak-backend.so.1",
     );
     mod.addOptions("flatpak_backend_options", flatpak_backend_options);
+
+    const native_backend_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/alpm/backend_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Zigalpm", .module = mod }},
+    }) });
+    b.step("native-backend-test", "Test native selection, transactions and interoperability in private roots").dependOn(&b.addRunArtifact(native_backend_tests).step);
+    const staged_native = b.addWriteFiles();
+    const staged_test = staged_native.addCopyFile(native_backend_tests.getEmittedBin(), "native-backend-test");
+    _ = staged_native.addCopyFile(rlpm_dependency.artifact("shelly-rlpm-action-worker").getEmittedBin(), "shelly-rlpm-action-worker");
+    _ = staged_native.addCopyFile(download_dependency.artifact("shelly-download-worker").getEmittedBin(), "shelly-download-worker");
+    const run_staged_native = b.addSystemCommand(&.{"env"});
+    run_staged_native.addFileArg(staged_test);
+    run_staged_native.setEnvironmentVariable("SHELLY_TEST_INSTALLED_WORKERS", "1");
+    b.step("native-backend-staged-test", "Test RLPM with workers beside the installed executable").dependOn(&run_staged_native.step);
+
+    const native_environment_tests = b.addTest(.{
+        .root_module = mod,
+        .filters = &.{
+            "Manager.sync keeps included repository mirrors separate during fallback",
+            "ALPM package and database downloads honor limits across mirror retries",
+            "PackageBuilder signs published packages with the configured signing key",
+        },
+    });
+    b.step("native-environment-test", "Test loopback downloads and temporary-keyring signing").dependOn(&b.addRunArtifact(native_environment_tests).step);
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
@@ -488,17 +523,8 @@ pub fn build(b: *std.Build) void {
     const run_download_limit_tests = b.addRunArtifact(download_limit_tests);
     downloader_test_step.dependOn(&run_download_limit_tests.step);
 
-    const cache_test_module = b.createModule(.{
-        .root_source_file = b.path("src/alpm/cache_manager.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
-    cache_test_module.addImport("diagnostics", diagnostics);
-    cache_test_module.addImport("Shelly_Download", shelly_download);
-    cache_test_module.addImport("alpm_c", alpm_c);
-    cache_test_module.addImport("operation_context", operation_context_mod);
-    const cache_tests = b.addTest(.{ .name = "cache-test", .root_module = cache_test_module });
+    const cache_test_module = mod;
+    const cache_tests = b.addTest(.{ .name = "cache-test", .root_module = cache_test_module, .filters = &.{"cache"} });
     const run_cache_tests = b.addRunArtifact(cache_tests);
     const cache_test_step = b.step("cache-test", "Run safe package-cache tests");
     cache_test_step.dependOn(&run_cache_tests.step);

@@ -4,6 +4,7 @@ const package_manifest = @import("build.zig.zon");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const enable_libalpm = b.option(bool, "libalpm", "Include the libalpm backend alongside RLPM") orelse true;
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
     const flatpak_backend_path = b.option(
         []const u8,
@@ -12,11 +13,14 @@ pub fn build(b: *std.Build) void {
     ) orelse "/usr/lib/shelly/libshelly-flatpak-backend.so.1";
 
     const zigalpm_dependency = b.dependency("zigalpm", .{
+        .libalpm = enable_libalpm,
         .target = target,
         .optimize = optimize,
         .@"flatpak-backend-path" = flatpak_backend_path,
     });
     const zigalpm = zigalpm_dependency.module("Zigalpm");
+    b.installArtifact(zigalpm_dependency.artifact("shelly-rlpm-action-worker"));
+    b.installArtifact(zigalpm_dependency.artifact("shelly-download-worker"));
 
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "version", package_manifest.version);

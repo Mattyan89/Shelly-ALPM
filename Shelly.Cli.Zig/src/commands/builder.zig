@@ -1792,12 +1792,8 @@ fn validateIsolatedArtifacts(
     artifact_directory: []const u8,
     expected_names: []const []const u8,
 ) ![]isolated_build.ValidatedArtifact {
-    const bindings = Zigalpm.alpm.bindings.libalpm;
-    const raw = bindings.alpm;
-    var alpm_error: raw.alpm_errno_t = 0;
-    const handle = raw.alpm_initialize("/", "/var/lib/pacman", &alpm_error) orelse
-        return error.ArtifactValidationFailed;
-    defer _ = raw.alpm_release(handle);
+    const manager = try Zigalpm.AlpmManager.init(context.allocator, context.environ, .{});
+    defer manager.deinit();
 
     const found = try context.allocator.alloc(bool, expected_names.len);
     defer context.allocator.free(found);
@@ -1814,12 +1810,9 @@ fn validateIsolatedArtifacts(
         if (entry.kind != .file or !isolated_build.isPackageArtifact(entry.name)) continue;
         const path = try std.fs.path.joinZ(context.allocator, &.{ artifact_directory, entry.name });
         defer context.allocator.free(path);
-        var package: ?*raw.alpm_pkg_t = null;
-        if (raw.alpm_pkg_load(handle, path.ptr, 1, 0, &package) != 0 or package == null)
-            return error.ArtifactValidationFailed;
-        defer _ = raw.alpm_pkg_free(package.?);
-        const package_name = bindings.str(raw.alpm_pkg_get_name(package.?)) orelse
-            return error.ArtifactValidationFailed;
+        var package = manager.load_archive(path) catch return error.ArtifactValidationFailed;
+        defer package.deinit(context.allocator);
+        const package_name = package.name_value;
         var matched = false;
         for (expected_names, found) |expected, *was_found| {
             if (!std.mem.eql(u8, package_name, expected)) continue;
@@ -2263,23 +2256,29 @@ const IsolatedResolverContext = struct {
     }
 };
 
-fn isolatedDependencyInstalled(_: ?*anyopaque, _: [:0]const u8) bool {
+fn isolatedDependencyInstalled(_: ?*anyopaque, _: [:0]const u8) anyerror!bool {
     return false;
 }
 
-fn isolatedRepoSatisfier(context: ?*anyopaque, dependency: [:0]const u8) ?[]const u8 {
+fn isolatedRepoSatisfier(context: ?*anyopaque, dependency: [:0]const u8) anyerror!?[]const u8 {
     const self: *IsolatedResolverContext = @ptrCast(@alignCast(context.?));
-    return self.manager.find_remote_satisfier_for_dependency(dependency) catch null;
+    return self.manager.find_remote_satisfier_for_dependency(dependency) catch |err| switch (err) {
+        error.PkgNotFound => return null,
+        else => return err,
+    };
 }
 
-fn alpmDependencyInstalled(context: ?*anyopaque, dependency: [:0]const u8) bool {
+fn alpmDependencyInstalled(context: ?*anyopaque, dependency: [:0]const u8) anyerror!bool {
     const self: *AlpmResolverContext = @ptrCast(@alignCast(context.?));
-    return self.manager.is_dependency_satisfied_by_installed_packages(dependency) catch false;
+    return self.manager.is_dependency_satisfied_by_installed_packages(dependency);
 }
 
-fn alpmRepoSatisfier(context: ?*anyopaque, dependency: [:0]const u8) ?[]const u8 {
+fn alpmRepoSatisfier(context: ?*anyopaque, dependency: [:0]const u8) anyerror!?[]const u8 {
     const self: *AlpmResolverContext = @ptrCast(@alignCast(context.?));
-    return self.manager.find_remote_satisfier_for_dependency(dependency) catch null;
+    return self.manager.find_remote_satisfier_for_dependency(dependency) catch |err| switch (err) {
+        error.PkgNotFound => return null,
+        else => return err,
+    };
 }
 
 const SyncDependencyPlan = struct {
@@ -3971,11 +3970,11 @@ test "sync deps child preserves implicit all-members selection" {
 }
 
 const fake_sync_deps_backend = struct {
-    fn installed(_: ?*anyopaque, dependency: [:0]const u8) bool {
+    fn installed(_: ?*anyopaque, dependency: [:0]const u8) anyerror!bool {
         return std.mem.eql(u8, dependency, "glibc");
     }
 
-    fn repo(_: ?*anyopaque, dependency: [:0]const u8) ?[]const u8 {
+    fn repo(_: ?*anyopaque, dependency: [:0]const u8) anyerror!?[]const u8 {
         if (std.mem.eql(u8, dependency, "cmake>=3")) return "cmake";
         if (std.mem.eql(u8, dependency, "meson")) return "meson";
         return null;
@@ -4527,10 +4526,10 @@ test "issue 1880 preparation failure reaches JSON and persistent log before buil
 
 test "sync deps PipeWire split outputs do not provision their runtime providers" {
     const Backend = struct {
-        fn installed(_: ?*anyopaque, _: [:0]const u8) bool {
+        fn installed(_: ?*anyopaque, _: [:0]const u8) anyerror!bool {
             return false;
         }
-        fn repo(_: ?*anyopaque, dependency: [:0]const u8) ?[]const u8 {
+        fn repo(_: ?*anyopaque, dependency: [:0]const u8) anyerror!?[]const u8 {
             const known = [_][]const u8{ "jack2", "meson", "desktop-file-utils" };
             for (known) |name| if (std.mem.eql(u8, name, dependency)) return name;
             return null;
@@ -4602,10 +4601,10 @@ test "sync deps PipeWire split outputs do not provision their runtime providers"
 
 test "sync deps keeps versioned global inputs even when a sibling will provide them" {
     const Backend = struct {
-        fn installed(_: ?*anyopaque, _: [:0]const u8) bool {
+        fn installed(_: ?*anyopaque, _: [:0]const u8) anyerror!bool {
             return false;
         }
-        fn repo(_: ?*anyopaque, dependency: [:0]const u8) ?[]const u8 {
+        fn repo(_: ?*anyopaque, dependency: [:0]const u8) anyerror!?[]const u8 {
             if (std.mem.eql(u8, dependency, "compiler>=2")) return "compiler";
             if (std.mem.eql(u8, dependency, "native-lib")) return "native-lib";
             return null;

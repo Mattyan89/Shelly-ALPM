@@ -3,7 +3,11 @@
 RLPM is the native Zig package backend under development. The
 [completion plan](../docs/rlpm-libalpm-completion-plan.md) targets libalpm's
 functional behavior **including CachyOS extensions**, following the existing
-Owner/Database/Package design. M0–M9 are accepted; M10 is implemented and awaiting acceptance before M11. Production backend integration remains M11.
+Owner/Database/Package design. M0–M10 are accepted. M11 integrates runtime
+configuration-based libalpm/RLPM selection, with both backends built by default
+and `-Dlibalpm=false` for an RLPM-only build. See the
+[backend guide](../docs/native-package-backends.md). Integration is implemented;
+full release parity and milestone acceptance remain subject to the plan's gates.
 
 M1 exports an owning `Owner` with copied options, ordered repository registration,
 read-only local queries, stable database identity, package cache generations,

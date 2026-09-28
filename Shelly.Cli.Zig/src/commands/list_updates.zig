@@ -691,7 +691,7 @@ fn runStandard(context: *runtime.RuntimeContext) !Result {
     defer manager.deinit();
     try manager.sync_for_update_check(force_standard_database_refresh);
     const native_updates = try manager.get_updates_available();
-    defer Zigalpm.alpm.bindings.libalpm.OwnedPackageWithUpdate.deinitSlice(
+    defer Zigalpm.alpm.types.OwnedPackageWithUpdate.deinitSlice(
         context.allocator,
         native_updates,
     );

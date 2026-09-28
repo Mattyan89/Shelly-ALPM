@@ -7,7 +7,7 @@ pkgrel=1
 arch=('x86_64' 'aarch64')
 url="https://github.com/Seafoam-Labs/Shelly-ALPM"
 license=('GPL-3.0-only')
-makedepends=('git' 'pkgconf' 'gtk4' 'zig>=0.16' 'clang' 'gettext' 'flatpak' 'ripgrep' 'go-md2man')
+makedepends=('libarchive' 'curl' 'sqlite' 'gnupg' 'git' 'pkgconf' 'gtk4' 'zig>=0.16' 'clang' 'gettext' 'flatpak' 'ripgrep' 'go-md2man')
 
 # Source tarball from GitHub release
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/Seafoam-Labs/Shelly-ALPM/archive/v${pkgver}.tar.gz"
@@ -42,7 +42,7 @@ build() {
     -Dcpu=baseline \
     -Doptimize=ReleaseSafe)
 
-  (cd Shelly.Cli.Zig && zig build --verbose \
+  (cd Shelly.Cli.Zig && zig build -Dlibalpm="${SHELLY_LIBALPM:-true}" --verbose \
     --prefix "${srcdir}/${_source_dir}/out-cli" \
     --cache-dir "${srcdir}/zig-cache" \
     --global-cache-dir "${srcdir}/zig-global-cache" \
@@ -90,10 +90,10 @@ check() {
   (cd Shelly.Flatpak.Backend && zig build test abi-test integration-test \
     --cache-dir "${srcdir}/zig-cache" \
     --global-cache-dir "${srcdir}/zig-global-cache")
-  (cd Shelly.PackageManager && zig build flatpak-test \
+  (cd Shelly.PackageManager && zig build -Dlibalpm="${SHELLY_LIBALPM:-true}" flatpak-test \
     --cache-dir "${srcdir}/zig-cache" \
     --global-cache-dir "${srcdir}/zig-global-cache")
-  (cd Shelly.Cli.Zig && zig build test \
+  (cd Shelly.Cli.Zig && zig build -Dlibalpm="${SHELLY_LIBALPM:-true}" test \
     --cache-dir "${srcdir}/zig-cache" \
     --global-cache-dir "${srcdir}/zig-global-cache")
 }
@@ -115,6 +115,8 @@ package_shelly() {
       'dbus'
       'glibc'
       'libarchive'
+    'curl'
+    'sqlite'
       'dconf'
       'gnupg'
       'zstd'
@@ -133,6 +135,9 @@ package_shelly() {
   install -Dm755 out-notifications/bin/shelly-notifications "$pkgdir/usr/bin/shelly-notifications"
   install -Dm755 out/bin/Shelly_Ui_Gtk "$pkgdir/usr/bin/shelly-ui"
   install -Dm755 out-cli/bin/shelly "$pkgdir/usr/bin/shelly"
+  for worker in shelly-rlpm-action-worker shelly-download-worker; do
+    install -Dm755 "out-cli/bin/$worker" "$pkgdir/usr/bin/$worker"
+  done
   install -Dm755 out-key/bin/shelly-key "$pkgdir/usr/bin/shelly-key"
   install -Dm644 "$srcdir/shellybuild.conf" "$pkgdir/etc/shellybuild.conf"
 

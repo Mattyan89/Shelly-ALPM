@@ -16,6 +16,7 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+    const enable_libalpm = b.option(bool, "libalpm", "Include libalpm alongside RLPM") orelse true;
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
     // It's also possible to define more custom flags to toggle optional features
     // of this build script using `b.option()`. All defined flags (including
@@ -96,6 +97,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("vaxis", vaxis_module);
 
     const zigalpm_dependency = b.dependency("zigalpm", .{
+        .libalpm = enable_libalpm,
         .target = target,
         .optimize = optimize,
     });

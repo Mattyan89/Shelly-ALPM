@@ -27,6 +27,8 @@ pub fn dispatch(
     context: *runtime.RuntimeContext,
     invocation: *const parser.Invocation,
 ) !u8 {
+    if (try config.dispatch(context, invocation)) |exit_code| return exit_code;
+    try @import("../config/native_backend.zig").apply(context);
     if (try search_install.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try upgrade.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try sync.dispatch(context, invocation)) |exit_code| return exit_code;
@@ -40,7 +42,6 @@ pub fn dispatch(
     if (try mark.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try news.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try search.dispatch(context, invocation)) |exit_code| return exit_code;
-    if (try config.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try purify.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try remove.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try repo_db.dispatch(context, invocation)) |exit_code| return exit_code;

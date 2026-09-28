@@ -277,6 +277,7 @@ const Batch = struct {
         const Sandbox = @import("DownloadSandbox.zig");
         if (Sandbox.applicable(self.owner)) return Sandbox.fetch(self.owner, self.allocator, self.io, url, path, force, maximum, mtime, mtime == null and is_payload, &job.downloaded, if (is_payload) &job.effective_url else null);
         var downloader = self.session.downloader(.{
+            .address_family_policy = self.owner.configuration.address_family_policy,
             .timeout_in_seconds = if (self.owner.configuration.disable_download_timeout) 0 else 30,
             .response_header_timeout_in_seconds = if (self.owner.configuration.disable_download_timeout) 0 else 30,
             .response_body_timeout_in_seconds = if (self.owner.configuration.disable_download_timeout) 0 else 30,
@@ -388,7 +389,7 @@ pub fn acquire(owner: *Owner, io: std.Io, requests: []const Request) ![]File {
         owner.downloadEvent(.{ .init = .{ .name = request.name, .optional = false } });
     }
     var thread_safe: transport.LockedAllocator = .{ .child_allocator = owner.allocator, .io = io };
-    var session = transport.DownloadSession.init(thread_safe.allocator(), io, if (owner.configuration.disable_download_timeout) 0 else 30, .prefer_ipv4);
+    var session = transport.DownloadSession.init(thread_safe.allocator(), io, if (owner.configuration.disable_download_timeout) 0 else 30, owner.configuration.address_family_policy);
     defer session.deinit();
     const servers = &owner.download_servers;
     for (requests) |request| {
@@ -543,7 +544,7 @@ pub fn refresh(owner: *Owner, io: std.Io, force: bool) !RefreshResult {
     defer if (lock_live) lock.release(owner.allocator) catch {};
     const entries = try owner.allocator.alloc(Refresh, owner.sync_databases.items.len);
     errdefer owner.allocator.free(entries);
-    var session = transport.DownloadSession.init(owner.allocator, io, if (owner.configuration.disable_download_timeout) 0 else 30, .prefer_ipv4);
+    var session = transport.DownloadSession.init(owner.allocator, io, if (owner.configuration.disable_download_timeout) 0 else 30, owner.configuration.address_family_policy);
     defer session.deinit();
     owner.transactionEvent(.{ .phase = .{ .phase = .database_retrieve, .boundary = .start } });
     var failed = false;

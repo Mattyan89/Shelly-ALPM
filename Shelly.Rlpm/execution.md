@@ -1,8 +1,10 @@
 # Package execution and local persistence
 
-M0–M9 are accepted. M10 implements normal `Transaction.commit()` and awaits
-acceptance before M11. `capabilities().transactions` is enabled. PackageManager's
-backend selection still defaults to libalpm; M11 owns its production integration.
+M0–M10 are accepted. M10 implements normal `Transaction.commit()`;
+`capabilities().transactions` is enabled. PackageManager still uses libalpm.
+M11 implements runtime selection between libalpm and RLPM, both enabled in default
+builds, plus an optional libalpm-disabled build that defaults to RLPM. See the
+[M11 contract](../docs/rlpm-libalpm-completion-plan.md#m11--configure-both-backends-and-complete-production-acceptance).
 The Owner/Database/Package/Transaction ownership model and CachyOS extensions
 remain intact.
 

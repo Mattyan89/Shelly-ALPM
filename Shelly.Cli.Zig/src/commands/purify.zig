@@ -80,7 +80,7 @@ const Real = struct {
                         context.io,
                         .{
                             .cache_directory = cache_plan.cache_directory,
-                            .handle = manager.handle,
+                            .manager = manager,
                         },
                     );
                     cache_manager.setOperationContext(operation_context);
@@ -100,7 +100,7 @@ const Real = struct {
                             context.io,
                             .{
                                 .cache_directory = manager.config.cache_directory,
-                                .handle = manager.handle,
+                                .manager = manager,
                             },
                         );
                         cache_manager.setOperationContext(operation_context);

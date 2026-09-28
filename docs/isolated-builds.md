@@ -8,7 +8,7 @@ callers are available via `shelly --version --json` before scheduling a build.
 
 The elevated process is a coordinator only. It reviews the host PKGBUILD and
 local inputs, materializes only those byte-exact reviewed inputs in the guest,
-provisions the guest with Shelly's libalpm-based `shellystrap` helper, and
+provisions the guest with Shelly's selected native backend through the `shellystrap` helper, and
 starts nspawn. The helper runs in a short-lived private mount/PID namespace,
 copies the host pacman trust database into the operation root, and keeps its
 database, cache, and log under that root. PKGBUILD lifecycle functions run as
@@ -36,7 +36,7 @@ permissions are preserved. Writable build directories belong to the guest
 UID/GID `1000:1000`; the enclosing host operation directory remains root-owned
 `0700`. Reviewed files retain their exact reviewed permissions.
 The resulting package's `.BUILDINFO` records the exact package set installed
-in the guest. Before export, libalpm loads every candidate archive and Shelly
+in the guest. Before export, the selected native backend loads every candidate archive and Shelly
 rejects malformed, duplicate, missing, or unexpected package identities.
 
 When `pkgver()` changes the version, the guest updates its staged PKGBUILD and

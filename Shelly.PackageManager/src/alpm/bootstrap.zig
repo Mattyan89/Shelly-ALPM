@@ -13,6 +13,7 @@ pub const wrapper_argument = "__shellystrap";
 pub const marker_name = ".shelly-bootstrap-root";
 
 pub const Options = struct {
+    backend: ?@import("backend.zig").Backend = null,
     root_path: []const u8,
     config_path: []const u8 = "/etc/pacman.conf",
     host_gpg_directory: []const u8 = "/etc/pacman.d/gnupg",
@@ -45,6 +46,7 @@ pub fn runInternal(
 
 pub fn parseArguments(arguments: []const []const u8) !Options {
     var root_path: ?[]const u8 = null;
+    var backend: ?@import("backend.zig").Backend = null;
     var config_path: []const u8 = "/etc/pacman.conf";
     var gpg_directory: []const u8 = "/etc/pacman.d/gnupg";
     var index: usize = 0;
@@ -55,6 +57,7 @@ pub fn parseArguments(arguments: []const []const u8) !Options {
             if (root_path == null or packages.len == 0) return error.InvalidBootstrapArguments;
             return .{
                 .root_path = root_path.?,
+                .backend = backend,
                 .config_path = config_path,
                 .host_gpg_directory = gpg_directory,
                 .packages = packages,
@@ -64,6 +67,11 @@ pub fn parseArguments(arguments: []const []const u8) !Options {
             index += 1;
             if (index >= arguments.len or root_path != null) return error.InvalidBootstrapArguments;
             root_path = arguments[index];
+        } else if (std.mem.eql(u8, argument, "--backend")) {
+            index += 1;
+            if (index >= arguments.len) return error.InvalidBootstrapArguments;
+            backend = try @import("backend.zig").Backend.parse(arguments[index]);
+            try backend.?.validate();
         } else if (std.mem.eql(u8, argument, "--config")) {
             index += 1;
             if (index >= arguments.len) return error.InvalidBootstrapArguments;
@@ -227,6 +235,7 @@ fn bootstrapReporting(
     try mounts.setup();
 
     const manager = try manager_module.Manager.init(allocator, environ, .{
+        .backend = options.backend,
         .config_path = options.config_path,
         .use_root = true,
         .root_directory = options.root_path,
@@ -269,7 +278,7 @@ fn bootstrapReporting(
         initialized += 1;
     }
     try manager.install_packages(package_names, .{ .needed = true });
-    if (manager.package_setup_failed) return error.BootstrapPackageSetupFailed;
+    if (manager.packageSetupFailed()) return error.BootstrapPackageSetupFailed;
 
     const installed = try manager.get_installed_packages();
     defer {

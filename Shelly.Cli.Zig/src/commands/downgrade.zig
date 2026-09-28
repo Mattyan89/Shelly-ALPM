@@ -43,8 +43,9 @@ const Real = struct {
 
         const package_name_z = try context.allocator.dupeZ(u8, package_name);
         defer context.allocator.free(package_name_z);
-        const installed = try manager.get_single_installed_package(package_name_z) orelse
+        var installed = try manager.get_single_installed_package(package_name_z) orelse
             return DowngradeError.PackageNotInstalled;
+        defer installed.deinit(context.allocator);
 
         var archive = Zigalpm.alpm.ArchiveManager.init(context.allocator, context.io, .{});
         defer archive.deinit();

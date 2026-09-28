@@ -1,6 +1,6 @@
 # Transactions, locks and callbacks
 
-M0–M9 are accepted. M10 enables normal commit, payload changes and durable local
+M0–M10 are accepted. M10 enables normal commit, payload changes and durable local
 records. `transaction_lifecycle`, `downloads`, `filesystem_preflight`,
 `transaction_actions` and `transactions` are enabled. See [execution.md](execution.md)
 for execution order, partial-progress reports, recovery and validation.

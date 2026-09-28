@@ -1,4 +1,4 @@
-//! Opt-in RLPM callback adapter. It does not select or migrate the ALPM backend.
+//! RLPM callback adapter used by the selected PackageManager backend.
 //! Initialize at its final address before a transaction; release the transaction
 //! before deinit. Context and operation outlive the adapter. UI question payloads
 //! are owned here through the deferred response, then expire when ask returns.

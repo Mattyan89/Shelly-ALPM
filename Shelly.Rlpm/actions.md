@@ -1,6 +1,6 @@
 # Hooks and scriptlets
 
-M0–M9 are accepted. M10 consumes these stages in normal commit; both
+M0–M10 are accepted. M10 consumes these stages in normal commit; both
 `transaction_actions` and `transactions` are enabled. See [execution.md](execution.md)
 for payload/database publication and the full-commit validation.
 
@@ -98,7 +98,7 @@ Cancellation terminates the process group and reaps the direct child.
 
 The build installs the action worker separately from the shared download worker.
 `OwnerConfiguration.action_worker` accepts a copied installed-worker path; the
-default points at the matching build artifact. Deployment wiring belongs to M11.
+default points at the matching build artifact. M11 installs both workers beside Shelly and resolves them there before using source-build paths.
 
 Resource bounds are explicit: hook files 4 MiB, scriptlet members 16 MiB, worker
 setup JSON 1 MiB. Oversized/malformed input produces a retained error. Unlike the

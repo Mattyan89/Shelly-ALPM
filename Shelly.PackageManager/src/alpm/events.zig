@@ -1,5 +1,7 @@
 const std = @import("std");
-const bindings = @import("bindings.zig");
+const bindings = struct {
+    pub const libalpm = @import("types.zig");
+};
 const c = bindings.libalpm;
 const operation_api = @import("operation_context");
 

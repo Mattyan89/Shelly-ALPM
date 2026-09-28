@@ -12,8 +12,8 @@ const metadata = @import("metadata.zig");
 const virtual_ownership = @import("virtual_ownership.zig");
 const package_permissions = @import("package_permissions.zig");
 const steps = @import("steps.zig");
-const alpm_bindings = @import("../../alpm/bindings.zig").libalpm;
-const raw_alpm = alpm_bindings.alpm;
+const PackageManager = @import("../../alpm/manager.zig").Manager;
+const package_types = @import("../../alpm/types.zig");
 const PackageBuilder = @import("builder.zig").PackageBuilder;
 const BuildArtifact = @import("builder.zig").BuildArtifact;
 const PackageBuild = @import("../../pkgbuild/pkgbuild_parser.zig").Pkgbuild;
@@ -545,7 +545,7 @@ fn writeBuildInfo(
     if (self.options.installed_packages) |installed| {
         for (installed) |value| try writeKeyValue(writer, "installed", value);
     } else {
-        const installed = try collectInstalledPackages(self.allocator);
+        const installed = try collectInstalledPackages(self.allocator, self.environ);
         defer metadata.freeOwnedStrings(self.allocator, installed);
         for (installed) |value| try writeKeyValue(writer, "installed", value);
     }
@@ -574,24 +574,20 @@ fn stripKind(io: std.Io, path: []const u8) !?StripKind {
     };
 }
 
-fn collectInstalledPackages(allocator: std.mem.Allocator) ![][]u8 {
-    var alpm_error: raw_alpm.alpm_errno_t = 0;
-    const handle = raw_alpm.alpm_initialize("/", "/var/lib/pacman", &alpm_error) orelse
-        return error.LocalDatabaseOpenFailed;
-    defer _ = raw_alpm.alpm_release(handle);
-    const database = raw_alpm.alpm_get_localdb(handle) orelse
-        return error.LocalDatabaseOpenFailed;
-    var packages = raw_alpm.alpm_db_get_pkgcache(database);
+fn collectInstalledPackages(allocator: std.mem.Allocator, environ: std.process.Environ) ![][]u8 {
+    const manager = try PackageManager.init(allocator, environ, .{});
+    defer manager.deinit();
+    const packages = try manager.get_installed_packages();
+    defer package_types.OwnedPackage.deinitSlice(allocator, packages);
     var installed: std.ArrayList([]u8) = .empty;
     errdefer {
         for (installed.items) |value| allocator.free(value);
         installed.deinit(allocator);
     }
-    while (packages != null) : (packages = packages.?.*.next) {
-        const package = packages.?.*.data orelse continue;
-        const name = alpm_bindings.str(raw_alpm.alpm_pkg_get_name(@ptrCast(package))) orelse continue;
-        const version = alpm_bindings.str(raw_alpm.alpm_pkg_get_version(@ptrCast(package))) orelse continue;
-        const architecture = alpm_bindings.str(raw_alpm.alpm_pkg_get_arch(@ptrCast(package))) orelse continue;
+    for (packages) |package| {
+        const name = package.name_value;
+        const version = package.version_value;
+        const architecture = package.architecture_value orelse continue;
         try installed.append(
             allocator,
             try std.fmt.allocPrint(allocator, "{s}-{s}-{s}", .{ name, version, architecture }),

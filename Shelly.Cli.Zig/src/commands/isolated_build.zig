@@ -530,6 +530,8 @@ pub fn shellystrapArguments(
         "--forward-signals",
         executable,
         Zigalpm.alpm.bootstrap.wrapper_argument,
+        "--backend",
+        @tagName(Zigalpm.AlpmManager.defaultBackend()),
         "--root",
         root_path,
         "--config",

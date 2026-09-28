@@ -6,7 +6,10 @@ const flatpak_backend_loader = @import("flatpak/backend_loader.zig");
 pub const alpm = struct {
     pub const manager = @import("alpm/manager.zig");
     pub const bootstrap = @import("alpm/bootstrap.zig");
-    pub const bindings = @import("alpm/bindings.zig");
+    pub const types = @import("alpm/types.zig");
+    pub const Backend = @import("alpm/backend.zig").Backend;
+    pub const default_backend = @import("alpm/backend.zig").default_backend;
+    pub const libalpm_enabled = @import("alpm/backend.zig").libalpm_enabled;
     pub const events = @import("alpm/events.zig");
     pub const configuration = @import("alpm/configuration.zig");
     pub const cache_manager = @import("alpm/cache_manager.zig");
@@ -17,10 +20,10 @@ pub const alpm = struct {
     pub const Manager = manager.Manager;
     pub const BootstrapOptions = bootstrap.Options;
     pub const BootstrapResult = bootstrap.Result;
-    pub const TransFlag = bindings.libalpm.TransFlag;
-    pub const SigLevel = bindings.libalpm.SigLevel;
-    pub const OwnedPackage = bindings.libalpm.OwnedPackage;
-    pub const OwnedPackageWithUpdate = bindings.libalpm.OwnedPackageWithUpdate;
+    pub const TransFlag = types.TransFlag;
+    pub const SigLevel = types.SigLevel;
+    pub const OwnedPackage = types.OwnedPackage;
+    pub const OwnedPackageWithUpdate = types.OwnedPackageWithUpdate;
     pub const ReverseDependencyOptions = manager.ReverseDependencyOptions;
     pub const DependencySatisfier = manager.DependencySatisfier;
     pub const RestartReport = manager.RestartReport;
@@ -474,7 +477,7 @@ test "ALPM and AUR questions use the shared response hook" {
     alpm_dispatcher.setOperation(&alpm_operation);
     const alpm_response = alpm_dispatcher.raiseQuestion(threaded.io(), .{
         .question = "Select an ALPM provider",
-        .question_type = @intFromEnum(alpm.bindings.libalpm.QuestionType.select_provider),
+        .question_type = @intFromEnum(alpm.types.QuestionType.select_provider),
         .options = &.{ "provider-a", "provider-b" },
         .provider_options = &.{
             .{ .name = "provider-a", .description = "first", .is_installed = false },
@@ -506,10 +509,11 @@ test "ALPM and AUR questions use the shared response hook" {
 }
 
 test {
-    _ = @import("alpm/bindings.zig");
+    _ = @import("alpm/backend.zig");
+    if (alpm.libalpm_enabled) _ = @import("alpm/bindings.zig");
     _ = @import("alpm/bootstrap.zig");
     _ = @import("alpm/manager.zig");
-    _ = @import("alpm/manager_test.zig");
+    if (alpm.libalpm_enabled) _ = @import("alpm/manager_test.zig");
     _ = @import("alpm/events.zig");
     _ = @import("alpm/configuration.zig");
     _ = @import("alpm/cache_manager.zig");

@@ -646,7 +646,7 @@ fn runStandard(
             .{ failure.service, failure.message },
         );
     }
-    var cleaner = Zigalpm.CacheManager.init(context.allocator, context.io, .{ .cache_directory = manager.config.cache_directory, .handle = manager.handle });
+    var cleaner = Zigalpm.CacheManager.init(context.allocator, context.io, .{ .cache_directory = manager.config.cache_directory, .manager = manager });
     try runCacheClean(context, operation_context, invocation, &cleaner);
 }
 
