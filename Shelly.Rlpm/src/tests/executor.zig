@@ -194,7 +194,7 @@ test "M10 reason changes persist under lock and invalidate references" {
 
 test "M10 boundary failures retain precise partial results and readable database" {
     const E = rlpm.Transaction.Executor;
-    inline for (.{ E.Boundary.pre_hooks, .pre_scriptlet, .extract, .database_write, .database_publish, .cache_reload, .post_scriptlet, .post_hooks }) |boundary| {
+    inline for (.{ E.Boundary.pre_hooks, .pre_scriptlet, .extract, .payload_sync, .database_write, .database_publish, .cache_reload, .post_scriptlet, .post_hooks }) |boundary| {
         var f = try Fixture.init();
         defer f.deinit();
         var archive = try package("1-1", "first");
@@ -471,4 +471,314 @@ test "M10 audit writes configured log and absolute symlinks cannot alter externa
     try std.testing.expectEqual(before.st_mtim.tv_sec, after.st_mtim.tv_sec);
     try std.testing.expectEqual(before.st_mode, after.st_mode);
     try f.expect("outside", "external sentinel");
+}
+
+const Durability = rlpm.Transaction.Executor.PayloadDurability;
+const linux = @cImport({
+    @cUndef("_FORTIFY_SOURCE");
+    @cDefine("_FORTIFY_SOURCE", "0");
+    @cDefine("_GNU_SOURCE", "1");
+    @cInclude("fcntl.h");
+    @cInclude("unistd.h");
+    @cInclude("errno.h");
+});
+
+test "payload tracker holds readable descriptors before writes and releases allocations" {
+    var f = try Fixture.init();
+    defer f.deinit();
+    const parent = linux.open(f.root, linux.O_PATH | linux.O_DIRECTORY | linux.O_CLOEXEC);
+    try std.testing.expect(parent >= 0);
+    defer _ = linux.close(parent);
+    Durability.test_hooks = .{};
+    defer Durability.test_hooks = .{};
+    {
+        var tracker: Durability = .init(a);
+        defer tracker.deinit();
+        try tracker.registerBeforeMutation(parent);
+        try tracker.registerBeforeMutation(parent);
+        try std.testing.expectEqual(1, tracker.targets.items.len);
+        const held = tracker.targets.items[0].fd;
+        try std.testing.expect(linux.fcntl(held, linux.F_GETFL) & linux.O_PATH == 0);
+        try std.testing.expect(linux.fcntl(held, linux.F_GETFD) & linux.FD_CLOEXEC != 0);
+        try f.write("root/after-registration", "durable payload");
+        try tracker.flushTarget(0);
+        try std.testing.expectEqual(1, Durability.test_hooks.flush_calls);
+    }
+    try std.testing.expectEqual(Durability.test_hooks.opened, Durability.test_hooks.closed);
+    const Allocation = struct {
+        fn run(allocator: std.mem.Allocator, fd: c_int) !void {
+            var tracker: Durability = .init(allocator);
+            defer tracker.deinit();
+            try tracker.registerBeforeMutation(fd);
+        }
+    };
+    try std.testing.checkAllAllocationFailures(a, Allocation.run, .{parent});
+    try std.testing.expectEqual(Durability.test_hooks.opened, Durability.test_hooks.closed);
+}
+
+test "payload registration failure precedes mutations and retains errno" {
+    for ([_]c_int{ linux.EMFILE, linux.ENOMEM }) |code| {
+        var f = try Fixture.init();
+        defer f.deinit();
+        var archive = try package("1-1", "first");
+        defer archive.deinit();
+        var owner = try f.owner();
+        defer owner.deinit() catch unreachable;
+        const tx = try owner.initializeTransaction(io, flags);
+        defer owner.releaseTransaction() catch unreachable;
+        try Fixture.add(tx, archive.path);
+        try tx.prepare();
+        Durability.test_hooks = .{ .registration_error = code };
+        defer Durability.test_hooks = .{};
+        try std.testing.expectError(if (code == linux.EMFILE) error.FileDescriptorLimit else error.OutOfMemory, tx.commit());
+        try std.testing.expectEqual(code, tx.execution.system_error.?);
+        try std.testing.expectEqual(0, tx.execution.mutations);
+        try std.testing.expect(!tx.execution.database_published);
+        try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "root/etc", .{}));
+        try std.testing.expectEqual(0, Durability.test_hooks.opened);
+    }
+}
+
+test "payload sync errors keep installed record old after partial upgrade" {
+    for ([_]c_int{ linux.EIO, linux.ENOSPC, linux.EDQUOT }) |code| {
+        var f = try Fixture.init();
+        defer f.deinit();
+        var first = try package("1-1", "first");
+        defer first.deinit();
+        var next = try package("2-1", "second");
+        defer next.deinit();
+        var owner = try f.owner();
+        defer owner.deinit() catch unreachable;
+        try apply(&owner, first.path, flags);
+        const tx = try owner.initializeTransaction(io, flags);
+        defer owner.releaseTransaction() catch unreachable;
+        try Fixture.add(tx, next.path);
+        try tx.prepare();
+        Durability.test_hooks = .{ .fail_flush_at = 0, .flush_error = code };
+        defer Durability.test_hooks = .{};
+        try std.testing.expectError(if (code == linux.EIO) error.FilesystemWriteFailed else error.NoSpaceLeft, tx.commit());
+        try std.testing.expectEqual(.payload_sync, tx.execution.boundary);
+        try std.testing.expectEqual(code, tx.execution.system_error.?);
+        try std.testing.expect(tx.execution.path != null);
+        try std.testing.expect(tx.execution.mutations > 0);
+        try std.testing.expect(!tx.execution.database_published);
+        try std.testing.expectEqual(0, tx.execution.completed.items.len);
+        try std.testing.expectEqual(Durability.test_hooks.opened, Durability.test_hooks.closed);
+        try f.expect("root/etc/conf", "second");
+        var fresh = try f.owner();
+        defer fresh.deinit() catch unreachable;
+        const ref = (try fresh.findPackage(fresh.localDatabase().?, "demo")).?;
+        try std.testing.expectEqualStrings("1-1", (try fresh.package(ref)).version.raw);
+    }
+}
+
+test "payload flush follows cleanup and precedes database publication" {
+    const Probe = struct {
+        var fixture: *Fixture = undefined;
+        var transaction: *rlpm.Transaction = undefined;
+        fn before(fd: c_int) !void {
+            try std.testing.expect(!transaction.execution.database_published);
+            try fixture.expect("root/etc/conf", "first");
+            try std.testing.expectError(error.FileNotFound, fixture.tmp.dir.access(io, "db/local/demo-1-1", .{}));
+            var directory = try fixture.tmp.dir.openDir(io, "root/etc", .{ .iterate = true });
+            defer directory.close(io);
+            var iterator = directory.iterate();
+            while (try iterator.next(io)) |entry| try std.testing.expect(!std.mem.startsWith(u8, entry.name, ".rlpm-"));
+            try std.testing.expect(linux.fcntl(fd, linux.F_GETFL) & linux.O_PATH == 0);
+        }
+    };
+    var f = try Fixture.init();
+    defer f.deinit();
+    var archive = try package("1-1", "first");
+    defer archive.deinit();
+    var owner = try f.owner();
+    defer owner.deinit() catch unreachable;
+    const tx = try owner.initializeTransaction(io, flags);
+    defer owner.releaseTransaction() catch unreachable;
+    try Fixture.add(tx, archive.path);
+    try tx.prepare();
+    Probe.fixture = &f;
+    Probe.transaction = tx;
+    Durability.test_hooks = .{ .before_flush = Probe.before };
+    defer Durability.test_hooks = .{};
+    try tx.commit();
+    try std.testing.expectEqual(1, Durability.test_hooks.flush_calls);
+    try std.testing.expectEqual(1, tx.execution.payload_sync_targets);
+    try std.testing.expectEqual(1, Durability.test_hooks.opened);
+    try std.testing.expectEqual(1, Durability.test_hooks.closed);
+    try std.testing.expect(tx.execution.database_published);
+}
+
+test "cancellation after payload flush does not publish the package" {
+    const Cancel = struct {
+        var owner: *rlpm.Owner = undefined;
+        fn after() void {
+            owner.requestCancellation();
+        }
+    };
+    var f = try Fixture.init();
+    defer f.deinit();
+    var archive = try package("1-1", "first");
+    defer archive.deinit();
+    var owner = try f.owner();
+    defer owner.deinit() catch unreachable;
+    const tx = try owner.initializeTransaction(io, flags);
+    defer owner.releaseTransaction() catch unreachable;
+    try Fixture.add(tx, archive.path);
+    try tx.prepare();
+    Cancel.owner = &owner;
+    Durability.test_hooks = .{ .after_flush = Cancel.after };
+    defer Durability.test_hooks = .{};
+    try std.testing.expectError(error.Cancelled, tx.commit());
+    try std.testing.expectEqual(.interrupted, tx.state);
+    try std.testing.expectEqual(.payload_sync, tx.execution.boundary);
+    try std.testing.expect(!tx.execution.database_published);
+    try std.testing.expectEqual(1, Durability.test_hooks.flush_calls);
+    try std.testing.expectEqual(Durability.test_hooks.opened, Durability.test_hooks.closed);
+}
+
+test "DBONLY needs no payload sync" {
+    var f = try Fixture.init();
+    defer f.deinit();
+    var archive = try package("1-1", "first");
+    defer archive.deinit();
+    var owner = try f.owner();
+    defer owner.deinit() catch unreachable;
+    Durability.test_hooks = .{ .registration_error = linux.EIO };
+    defer Durability.test_hooks = .{};
+    try apply(&owner, archive.path, .{ .database_only = true, .no_hooks = true, .no_scriptlets = true });
+    try std.testing.expectEqual(0, Durability.test_hooks.flush_calls);
+}
+
+test "upgrade progress is monotonic and finishing status precedes sync" {
+    const Capture = struct {
+        last: u8 = 0,
+        calls: usize = 0,
+        zeros: usize = 0,
+        finished: bool = false,
+        status: bool = false,
+        invalid: bool = false,
+        fn update(context: ?*anyopaque, value: rlpm.Callbacks.Progress) void {
+            if (value.phase != .transaction) return;
+            const self: *@This() = @ptrCast(@alignCast(context.?));
+            if (value.percent < self.last) self.invalid = true;
+            if (value.percent == 0) self.zeros += 1;
+            self.last = value.percent;
+            self.calls += 1;
+            if (value.percent == 100) {
+                self.finished = true;
+                if (Durability.test_hooks.flush_calls == 0) self.invalid = true;
+            }
+        }
+        fn log(context: ?*anyopaque, value: rlpm.Callbacks.Log) void {
+            const self: *@This() = @ptrCast(@alignCast(context.?));
+            if (std.mem.startsWith(u8, value.message, "Finishing writes for demo")) {
+                self.status = true;
+                if (Durability.test_hooks.flush_calls != 0 or self.finished) self.invalid = true;
+            }
+        }
+    };
+    var f = try Fixture.init();
+    defer f.deinit();
+    var first = try package("1-1", "first");
+    defer first.deinit();
+    var second = try package("2-1", "second");
+    defer second.deinit();
+    var owner = try f.owner();
+    defer owner.deinit() catch unreachable;
+    try apply(&owner, first.path, flags);
+    var capture: Capture = .{};
+    owner.configuration.callbacks.progress = Capture.update;
+    owner.configuration.callbacks.progress_context = &capture;
+    owner.configuration.callbacks.log = Capture.log;
+    owner.configuration.callbacks.log_context = &capture;
+    Durability.test_hooks = .{};
+    defer Durability.test_hooks = .{};
+    try apply(&owner, second.path, flags);
+    try std.testing.expect(!capture.invalid);
+    try std.testing.expect(capture.finished and capture.status);
+    try std.testing.expectEqual(1, capture.zeros);
+    try std.testing.expect(capture.calls >= 3 and capture.calls <= 102);
+    try std.testing.expectEqual(1, Durability.test_hooks.flush_calls);
+}
+
+test "failed removal flush retains the old record and emits no removal completion" {
+    const Capture = struct {
+        done: usize = 0,
+        fn event(context: ?*anyopaque, value: rlpm.Callbacks.Event) void {
+            const self: *@This() = @ptrCast(@alignCast(context.?));
+            if (value == .package_operation and value.package_operation.boundary == .done) self.done += 1;
+        }
+    };
+    var f = try Fixture.init();
+    defer f.deinit();
+    var archive = try package("1-1", "first");
+    defer archive.deinit();
+    var owner = try f.owner();
+    defer owner.deinit() catch unreachable;
+    try apply(&owner, archive.path, flags);
+    var capture: Capture = .{};
+    owner.configuration.callbacks.event = Capture.event;
+    owner.configuration.callbacks.event_context = &capture;
+    const tx = try owner.initializeTransaction(io, flags);
+    defer owner.releaseTransaction() catch unreachable;
+    try tx.remove("demo");
+    try tx.prepare();
+    Durability.test_hooks = .{ .fail_flush_at = 0 };
+    defer Durability.test_hooks = .{};
+    try std.testing.expectError(error.FilesystemWriteFailed, tx.commit());
+    try std.testing.expectEqual(.payload_sync, tx.execution.boundary);
+    try std.testing.expect(!tx.execution.database_published);
+    try std.testing.expectEqual(0, capture.done);
+    try std.testing.expect((try owner.findPackage(owner.localDatabase().?, "demo")) != null);
+    try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "root/usr/data", .{}));
+}
+
+test "cancellation from finishing status prevents even the first flush" {
+    const Cancel = struct {
+        fn log(context: ?*anyopaque, value: rlpm.Callbacks.Log) void {
+            const owner: *rlpm.Owner = @ptrCast(@alignCast(context.?));
+            if (std.mem.startsWith(u8, value.message, "Finishing writes")) owner.requestCancellation();
+        }
+    };
+    var f = try Fixture.init();
+    defer f.deinit();
+    var archive = try package("1-1", "first");
+    defer archive.deinit();
+    var owner = try f.owner();
+    defer owner.deinit() catch unreachable;
+    owner.configuration.callbacks.log = Cancel.log;
+    owner.configuration.callbacks.log_context = &owner;
+    const tx = try owner.initializeTransaction(io, flags);
+    defer owner.releaseTransaction() catch unreachable;
+    try Fixture.add(tx, archive.path);
+    try tx.prepare();
+    Durability.test_hooks = .{};
+    defer Durability.test_hooks = .{};
+    try std.testing.expectError(error.Cancelled, tx.commit());
+    try std.testing.expectEqual(.payload_sync, tx.execution.boundary);
+    try std.testing.expectEqual(0, Durability.test_hooks.flush_calls);
+    try std.testing.expectEqual(Durability.test_hooks.opened, Durability.test_hooks.closed);
+    try std.testing.expect(!tx.execution.database_published);
+}
+
+test "empty and entirely NoExtract packages publish without a payload barrier" {
+    for ([_]bool{ false, true }) |no_extract| {
+        var f = try Fixture.init();
+        defer f.deinit();
+        const entries = [_]Archive.Entry{
+            .{ .path = ".PKGINFO", .contents = "pkgname = demo\npkgver = 1-1\narch = any\n" },
+            .{ .path = "usr/data", .contents = "skipped" },
+        };
+        var archive = try Archive.init(entries[0..@as(usize, if (no_extract) 2 else 1)], .none);
+        defer archive.deinit();
+        var owner = try f.owner();
+        defer owner.deinit() catch unreachable;
+        if (no_extract) try owner.setList(io, .no_extract, &.{"usr/data"});
+        Durability.test_hooks = .{ .registration_error = linux.EIO };
+        defer Durability.test_hooks = .{};
+        try apply(&owner, archive.path, flags);
+        try std.testing.expectEqual(0, Durability.test_hooks.flush_calls);
+        try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "root/usr/data", .{}));
+    }
 }

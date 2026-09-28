@@ -107,7 +107,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-executor", "Run M10 disposable-root payload and database transactions").dependOn(&b.addRunArtifact(executor_tests).step);
+    const run_executor_tests = b.addRunArtifact(executor_tests);
+    b.step("test-executor", "Run M10 disposable-root payload and database transactions").dependOn(&run_executor_tests.step);
+    test_step.dependOn(&run_executor_tests.step);
     const hook_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/hooks.zig"),
         .target = target,
@@ -180,6 +182,16 @@ pub fn build(b: *std.Build) void {
         .path = .{ .cwd_relative = b.pathJoin(&.{ b.graph.zig_lib_directory.path.?, "compiler/test_runner.zig" }) },
         .mode = .simple,
     };
+    const payload_benchmark = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/payload_benchmark.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }), .test_runner = terminal_runner });
+    const run_payload_benchmark = b.addRunArtifact(payload_benchmark);
+    run_payload_benchmark.stdio = .inherit;
+    run_payload_benchmark.has_side_effects = true;
+    b.step("bench-payload", "Compare payload durability policies in disposable roots (RLPM_PAYLOAD_BENCH_* settings)").dependOn(&run_payload_benchmark.step);
     const executor_driver = b.addExecutable(.{ .name = "rlpm-executor-fixture", .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/executor_driver.zig"),
         .target = target,

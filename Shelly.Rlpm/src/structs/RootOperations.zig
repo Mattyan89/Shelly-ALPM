@@ -3,6 +3,20 @@
 const std = @import("std");
 const Root = @import("RootPath.zig");
 pub const c = Root.c;
+pub const Durability = union(enum) {
+    immediate,
+    batch: *@import("PayloadDurability.zig"),
+
+    fn before(self: Durability, fd: c_int) !void {
+        switch (self) {
+            .immediate => {},
+            .batch => |tracker| try tracker.registerBeforeMutation(fd),
+        }
+    }
+    fn after(self: Durability, fd: c_int) !void {
+        if (self == .immediate) try sync(fd);
+    }
+};
 pub const Parent = struct {
     fd: c_int,
     buffer: [std.fs.max_path_bytes]u8 = undefined,
@@ -47,6 +61,9 @@ pub fn sync(fd: c_int) !void {
     if (c.fsync(writable) != 0) return failure();
 }
 pub fn mkdirs(root: *const Root, path: []const u8) !void {
+    return mkdirsWithDurability(root, path, .immediate);
+}
+pub fn mkdirsWithDurability(root: *const Root, path: []const u8, durability: Durability) !void {
     _ = try Root.normalize(path);
     var end: usize = 0;
     while (end < path.len) {
@@ -57,37 +74,47 @@ pub fn mkdirs(root: *const Root, path: []const u8) !void {
         } else {
             var p = try parent(root, prefix);
             defer p.deinit();
+            try durability.before(p.fd);
             if (c.mkdirat(p.fd, p.name(), 0o755) != 0) return failure();
             const fd = c.openat(p.fd, p.name(), c.O_RDONLY | c.O_NOFOLLOW | c.O_DIRECTORY | c.O_CLOEXEC);
             if (fd < 0) return failure();
             defer _ = c.close(fd);
             if (c.fchmod(fd, 0o755) != 0) return failure();
-            try sync(p.fd);
+            try durability.after(p.fd);
         }
         end += 1;
     }
 }
 pub fn remove(root: *const Root, path: []const u8, directory: bool) !void {
+    return removeWithDurability(root, path, directory, .immediate);
+}
+pub fn removeWithDurability(root: *const Root, path: []const u8, directory: bool, durability: Durability) !void {
     var p = parent(root, path) catch |err| switch (err) {
         error.ParentNotFound => return,
         else => return err,
     };
     defer p.deinit();
+    try durability.before(p.fd);
     if (c.unlinkat(p.fd, p.name(), if (directory) c.AT_REMOVEDIR else 0) != 0) {
         const e = std.c._errno().*;
         if (e == c.ENOENT or (directory and (e == c.ENOTEMPTY or e == c.EEXIST or e == c.EBUSY))) return;
         return failure();
     }
-    try sync(p.fd);
+    try durability.after(p.fd);
 }
 pub fn rename(root: *const Root, from: []const u8, to: []const u8) !void {
+    return renameWithDurability(root, from, to, .immediate);
+}
+pub fn renameWithDurability(root: *const Root, from: []const u8, to: []const u8, durability: Durability) !void {
     var source = try parent(root, from);
     defer source.deinit();
     var target = try parent(root, to);
     defer target.deinit();
+    try durability.before(source.fd);
+    try durability.before(target.fd);
     if (c.renameat(source.fd, source.name(), target.fd, target.name()) != 0) return failure();
-    try sync(source.fd);
-    try sync(target.fd);
+    try durability.after(source.fd);
+    try durability.after(target.fd);
 }
 pub fn write(fd: c_int, name: [:0]const u8, bytes: []const u8) !void {
     const file = c.openat(fd, name, c.O_WRONLY | c.O_CREAT | c.O_EXCL | c.O_NOFOLLOW | c.O_CLOEXEC, @as(c_uint, 0o600));
@@ -111,18 +138,23 @@ pub const Stage = struct {
     destination: Parent,
     fd: c_int,
     label: [48:0]u8,
+    durability: Durability,
     pub fn init(root: *const Root, io: std.Io, path: []const u8) !Stage {
+        return initWithDurability(root, io, path, .immediate);
+    }
+    pub fn initWithDurability(root: *const Root, io: std.Io, path: []const u8, durability: Durability) !Stage {
         var p = try parent(root, path);
         errdefer p.deinit();
         var random: [16]u8 = undefined;
         std.Io.random(io, &random);
         var label: [48:0]u8 = @splat(0);
         _ = try std.fmt.bufPrintZ(&label, ".rlpm-{s}", .{std.fmt.bytesToHex(random, .lower)});
+        try durability.before(p.fd);
         if (c.mkdirat(p.fd, &label, 0o700) != 0) return failure();
         errdefer _ = c.unlinkat(p.fd, &label, c.AT_REMOVEDIR);
         const fd = c.openat(p.fd, &label, c.O_RDONLY | c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC);
         if (fd < 0) return failure();
-        return .{ .destination = p, .fd = fd, .label = label };
+        return .{ .destination = p, .fd = fd, .label = label, .durability = durability };
     }
     pub fn deinit(self: *Stage) !void {
         defer self.destination.deinit();
@@ -131,18 +163,21 @@ pub const Stage = struct {
             if (c.unlinkat(self.fd, "entry", c.AT_REMOVEDIR) != 0) return failure();
         }
         if (c.unlinkat(self.destination.fd, &self.label, c.AT_REMOVEDIR) != 0) return failure();
-        try sync(self.destination.fd);
+        try self.durability.after(self.destination.fd);
     }
     pub fn publish(self: *Stage) !void {
         if (c.renameat(self.fd, "entry", self.destination.fd, self.destination.name()) != 0) return failure();
-        try sync(self.fd);
-        try sync(self.destination.fd);
+        try self.durability.after(self.fd);
+        try self.durability.after(self.destination.fd);
     }
 };
 
 /// Native pacsave rotations, enumerated after scripts so newly created suffixes
 /// participate too. All operations remain within the held parent/root.
 pub fn rotatePacsave(root: *const Root, io: std.Io, a: std.mem.Allocator, destination: []const u8) !void {
+    return rotatePacsaveWithDurability(root, io, a, destination, .immediate);
+}
+pub fn rotatePacsaveWithDurability(root: *const Root, io: std.Io, a: std.mem.Allocator, destination: []const u8, durability: Durability) !void {
     var p = try parent(root, destination);
     defer p.deinit();
     const fd = c.openat(p.fd, ".", c.O_RDONLY | c.O_DIRECTORY | c.O_CLOEXEC);
@@ -169,6 +204,7 @@ pub fn rotatePacsave(root: *const Root, io: std.Io, a: std.mem.Allocator, destin
             return left.number > right.number;
         }
     }.less);
+    try durability.before(fd);
     for (entries.items) |item| {
         const from = try a.dupeSentinel(u8, item.name, 0);
         defer a.free(from);
@@ -181,5 +217,5 @@ pub fn rotatePacsave(root: *const Root, io: std.Io, a: std.mem.Allocator, destin
         defer a.free(to);
         if (c.renameat(fd, p.name(), fd, to) != 0) return failure();
     }
-    try sync(fd);
+    try durability.after(fd);
 }

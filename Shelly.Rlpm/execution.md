@@ -119,6 +119,69 @@ between-package interruption checks. The result remains failed/interrupted,
 with partial work retained. Locks/resources are released by `releaseTransaction`.
 No full filesystem rollback or crash-safe payload transaction is claimed.
 
+## Batched payload durability
+
+The executor registers each affected mount through a held readable directory
+descriptor before its first payload mutation. Extraction, old-payload removal,
+backup renames, and staging cleanup defer their writeback to a package barrier.
+Registration deduplicates device/mount identities conservatively: bind mounts or
+Btrfs subvolumes can cause more than one flush of a shared underlying filesystem.
+If mount IDs are unavailable, registration retains distinct directory identities.
+
+After an addition's payload and staging cleanup finish, `syncfs()` flushes each
+registered target before the new local record is published. Upgrades share one
+tracker across old-payload removal and incoming extraction. Standalone removals
+flush before their existing post-scriptlet and operation-done events; their
+database record is still removed afterward. DBONLY does not introduce a payload
+barrier. Database members, local records, and the publication/recovery journal
+retain their immediate `fsync()` ordering.
+
+On a failed flush, execution stops at `payload_sync`, retains the affected path
+and errno, and does not publish the current package's record. A successful flush
+on one mount cannot make a failed multi-mount operation atomic. Cancellation is
+checked before and after each flush and before database publication; a kernel
+writeback wait itself may not be promptly interruptible. Scriptlet/hook writes
+are outside the executor's tracked payload contract.
+
+A crash before a package's barrier may lose more recent payload changes than
+the former per-entry sync implementation. The old record can therefore describe
+partially changed files, as with other interrupted payload work. Database journal
+recovery restores coherent records, not package files. A committed record still
+requires successful payload barriers followed by durable journal publication.
+
+Entry-count progress is throttled and shared across upgrade removal/extraction.
+The status `Finishing writes for <package>` precedes the barrier; it does not
+estimate kernel flush completion. The execution report includes cumulative
+`payload_work_ms`, `payload_sync_ms`, `payload_sync_targets`, and
+`database_publish_ms`. Filesystem-wide `syncfs()` can also wait for unrelated
+writes or report their writeback errors.
+
+`test-executor` covers writeback errors, registration/allocation failures,
+descriptor cleanup, cancellation on both sides of the barrier, backups,
+DBONLY/NoExtract/empty packages, progress, and publication ordering. It is part
+of `zig build test`. The namespace integration adds nested and bind mounts with
+a separate database filesystem, including failure on the second flush.
+
+One-time VM crash and performance validation is recorded in the
+[payload synchronization report](../docs/rlpm-payload-sync-results.md).
+The Python VM harnesses and guest-only test hooks were subsequently removed;
+maintained coverage lives in the Zig executor and namespace integration suites.
+
+For direct host-filesystem benchmarks in disposable roots:
+
+```bash
+RLPM_PAYLOAD_BENCH_MODE=immediate zig build bench-payload -Doptimize=ReleaseSafe
+RLPM_PAYLOAD_BENCH_MODE=batched zig build bench-payload -Doptimize=ReleaseSafe
+```
+
+`RLPM_PAYLOAD_BENCH_FILES` defaults to 10000, `RLPM_PAYLOAD_BENCH_RUNS` to 3,
+and `RLPM_PAYLOAD_BENCH_WORKLOAD` selects `headers` or `large`. The latter defaults
+to four 8 MiB files. `RLPM_PAYLOAD_BENCH_ARCHIVE` optionally installs a specified
+real archive into disposable roots with scripts, hooks, and dependency checks
+disabled. The immediate comparison policy exists only in test binaries. Results
+and reproducibility limits are recorded in the
+[payload synchronization report](../docs/rlpm-payload-sync-results.md).
+
 - `zig build test-executor`: full package cycle, 26 pinned native state/event
   cases, flags/backups, persisted reasons/provenance, transfers, recovery,
   cancellation, root replacement, audit, operation-boundary fault injection and

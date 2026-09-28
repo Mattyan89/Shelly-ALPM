@@ -412,3 +412,41 @@ test "archive inventory failures report the package and mismatched path" {
     try std.testing.expectEqual(1, capture.failures);
     try std.testing.expect(capture.package and capture.path and capture.explanation);
 }
+
+test "payload finishing log and progress reach operation subscribers" {
+    const Capture = struct {
+        status_seen: bool = false,
+        progress_seen: bool = false,
+        fn event(data: ?*anyopaque, value: op.Event) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            switch (value) {
+                .status => |status| {
+                    if (status.level == .information and std.mem.eql(u8, status.message, "Finishing writes for headers")) self.status_seen = true;
+                },
+                .progress => |update| {
+                    if (update.update.percentage == 99) self.progress_seen = true;
+                },
+                else => {},
+            }
+        }
+    };
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const path = try temporary.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(path);
+    var owner = try rlpm.Owner.init(std.testing.io, std.testing.allocator, .{ .root = path, .database_path = path }, &.{});
+    defer owner.deinit() catch unreachable;
+    var context = op.OperationContext.init(std.testing.allocator, std.testing.io);
+    defer context.deinit();
+    var capture: Capture = .{};
+    _ = try context.subscribe(.{ .function = Capture.event, .data = &capture });
+    var operation = context.begin(.{ .backend = .alpm, .kind = .install });
+    defer operation.finish(.cancelled);
+    var adapter: Adapter = undefined;
+    try adapter.init(&owner, &operation);
+    defer adapter.deinit() catch unreachable;
+    const callbacks = owner.configuration.callbacks;
+    callbacks.log.?(callbacks.log_context, .{ .level = .function, .message = "Finishing writes for headers" });
+    callbacks.progress.?(callbacks.progress_context, .{ .phase = .transaction, .package = null, .percent = 99, .position = 1, .total = 1 });
+    try std.testing.expect(capture.status_seen and capture.progress_seen);
+}

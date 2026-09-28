@@ -242,3 +242,62 @@ test "M10 pre-remove script can create a previously absent backup and it is save
     try f.expect("root/conf.pacsave", "edited");
     try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "root/conf", .{}));
 }
+
+test "payload barrier covers nested and bind mounts before publishing on separate database filesystem" {
+    const mount = @cImport({
+        @cInclude("sys/mount.h");
+    });
+    const D = rlpm.Transaction.Executor.PayloadDurability;
+    // Repeat with failure on the second target: the first successful flush
+    // must not permit database publication for a partly durable package.
+    for ([_]bool{ false, true }) |fail_second| {
+        var f = try Fixture.init();
+        defer f.deinit();
+        try std.testing.expectEqual(0, mount.mount("tmpfs", f.root, "tmpfs", 0, "size=8m"));
+        defer _ = mount.umount2(f.root, mount.MNT_DETACH);
+        try f.tmp.dir.createDirPath(io, "root/boot");
+        try f.tmp.dir.createDirPath(io, "root/shared");
+        try f.tmp.dir.createDirPath(io, "root/usr");
+        const boot = try std.fmt.allocPrintSentinel(a, "{s}/boot", .{f.root}, 0);
+        defer a.free(boot);
+        const shared = try std.fmt.allocPrintSentinel(a, "{s}/shared", .{f.root}, 0);
+        defer a.free(shared);
+        const usr = try std.fmt.allocPrintSentinel(a, "{s}/usr", .{f.root}, 0);
+        defer a.free(usr);
+        try std.testing.expectEqual(0, mount.mount("tmpfs", boot, "tmpfs", 0, "size=4m"));
+        defer _ = mount.umount2(boot, mount.MNT_DETACH);
+        try std.testing.expectEqual(0, mount.mount(shared, usr, null, mount.MS_BIND, null));
+        defer _ = mount.umount2(usr, mount.MNT_DETACH);
+        var archive = try Archive.init(&.{
+            .{ .path = ".PKGINFO", .contents = "pkgname = mounts\npkgver = 1-1\narch = any\n" },
+            .{ .path = "etc/config", .contents = "root filesystem" },
+            .{ .path = "boot/image", .contents = "boot filesystem" },
+            .{ .path = "usr/header", .contents = "bind mount" },
+        }, .none);
+        defer archive.deinit();
+        var owner = try f.owner();
+        defer owner.deinit() catch unreachable;
+        const tx = try owner.initializeTransaction(io, .{ .no_hooks = true, .no_scriptlets = true });
+        defer owner.releaseTransaction() catch unreachable;
+        try Fixture.add(tx, archive.path);
+        try tx.prepare();
+        D.test_hooks = .{ .fail_flush_at = if (fail_second) 1 else null };
+        defer D.test_hooks = .{};
+        if (fail_second) {
+            try std.testing.expectError(error.FilesystemWriteFailed, tx.commit());
+            try std.testing.expectEqual(1, tx.execution.payload_sync_targets);
+            try std.testing.expectEqual(.payload_sync, tx.execution.boundary);
+            try std.testing.expect(std.mem.endsWith(u8, tx.execution.path.?, "/boot"));
+            try std.testing.expect(!tx.execution.database_published);
+            try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "db/local/mounts-1-1", .{}));
+        } else {
+            try tx.commit();
+            try std.testing.expectEqual(3, tx.execution.payload_sync_targets);
+            try f.expect("root/etc/config", "root filesystem");
+            try f.expect("root/boot/image", "boot filesystem");
+            try f.expect("root/shared/header", "bind mount");
+            try std.testing.expect(tx.execution.database_published);
+        }
+        try std.testing.expectEqual(D.test_hooks.opened, D.test_hooks.closed);
+    }
+}
