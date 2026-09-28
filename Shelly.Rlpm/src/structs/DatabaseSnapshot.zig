@@ -5,7 +5,33 @@ const std = @import("std");
 const Owner = @import("Owner.zig");
 const Hash = std.crypto.hash.sha2.Sha256;
 
+const Progress = struct {
+    owner: *Owner,
+    io: std.Io,
+    reported: std.Io.Timestamp,
+    files: u64 = 0,
+    bytes: u64 = 0,
+
+    fn report(self: *Progress, complete: bool) void {
+        const callbacks = self.owner.configuration.callbacks;
+        const log = callbacks.log orelse return;
+        const now = std.Io.Clock.awake.now(self.io);
+        if (!complete and self.reported.durationTo(now).toMilliseconds() < 250) return;
+        self.reported = now;
+        var buffer: [192]u8 = undefined;
+        const message = std.fmt.bufPrint(&buffer, "{s}: {d} files checked, {d} bytes read", .{
+            if (complete) "Package database checks complete" else "Checking package databases",
+            self.files,
+            self.bytes,
+        }) catch unreachable;
+        log(callbacks.log_context, .{ .level = .function, .message = message });
+    }
+};
+
 pub fn capture(owner: *Owner, io: std.Io) ![32]u8 {
+    var progress: Progress = .{ .owner = owner, .io = io, .reported = std.Io.Clock.awake.now(io) };
+    const callbacks = owner.configuration.callbacks;
+    if (callbacks.log) |log| log(callbacks.log_context, .{ .level = .function, .message = "Checking package databases" });
     var arena = std.heap.ArenaAllocator.init(owner.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -28,6 +54,7 @@ pub fn capture(owner: *Owner, io: std.Io) ![32]u8 {
         while (try walker.next(io)) |entry| {
             try owner.checkCancelled();
             try paths.append(a, try a.dupe(u8, entry.path));
+            progress.report(false);
         }
         std.mem.sort([]const u8, paths.items, {}, struct {
             fn less(_: void, left: []const u8, right: []const u8) bool {
@@ -62,11 +89,16 @@ pub fn capture(owner: *Owner, io: std.Io) ![32]u8 {
                 if (n == 0) return error.StaleDatabaseState;
                 hash.update(buffer[0..n]);
                 remaining -= n;
+                progress.bytes +|= n;
+                progress.report(false);
             }
             const final = try file.stat(io);
             if (initial.size != final.size or !std.meta.eql(initial.mtime, final.mtime) or !std.meta.eql(initial.ctime, final.ctime)) return error.StaleDatabaseState;
+            progress.files += 1;
+            progress.report(false);
         }
     }
+    progress.report(true);
     return hash.finalResult();
 }
 fn field(hash: *Hash, bytes: []const u8) void {

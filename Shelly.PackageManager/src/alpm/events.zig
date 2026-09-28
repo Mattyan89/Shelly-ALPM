@@ -92,6 +92,7 @@ pub const QuestionResponse = struct {
 };
 
 pub const Dispatcher = struct {
+    operationEvents: std.ArrayList(Handler(operation_api.Event).T),
     progress: std.ArrayList(Handler(ProgressArgs).T),
     question: std.ArrayList(Handler(QuestionArgs).T),
     errorEvents: std.ArrayList(Handler(ErrorArgs).T),
@@ -114,6 +115,7 @@ pub const Dispatcher = struct {
 
     pub fn init(allocator: std.mem.Allocator) Dispatcher {
         return .{
+            .operationEvents = .empty,
             .allocator = allocator,
             .progress = .empty,
             .question = .empty,
@@ -135,6 +137,7 @@ pub const Dispatcher = struct {
     }
 
     pub fn deinit(self: *Dispatcher) void {
+        self.operationEvents.deinit(self.allocator);
         if (self.common_question_response) |*response| response.deinit(self.allocator);
         self.progress.deinit(self.allocator);
         self.question.deinit(self.allocator);
@@ -149,6 +152,22 @@ pub const Dispatcher = struct {
 
     pub fn setOperation(self: *Dispatcher, operation: ?*operation_api.Operation) void {
         self.operation = operation;
+    }
+
+    /// Observe native operation output without supplying a question handler or
+    /// changing transaction confirmation and optional-dependency selection.
+    pub fn addOperationHandler(self: *Dispatcher, handler: Handler(operation_api.Event).T) !usize {
+        try self.operationEvents.append(self.allocator, handler);
+        return self.operationEvents.items.len - 1;
+    }
+
+    pub fn removeOperationHandler(self: *Dispatcher, index: usize) void {
+        if (index < self.operationEvents.items.len) _ = self.operationEvents.swapRemove(index);
+    }
+
+    pub fn forwardOperationEvent(data: ?*anyopaque, event: operation_api.Event) void {
+        const self: *Dispatcher = @ptrCast(@alignCast(data.?));
+        self.dispatch(operation_api.Event, &self.operationEvents, event);
     }
 
     pub fn addProgressHandler(self: *Dispatcher, handler: Handler(ProgressArgs).T) !usize {

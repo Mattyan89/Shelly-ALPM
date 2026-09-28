@@ -121,7 +121,15 @@ pub const Manager = struct {
         try self.checkCancelled();
         var fallback = op.OperationContext.init(self.allocator, self.io());
         defer fallback.deinit();
-        var operation = (self.operation_context orelse &fallback).begin(.{ .backend = .alpm, .kind = .sync, .subject = "rlpm" });
+        const context = self.operation_context orelse &fallback;
+        const output_subscription = if (self.dispatcher.operationEvents.items.len != 0)
+            try context.subscribe(.{ .function = events.Dispatcher.forwardOperationEvent, .data = &self.dispatcher })
+        else
+            null;
+        defer if (output_subscription) |subscription| {
+            _ = context.unsubscribe(subscription);
+        };
+        var operation = context.begin(.{ .backend = .alpm, .kind = .sync, .subject = "rlpm" });
         var status: op.CompletionStatus = .failed;
         defer operation.finish(status);
         var adapter: Adapter = undefined;
@@ -370,7 +378,15 @@ pub const Manager = struct {
         try self.checkCancelled();
         var fallback = op.OperationContext.init(self.allocator, self.io());
         defer fallback.deinit();
-        var operation = (self.operation_context orelse &fallback).begin(.{ .backend = .alpm, .kind = switch (mode) {
+        const context = self.operation_context orelse &fallback;
+        const output_subscription = if (self.dispatcher.operationEvents.items.len != 0)
+            try context.subscribe(.{ .function = events.Dispatcher.forwardOperationEvent, .data = &self.dispatcher })
+        else
+            null;
+        defer if (output_subscription) |subscription| {
+            _ = context.unsubscribe(subscription);
+        };
+        var operation = context.begin(.{ .backend = .alpm, .kind = switch (mode) {
             .remove => .remove,
             .upgrade => .update,
             else => .install,

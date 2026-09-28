@@ -485,3 +485,42 @@ test "transaction package references and system upgrade preserve CachyOS reposit
     try std.testing.expectEqualStrings("cachyos", tx.plan().?.additions[0].installed_database.?);
     try owner.releaseTransaction();
 }
+
+test "database check output precedes initialization and supports cancellation without retaining the lock" {
+    for ([_]bool{ false, true }) |cancel| {
+        var fixture = try Fixture.init();
+        defer fixture.deinit();
+        var owner = try fixture.owner(a);
+        defer owner.deinit() catch unreachable;
+        const Capture = struct {
+            owner: *rlpm.Owner,
+            cancel: bool,
+            started: usize = 0,
+            completed: usize = 0,
+            initialized: bool = false,
+            fn log(data: ?*anyopaque, value: rlpm.Callbacks.Log) void {
+                const self: *@This() = @ptrCast(@alignCast(data.?));
+                if (std.mem.eql(u8, value.message, "Checking package databases")) {
+                    self.started += 1;
+                    if (self.cancel) self.owner.requestCancellation();
+                }
+                if (std.mem.startsWith(u8, value.message, "Package database checks complete")) self.completed += 1;
+            }
+            fn event(data: ?*anyopaque, value: rlpm.Callbacks.Event) void {
+                const self: *@This() = @ptrCast(@alignCast(data.?));
+                if (value == .lifecycle and value.lifecycle.state == .initialized) self.initialized = self.completed != 0;
+            }
+        };
+        var capture: Capture = .{ .owner = &owner, .cancel = cancel };
+        try owner.setCallbacks(.{ .log = Capture.log, .log_context = &capture, .event = Capture.event, .event_context = &capture });
+        if (cancel) {
+            try std.testing.expectError(error.Cancelled, owner.initializeTransaction(io, .{}));
+            try std.testing.expect(capture.started != 0 and capture.completed == 0 and !capture.initialized);
+        } else {
+            _ = try owner.initializeTransaction(io, .{});
+            try std.testing.expect(capture.started != 0 and capture.started == capture.completed and capture.initialized);
+            try owner.releaseTransaction();
+        }
+        try std.testing.expect(!fixture.locked());
+    }
+}

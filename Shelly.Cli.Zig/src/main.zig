@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Isolated-root provisioning is also served before normal CLI setup. The
     // coordinator launches this reserved mode inside a private mount/PID
-    // namespace; it performs one target-root libalpm transaction and emits no
+    // namespace; it performs one target-root native transaction and emits no
     // normal command output.
     if (arguments.len > 0 and std.mem.eql(u8, arguments[0], PackageManager.Manager.bootstrap.wrapper_argument)) {
         PackageManager.HttpClient.setDefaultProxyEnvironment(init.environ_map);

@@ -25,6 +25,14 @@ transaction committed. Hook names and output are streamed into the operation
 log before root cleanup. The baseline finalizers remain as idempotent checks
 for required linker, account, directory, and certificate setup.
 
+Bootstrap flushes each hook, scriptlet, diagnostic, and finalizer message as it
+arrives. RLPM also forwards preparation, package, and download events to the
+coordinator. Database fingerprint checks and archive preflight report their
+work before installation begins, with periodic file and byte counters during
+long checks. Intermediate progress is limited to four updates per second;
+stage changes, completion, and diagnostics are delivered immediately. These
+messages do not change dependency selection, signature checks, or cancellation.
+
 Binaries compiled with `-Dlibalpm=false` provision an explicit userspace and
 build-tool set instead of `base` and `base-devel`. They copy the host trust
 database without installing `archlinux-keyring`, whose dependency on pacman

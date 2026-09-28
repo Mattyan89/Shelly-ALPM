@@ -7,6 +7,7 @@
 const std = @import("std");
 const manager_module = @import("manager.zig");
 const events = @import("events.zig");
+const operation_api = @import("operation_context");
 const process_runner = @import("../aur/builder.zig");
 pub const build_root = @import("build_root.zig");
 
@@ -99,14 +100,77 @@ pub fn bootstrap(
 
 const DiagnosticOutput = struct {
     stderr: *std.Io.Writer,
+    io: ?std.Io = null,
+    last_progress: ?std.Io.Timestamp = null,
+    last_progress_stage: ?u64 = null,
+
+    fn handleOperation(data: ?*anyopaque, event: operation_api.Event) void {
+        const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        switch (event) {
+            .status => |status| {
+                if (status.level == .debug) return;
+                // These have dedicated legacy handlers, including hook names.
+                if (status.code) |code| if (std.mem.eql(u8, code, "rlpm.scriptlet") or std.mem.eql(u8, code, "alpm.scriptlet") or std.mem.eql(u8, code, "rlpm.hook")) return;
+                defer self.stderr.flush() catch {};
+                if (status.package_name) |name| {
+                    self.stderr.print("shellystrap: {s}: {s}: {s}\n", .{ name, status.message, status.code orelse "" }) catch {};
+                } else {
+                    self.stderr.print("shellystrap: {s}", .{status.message}) catch {};
+                    if (status.code) |code| if (std.mem.eql(u8, code, "start") or std.mem.eql(u8, code, "done") or std.mem.eql(u8, code, "failed") or std.mem.eql(u8, code, "completed") or std.mem.eql(u8, code, "retry")) {
+                        self.stderr.print(": {s}", .{code}) catch {};
+                    };
+                    self.stderr.writeByte('\n') catch {};
+                }
+            },
+            .progress => |progress| {
+                const update = progress.update;
+                const stage = update.stage orelse "transaction";
+                if (std.mem.eql(u8, stage, "hook")) return;
+                const key = std.hash.Wyhash.hash(0, stage);
+                // Byte callbacks can be very frequent. Preserve stage changes
+                // and completion while limiting intermediate output to 4 Hz.
+                if (self.io) |io| {
+                    const now = std.Io.Clock.awake.now(io);
+                    const complete = if (update.percentage) |percent|
+                        percent >= 100
+                    else if (update.bytes_total) |total|
+                        total != 0 and (update.bytes_completed orelse 0) >= total
+                    else
+                        false;
+                    if (self.last_progress) |last| {
+                        if (self.last_progress_stage == key and !complete and last.durationTo(now).toMilliseconds() < 250) return;
+                    }
+                    self.last_progress = now;
+                }
+                self.last_progress_stage = key;
+                defer self.stderr.flush() catch {};
+                self.stderr.print("shellystrap: {s}", .{stage}) catch {};
+                if (update.message) |message| self.stderr.print(": {s}", .{message}) catch {};
+                if (update.percentage) |percent| self.stderr.print(" {d:.0}%", .{percent}) catch {};
+                if (update.bytes_completed) |bytes| {
+                    self.stderr.print(" ({d}", .{bytes}) catch {};
+                    if (update.bytes_total) |total| self.stderr.print("/{d}", .{total}) catch {};
+                    self.stderr.writeAll(" bytes)") catch {};
+                } else if (update.completed) |completed| {
+                    self.stderr.print(" ({d}", .{completed}) catch {};
+                    if (update.total) |total| self.stderr.print("/{d}", .{total}) catch {};
+                    self.stderr.writeAll(")") catch {};
+                }
+                self.stderr.writeByte('\n') catch {};
+            },
+            else => {},
+        }
+    }
 
     fn handleError(data: ?*anyopaque, args: events.ErrorArgs) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        defer self.stderr.flush() catch {};
         self.stderr.print("Could not provision the isolated build root: {0f}.\n", .{@import("diagnostics").safe(std.mem.trimEnd(u8, args.message, "\r\n"))}) catch {};
     }
 
     fn handleScriptlet(data: ?*anyopaque, args: events.ScriptletArgs) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        defer self.stderr.flush() catch {};
         self.stderr.print("shellystrap: scriptlet: {s}\n", .{
             std.mem.trimEnd(u8, args.line, "\r\n"),
         }) catch {};
@@ -114,6 +178,7 @@ const DiagnosticOutput = struct {
 
     fn handleHook(data: ?*anyopaque, args: events.HookArgs) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        defer self.stderr.flush() catch {};
         self.stderr.print("shellystrap: hook: {s}: {s}\n", .{
             args.name orelse "unknown",
             args.description orelse "Running package initialization",
@@ -141,6 +206,7 @@ const FinalizerOutput = struct {
         const self: *FinalizerOutput = @ptrCast(@alignCast(data.?));
         const writer = self.writer orelse return;
         writer.print("shellystrap: {s}: {s}\n", .{ self.name, line }) catch {};
+        writer.flush() catch {};
     }
 };
 
@@ -163,6 +229,7 @@ fn reportFinalizerFailure(
 ) void {
     const destination = writer orelse return;
     destination.print("shellystrap: {s}: {s}\n", .{ name, detail }) catch {};
+    destination.flush() catch {};
 }
 
 fn finalizeRoot(
@@ -254,7 +321,8 @@ fn bootstrapReporting(
 
     var diagnostic_output: DiagnosticOutput = undefined;
     if (diagnostic_writer) |writer| {
-        diagnostic_output = .{ .stderr = writer };
+        diagnostic_output = .{ .stderr = writer, .io = io };
+        _ = try manager.dispatcher.addOperationHandler(.{ .function = DiagnosticOutput.handleOperation, .data = &diagnostic_output });
         _ = try manager.dispatcher.addErrorHandler(.{
             .function = DiagnosticOutput.handleError,
             .data = &diagnostic_output,
@@ -606,4 +674,52 @@ test "root finalizer output is redirected to the diagnostic writer" {
             "shellystrap: update-ca-trust: exited with status 7\n",
         output.written(),
     );
+}
+
+test "bootstrap streams short diagnostics and progress before provisioning finishes" {
+    const t = std.testing;
+    var fixture = t.tmpDir(.{});
+    defer fixture.cleanup();
+    var file = try fixture.dir.createFile(t.io, "output", .{});
+    defer file.close(t.io);
+    var buffer: [4096]u8 = undefined;
+    var writer = file.writer(t.io, &buffer);
+    var output: DiagnosticOutput = .{ .stderr = &writer.interface };
+    var context = operation_api.OperationContext.init(t.allocator, t.io);
+    defer context.deinit();
+    var operation = context.begin(.{ .backend = .alpm, .kind = .install });
+    defer operation.finish(.success);
+    var previous_size: u64 = 0;
+    for (0..6) |step| {
+        switch (step) {
+            0 => DiagnosticOutput.handleScriptlet(&output, .{ .line = "initializing package" }),
+            1 => DiagnosticOutput.handleHook(&output, .{ .name = "fixture.hook", .description = "Updating cache", .position = 1, .total = 1 }),
+            2 => DiagnosticOutput.handleError(&output, .{ .message = "fixture failure" }),
+            3 => DiagnosticOutput.handleOperation(&output, .{ .status = .{ .envelope = operation.envelope, .level = .information, .message = "Checking package databases" } }),
+            4 => DiagnosticOutput.handleOperation(&output, .{ .progress = .{ .envelope = operation.envelope, .update = .{ .stage = "download", .message = "fixture.pkg.tar", .bytes_completed = 4, .bytes_total = 8 } } }),
+            5 => {
+                var finalizer: FinalizerOutput = .{ .writer = &writer.interface, .name = "ldconfig" };
+                FinalizerOutput.handle(&finalizer, .stdout, "updated");
+            },
+            else => unreachable,
+        }
+        const size = (try file.stat(t.io)).size;
+        try t.expect(size > previous_size);
+        try t.expect(size < buffer.len);
+        previous_size = size;
+    }
+    // Operation mirrors of legacy hook/scriptlet output must not print twice.
+    DiagnosticOutput.handleOperation(&output, .{ .status = .{ .envelope = operation.envelope, .level = .information, .message = "duplicate", .code = "alpm.scriptlet" } });
+    DiagnosticOutput.handleOperation(&output, .{ .status = .{ .envelope = operation.envelope, .level = .information, .message = "duplicate", .code = "rlpm.hook" } });
+    try t.expectEqual(previous_size, (try file.stat(t.io)).size);
+    output.io = t.io;
+    // Force an active throttle window without timing-sensitive sleeps.
+    output.last_progress = std.Io.Clock.awake.now(t.io).addDuration(.fromSeconds(60));
+    DiagnosticOutput.handleOperation(&output, .{ .progress = .{ .envelope = operation.envelope, .update = .{ .stage = "download", .bytes_completed = 5, .bytes_total = 8 } } });
+    try t.expectEqual(previous_size, (try file.stat(t.io)).size);
+    DiagnosticOutput.handleOperation(&output, .{ .progress = .{ .envelope = operation.envelope, .update = .{ .stage = "download", .bytes_completed = 8, .bytes_total = 8 } } });
+    try t.expect((try file.stat(t.io)).size > previous_size);
+    const contents = try fixture.dir.readFileAlloc(t.io, "output", t.allocator, .limited(4096));
+    defer t.allocator.free(contents);
+    try t.expect(std.mem.indexOf(u8, contents, "fixture.pkg.tar (4/8 bytes)") != null);
 }

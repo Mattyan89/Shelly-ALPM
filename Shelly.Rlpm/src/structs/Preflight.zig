@@ -113,9 +113,15 @@ const Builder = struct {
     }
     fn loadArchives(self: *Builder) !void {
         var download_index: usize = 0;
-        for (self.plan.additions) |addition| {
+        for (self.plan.additions, 0..) |addition, index| {
             try self.tx.owner.checkCancelled();
             self.current_package = addition.package;
+            const callbacks = self.tx.owner.configuration.callbacks;
+            if (callbacks.log) |log| {
+                var buffer: [512]u8 = undefined;
+                const message = std.fmt.bufPrint(&buffer, "Checking package archive ({d}/{d}): {s}", .{ index + 1, self.plan.additions.len, self.plan.package(addition.package).name }) catch "Checking package archive";
+                log(callbacks.log_context, .{ .level = .function, .message = message });
+            }
             const expected = self.plan.package(addition.package);
             const downloaded = if (expected.origin == .sync) blk: {
                 const file = &self.tx.downloaded_files.?[download_index];
@@ -173,8 +179,11 @@ const Builder = struct {
         }
         var names: std.StringHashMapUnmanaged(void) = .empty;
         var ordinal: usize = 0;
+        var verified_bytes: u64 = 0;
+        var reported = std.Io.Clock.awake.now(self.tx.io);
         while (try reader.next()) |borrowed| : (ordinal += 1) {
             try self.tx.owner.checkCancelled();
+            self.reportArchiveProgress(archive.id, ordinal, verified_bytes, &reported);
             self.current_path = try self.a.dupe(u8, borrowed.name);
             // Conventional tar root header carries no package file.
             if (borrowed.kind == .directory and (std.mem.eql(u8, borrowed.name, ".") or std.mem.eql(u8, borrowed.name, "./"))) continue;
@@ -194,6 +203,8 @@ const Builder = struct {
                 if (n == 0) break;
                 hash.update(buffer[0..n]);
                 count = try std.math.add(u64, count, n);
+                verified_bytes +|= n;
+                self.reportArchiveProgress(archive.id, ordinal, verified_bytes, &reported);
                 try self.tx.owner.checkCancelled();
             }
             if (file.kind == .regular and count != file.size.?) return error.ArchiveFailed;
@@ -265,6 +276,17 @@ const Builder = struct {
             if (std.mem.eql(u8, entry.path, ".MTREE")) archive.package.members.mtree = .present;
         }
         archive.package.has_scriptlet = archive.package.members.install == .present;
+    }
+
+    fn reportArchiveProgress(self: *Builder, id: Plan.Id, entries: usize, bytes: u64, reported: *std.Io.Timestamp) void {
+        const callbacks = self.tx.owner.configuration.callbacks;
+        const log = callbacks.log orelse return;
+        const now = std.Io.Clock.awake.now(self.tx.io);
+        if (reported.durationTo(now).toMilliseconds() < 250) return;
+        reported.* = now;
+        var buffer: [512]u8 = undefined;
+        const message = std.fmt.bufPrint(&buffer, "Checking {s}: {d} archive entries, {d} bytes read", .{ self.plan.package(id).name, entries, bytes }) catch "Checking package archive contents";
+        log(callbacks.log_context, .{ .level = .function, .message = message });
     }
     fn loadLocal(self: *Builder) !void {
         const db = &self.tx.owner.local.?;

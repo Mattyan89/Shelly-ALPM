@@ -523,3 +523,52 @@ test "native backend forwards original transaction failures to bootstrap handler
         try t.expectEqual(@as(usize, if (with_context) 1 else 0), capture.failures);
     }
 }
+
+test "native backend output observers receive preparation and transaction progress without changing standalone behavior" {
+    var fixture = try Fixture.init(.rlpm);
+    defer fixture.deinit();
+    const manager = try fixture.manager();
+    defer manager.deinit();
+    const Capture = struct {
+        checking_databases: bool = false,
+        checking_archives: bool = false,
+        initialized_after_checks: bool = false,
+        package_started: bool = false,
+        progress: bool = false,
+        completions: usize = 0,
+        events: usize = 0,
+        fn event(data: ?*anyopaque, value: pm.OperationEvent) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            self.events += 1;
+            switch (value) {
+                .status => |status| {
+                    if (std.mem.startsWith(u8, status.message, "Checking package databases")) self.checking_databases = true;
+                    if (std.mem.eql(u8, status.message, "initialized")) self.initialized_after_checks = self.checking_databases;
+                    if (std.mem.startsWith(u8, status.message, "Checking package archive (1/1): backend-fixture")) self.checking_archives = true;
+                    if (status.package_name) |name| {
+                        if (std.mem.eql(u8, name, "backend-fixture")) self.package_started = self.checking_archives;
+                    }
+                },
+                .progress => |progress| {
+                    if (progress.update.stage) |stage| if (std.mem.eql(u8, stage, "transaction")) {
+                        self.progress = true;
+                    };
+                },
+                .completed => self.completions += 1,
+                else => {},
+            }
+        }
+    };
+    var capture: Capture = .{};
+    const handler = try manager.dispatcher.addOperationHandler(.{ .function = Capture.event, .data = &capture });
+    try manager.install_local_packages(&.{fixture.archive}, .{ .nohooks = true, .noscriptlet = true });
+    try t.expect(capture.checking_databases and capture.initialized_after_checks);
+    try t.expect(capture.checking_archives and capture.package_started and capture.progress);
+    try t.expectEqual(@as(usize, 1), capture.completions);
+    try manager.sync(false);
+    try t.expectEqual(@as(usize, 2), capture.completions);
+    manager.dispatcher.removeOperationHandler(handler);
+    const previous_events = capture.events;
+    try manager.install_local_packages(&.{fixture.archive}, .{ .needed = true, .nohooks = true, .noscriptlet = true });
+    try t.expectEqual(previous_events, capture.events);
+}

@@ -169,7 +169,7 @@ fn event(data: ?*anyopaque, value: rlpm.Callbacks.Event) void {
             else => self.operation.status(.information, @tagName(result.state), "rlpm.lifecycle", null),
         },
         .phase => |phase| {
-            self.operation.status(if (phase.boundary == .failed) .warning else .information, @tagName(phase.phase), @tagName(phase.boundary), null);
+            self.operation.status(if (phase.boundary == .failed) .warning else .information, phaseDescription(phase.phase), @tagName(phase.boundary), null);
             if (phase.total_packages != null or phase.total_bytes != null) self.operation.progress(.{ .stage = @tagName(phase.phase), .total = phase.total_packages, .bytes_total = phase.total_bytes });
         },
         .package_operation => |package_event| {
@@ -193,7 +193,7 @@ fn event(data: ?*anyopaque, value: rlpm.Callbacks.Event) void {
         .scriptlet_output => |message| self.operation.status(.information, message, "rlpm.scriptlet", null),
         .pacnew_created => |backup| self.operation.status(.warning, backup.path, "rlpm.pacnew", null),
         .pacsave_created => |backup| self.operation.status(.warning, backup.path, "rlpm.pacsave", null),
-        .hook_run => |hook| self.operation.status(.information, hook.description orelse hook.name, @tagName(hook.boundary), null),
+        .hook_run => |hook| self.operation.status(.information, hook.description orelse hook.name, "rlpm.hook", null),
         .diagnostic => |diagnostic| self.operation.reportError(diagnostic.cause, @errorName(diagnostic.cause), "rlpm", null, false),
     }
     if (self.previous.event) |callback| callback(self.previous.event_context, value);
@@ -203,9 +203,26 @@ fn log(data: ?*anyopaque, value: rlpm.Callbacks.Log) void {
     self.operation.status(switch (value.level) {
         .err => .warning,
         .warning => .warning,
-        else => .information,
+        .debug => .debug,
+        .function => .information,
     }, value.message, "rlpm.log", null);
     if (self.previous.log) |callback| callback(self.previous.log_context, value);
+}
+
+fn phaseDescription(phase: rlpm.Callbacks.Phase) []const u8 {
+    return switch (phase) {
+        .dependencies, .resolve_dependencies => "Resolving dependencies",
+        .conflicts, .inter_conflicts => "Checking package conflicts",
+        .file_conflicts => "Checking file conflicts",
+        .transaction => "Applying package changes",
+        .integrity => "Checking package integrity",
+        .load_packages => "Checking package archives",
+        .disk_space => "Checking available disk space",
+        .keyring => "Checking signing keys",
+        .key_download => "Retrieving signing keys",
+        .database_retrieve => "Refreshing package databases",
+        .package_retrieve => "Retrieving packages",
+    };
 }
 fn progress(data: ?*anyopaque, value: rlpm.Callbacks.Progress) void {
     const self = from(data);
@@ -419,10 +436,11 @@ test "archive inventory failures report the package and mismatched path" {
     try std.testing.expect(capture.package and capture.path and capture.explanation);
 }
 
-test "payload finishing log and progress reach operation subscribers" {
+test "payload finishing and download progress reach operation subscribers" {
     const Capture = struct {
         status_seen: bool = false,
         progress_seen: bool = false,
+        download_seen: bool = false,
         fn event(data: ?*anyopaque, value: op.Event) void {
             const self: *@This() = @ptrCast(@alignCast(data.?));
             switch (value) {
@@ -431,6 +449,7 @@ test "payload finishing log and progress reach operation subscribers" {
                 },
                 .progress => |update| {
                     if (update.update.percentage == 99) self.progress_seen = true;
+                    if (update.update.bytes_completed == 4 and update.update.bytes_total == 8) self.download_seen = true;
                 },
                 else => {},
             }
@@ -454,5 +473,6 @@ test "payload finishing log and progress reach operation subscribers" {
     const callbacks = owner.configuration.callbacks;
     callbacks.log.?(callbacks.log_context, .{ .level = .function, .message = "Finishing writes for headers" });
     callbacks.progress.?(callbacks.progress_context, .{ .phase = .transaction, .package = null, .percent = 99, .position = 1, .total = 1 });
-    try std.testing.expect(capture.status_seen and capture.progress_seen);
+    callbacks.download.?(callbacks.download_context, .{ .progress = .{ .name = "fixture.pkg.tar", .downloaded = 4, .total = 8 } });
+    try std.testing.expect(capture.status_seen and capture.progress_seen and capture.download_seen);
 }
