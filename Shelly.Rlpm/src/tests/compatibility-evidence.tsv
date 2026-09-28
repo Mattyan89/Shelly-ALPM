@@ -1,0 +1,11 @@
+id	kind	source	scope
+version-fixed-54	reference-fixture	src/structs/Version.zig	54 fixed libalpm signs plus reverse/reflexive checks; version-compatibility.md records capture; ASCII NUL-free scope; not exhaustive
+metadata-unit	unit	src/structs/ParsedDescription.zig	Handwritten local metadata/relation assertions; includes installed_database; no complete independent round-trip parity
+archive-unit	unit	src/structs/Package.zig	Handcrafted package archives and ownership/error assertions; not libalpm differential results
+database-unit	unit	src/structs/Database.zig	Temporary desc fixtures and package/group indexing; sync queries not implemented
+signature-integration	integration	src/tests/signature.zig	Ephemeral real GPG key and detached signatures; success/tamper/missing/corrupt/unknown-key cases; boolean result only
+owner-unit	unit	src/tests/owner.zig	External consumer tests: owned configuration, registration, references, callbacks/cancellation, rollback/retry, every allocation failure; remaining operational milestones are not verified
+owner-reference	reference-fixture	src/tests/fixtures/owner-reference.json	record_owner.py captured pinned libalpm defaults/registration/paths/server normalization/independent sandbox controls on disposable roots; consumed in owner.zig; format-creation difference explicit
+physical-architecture-unit	unit	src/structs/PhysicalArchitectures.zig	Source-derived CPU/OS feature matrix and allocation failures; regular tests never load libalpm; not a full cross-hardware differential proof
+metadata-m2-reference	reference-fixture	src/tests/fixtures/metadata-reference.json	Pinned libalpm relation/format/provision, byte-version, archive-mode, local-provenance/file/reason and signature-decoding captures; native crashes recorded in forked workers; no full parity claim
+metadata-m2-unit	unit	src/tests/metadata.zig	Copied normalized metadata, raw relation ownership, five compression filters, compressed mtree, stream lifetimes/bounds and every Zig allocation failure; no production sync/local-file backend or signature enforcement

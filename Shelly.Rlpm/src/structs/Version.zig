@@ -23,6 +23,7 @@ const Parts = struct {
 /// Unlike compareStrings, this rejects empty components and bad epoch prefixes.
 pub fn validate(version: []const u8) error{ InvalidVersion, InvalidCharacter }!void {
     if (version.len == 0) return error.InvalidVersion;
+    if (std.mem.indexOfScalar(u8, version, 0) != null) return error.InvalidCharacter;
 
     var ver_rel = version;
     if (std.mem.find(u8, version, ":")) |epoch_index| {
@@ -48,6 +49,12 @@ pub fn validate(version: []const u8) error{ InvalidVersion, InvalidCharacter }!v
 /// Shallow copies share ownership: call deinit only once for each init.
 pub fn init(version: []const u8, allocator: std.mem.Allocator) !Version {
     try validate(version);
+    return initRaw(version, allocator);
+}
+
+/// Own a permissive, NUL-free version from package metadata. Strict callers use init.
+pub fn initRaw(version: []const u8, allocator: std.mem.Allocator) !Version {
+    if (std.mem.indexOfScalar(u8, version, 0) != null) return error.InvalidCharacter;
     const raw = try allocator.dupe(u8, version);
     const parts = parseParts(raw);
     return .{
@@ -71,10 +78,11 @@ pub fn compareVersions(v1: Version, v2: Version) CompareResults {
     );
 }
 
-/// Allocation-free alpm_pkg_vercmp ordering for ASCII, NUL-free strings.
+/// Allocation-free alpm_pkg_vercmp ordering for NUL-free byte strings (C locale).
 /// Empty/unusual inputs are comparable without passing metadata validation.
-/// Non-ASCII, embedded NUL, and nullable C pointer semantics are outside this
-/// compatibility contract. Equality need not be transitive when pkgrel is absent.
+/// Bytes outside ASCII classify as separators, including individual UTF-8 bytes.
+/// Embedded NUL and nullable C pointer semantics are outside this contract.
+/// Equality need not be transitive when pkgrel is absent.
 pub fn compareStrings(v1: []const u8, v2: []const u8) CompareResults {
     return compareParts(parseParts(v1), parseParts(v2));
 }

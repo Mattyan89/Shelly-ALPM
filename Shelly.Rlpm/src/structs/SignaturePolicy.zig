@@ -6,9 +6,15 @@ pub const Verification = enum {
     optional,
     required,
 };
+pub const Trust = struct {
+    allow_marginal: bool = false,
+    allow_unknown: bool = false,
+};
 
 package: Verification = .required,
 database: Verification = .required,
+package_trust: Trust = .{},
+database_trust: Trust = .{},
 
 test "SignaturePolicy requires package and database signatures by default" {
     const policy: SignaturePolicy = .{};

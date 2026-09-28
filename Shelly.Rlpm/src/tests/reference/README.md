@@ -1,0 +1,148 @@
+# Frozen libalpm reference
+
+The required target is **CachyOS pacman 7.1.0.r9.g54d9411-4 / libalpm 16.0.1**,
+including its extensions. These files are reference material, never compiled or
+executed by RLPM. `test-compatibility` checks their SHA-256 hashes and the API
+ledger without loading libalpm or invoking pacman.
+
+## Provenance
+
+[manifest.json](manifest.json) records full revisions, archive URLs/hashes,
+installed binary identity, runtime capabilities, build evidence and every frozen
+asset hash. The relevant sources are:
+
+- [Pristine upstream revision](https://gitlab.archlinux.org/pacman/pacman/-/commit/54d94116164b0b2202c6061c4a59c6f3e70820d8),
+  identified by the package version's abbreviated `54d9411`.
+- [Actual CachyOS source revision](https://github.com/CachyOS/pacman/tree/4056cd687f6379e61e7decb9b66e9b57cb3949a9),
+  recorded in the package's PKGBUILD; it differs from that upstream revision.
+- [Packaging revision](https://github.com/CachyOS/CachyOS-PKGBUILDS/tree/d90418d0be6eb4dbf8aac57a8c71ff64630aaf9e/pacman).
+  The vendored PKGBUILD's hash exactly matches the installed package's
+  `.BUILDINFO`. The downstream header exactly matches `/usr/include/alpm.h`
+  observed on 2026-09-27. Both upstream and installed `alpm_list.h` match.
+
+`packaging/` retains the recipe, `.SRCINFO`, package `.BUILDINFO`/`.PKGINFO`,
+configuration files and patches. The manifest lists the four patches applied to
+this x86_64 build in recipe order. The aarch64-only patch is retained separately
+and was not applied to the reference. The bundled source precedes those patches;
+consult them as well when deriving expectations. The SQLite source URL/hash
+comes from `.SRCINFO` and the PKGBUILD and is recorded, not vendored or rebuilt.
+Build flags/options come from the recipe and `.BUILDINFO`, not a reproduced build.
+
+Each `*-source-tests.tar.gz` is a deterministic subset of the corresponding
+source archive, with the top-level directory removed. It contains **all regular
+files under `test/`**, libalpm sources/headers except translations, `COPYING`,
+`AUTHORS`, Meson build/options, the hook manual and pacman's configuration parser.
+Paths are sorted; timestamps, UID/GID and names are zeroed; file modes are 0644;
+gzip mtime is zero. The upstream bundle has 404 test files including 341 pactest
+cases; downstream has 407 test files including 344 pactest cases. Acquisition
+is not execution: these cases have not yet been adapted to the RLPM runner.
+`downstream-libalpm.diff` records every non-translation libalpm source change
+between these two revisions, before packaging patches.
+
+Original copyright headers and [COPYING](COPYING) are retained. Pacman/libalpm
+reference material is GPL-2.0-or-later, as stated in its source and package
+metadata. Vendoring the corpus preserves attribution; it does not change the
+license declarations of other project files.
+
+## Coverage and CachyOS requirements
+
+[../compatibility-ledger.tsv](../compatibility-ledger.tsv) contains 493 public
+symbols from the two headers plus 25 behavioral contracts. Header provenance
+uses paths relative to this directory; `archive!member` identifies a source
+inside a bundle. Symbols present upstream are labeled `upstream`; that label
+does not imply the downstream implementation is identical. Separate CachyOS
+behavior rows cover shared APIs, including:
+
+- SQLite repository metadata in the archive's `pacman.db` member (M3).
+- Physical architecture enumeration (M1) and `Architecture=auto` integration (M11).
+- Reading `%INSTALLED_DB%` (M2) and preserving repository provenance during
+  selection, install and upgrade (M5/M10).
+- Mandatory hook/scriptlet network isolation, `NetworkAccess=allowed`, the
+  global DisableSandbox interaction, and best-effort isolation for `ldconfig` (M9).
+- Safe chroot child cleanup after downloads, from the packaged curl fix (M9).
+
+Each row gives the equivalent current/proposed Zig operation, responsible
+milestone, existing evidence and a **planned** fixture ID. A planned ID is an
+acceptance obligation, not an existing test. `missing` and `partial` do not count
+as parity. `representation_only` is restricted to C linked-list mechanics
+represented by Zig containers and ownership; it cannot exclude an extension.
+`verified` requires independent reference evidence and reviewed coverage of the
+full row contract. No row is currently labeled `verified`.
+
+[../compatibility-evidence.tsv](../compatibility-evidence.tsv) distinguishes
+handwritten unit tests, real GPG integration, independently recorded Owner
+defaults/registration, and the existing 54 fixed version expectations captured
+independently from libalpm. Those version expectations remain
+inline in Version.zig and are unchanged. The ledger is an inventory, not proof
+that all behavior is implemented, and a passing ledger test is not a parity gate.
+
+## Updating the reference
+
+Reference updates need an explicit review of source/patch changes, required
+CachyOS behavior, ledger coverage and expectation provenance. Keep the normal
+build independent of live reference execution. Do not regenerate expected
+results from RLPM.
+
+The optional identity recorder only hashes explicit files and calls
+`alpm_version`/`alpm_capabilities`. It creates no ALPM handle and performs no
+package operation. From the module directory:
+
+```sh
+python3 src/tests/reference/record_identity.py \
+  --library /usr/lib/libalpm.so.16.0.1 \
+  --alpm-header /usr/include/alpm.h \
+  --list-header /usr/include/alpm_list.h
+```
+
+Compare its JSON with the frozen manifest; it never edits committed evidence.
+There is no live version comparison build target.
+
+M1 also provides an optional Owner recorder:
+
+```sh
+python3 src/tests/reference/record_owner.py \
+  --library /usr/lib/libalpm.so.16.0.1
+```
+
+It verifies the pinned library hash before execution, creates dedicated temporary
+root/database directories, queries defaults, and exercises in-memory repository
+registration and independent sandbox controls. The reference initializer creates
+its local version file inside that temporary database; the recorder releases the
+handle and removes its own temporary tree. It does not open the host database.
+Its reviewed output is [../fixtures/owner-reference.json](../fixtures/owner-reference.json),
+consumed offline by the external Owner tests. It does not alter the frozen M0
+source assets or their manifest.
+
+The deprecated aggregate sandbox getter/setter are declared in the pinned header
+but not exported by the installed binary. Their M1 behavior is derived from
+the pinned source; the fixture records execution of the independent filesystem,
+syscall and CachyOS network controls. M1 also records the remaining difference
+between RLPM's read-only initialization and libalpm's version-file creation.
+Neither the fixture nor source-derived CPU feature tests establish full parity.
+Future operation recorders and pactest adaptations must likewise use dedicated
+disposable roots and reviewed independent expectations.
+
+M2's optional recorder captures metadata and relation behavior:
+
+```sh
+python3 src/tests/reference/record_metadata.py \
+  --library /usr/lib/libalpm.so.16.0.1
+```
+
+It checks the library hash, selects the C locale and builds its own temporary
+root, local database and archives. It loads metadata with signature checking
+disabled, queries local records, compares versions, parses/formats relations and
+decodes embedded signature bytes. No transaction or host database is used.
+Native archive cases run in forked workers with core dumps disabled; the parent
+records abnormal exit signals and removes the temporary tree. This is needed
+because the pinned binary segfaults on the recorded valid-mtree/invalid-duplicate
+case. RLPM's expected result for that case is the documented `InvalidMtree`
+error, not reproduction of the native crash.
+
+The reviewed [metadata fixture](../fixtures/metadata-reference.json) retains
+25 relation cases, 13 satisfaction decisions, nine byte-version comparisons,
+18 archives in both modes, six signature-decoding inputs, five install reasons
+and local file/backup/CachyOS provenance. Original M0 reference assets and the
+54 existing version signs are unchanged. `test-metadata` consumes this output
+offline; it never regenerates expected results. The [metadata API guide](../../../metadata.md)
+documents coverage and remaining backend/verification work.

@@ -8,10 +8,11 @@ const SignaturePolicy = @import("SignaturePolicy.zig");
 const DatabaseUsage = @import("DatabaseUsage.zig");
 const ParsedDescription = @import("ParsedDescription.zig");
 const ShellyKey = @import("Shelly_Key");
+const DatabaseConfiguration = @import("DatabaseConfiguration.zig");
+const DatabaseRef = @import("DatabaseRef.zig");
 
-pub const PackageId = enum(u32) {
-    _,
-};
+pub const PackageId = @import("PackageRef.zig").Id;
+pub const Kind = enum { local, sync };
 
 pub const GroupId = enum(u32) {
     _,
@@ -31,18 +32,23 @@ pub const PackageIndex = struct {
 
 allocator: std.mem.Allocator,
 arena: std.heap.ArenaAllocator,
+cache_arena: std.heap.ArenaAllocator,
+kind: Kind = .local,
+identity: ?DatabaseRef = null,
+generation: u64 = 1,
 
-name: []u8,
-path: []u8,
+name: []const u8,
+path: []const u8,
 
 packages: PackageIndex = .{},
 groups: GroupIndex = .{},
 
-cache_servers: std.ArrayList([]u8) = .empty,
-servers: std.ArrayList([]u8) = .empty,
+cache_servers: std.ArrayList([]const u8) = .empty,
+servers: std.ArrayList([]const u8) = .empty,
 
 status: DatabaseStatus = .{},
 signature_policy: SignaturePolicy = .{},
+signature_override: ?SignaturePolicy = null,
 usage: DatabaseUsage = .{},
 
 pub fn init(
@@ -55,8 +61,10 @@ pub fn init(
         .path = "",
         .allocator = allocator,
         .arena = std.heap.ArenaAllocator.init(allocator),
+        .cache_arena = std.heap.ArenaAllocator.init(allocator),
         .name = undefined,
         .signature_policy = signature_policy,
+        .signature_override = signature_policy,
     };
     errdefer result.arena.deinit();
 
@@ -66,9 +74,74 @@ pub fn init(
     return result;
 }
 
+pub fn initSync(
+    allocator: std.mem.Allocator,
+    configuration: DatabaseConfiguration,
+    path: []const u8,
+    default_policy: SignaturePolicy,
+) !Database {
+    try configuration.validate();
+    var result = try init(allocator, configuration.database_name, path, configuration.signature_policy orelse default_policy);
+    errdefer result.deinit();
+    result.kind = .sync;
+    result.signature_override = configuration.signature_policy;
+    result.usage = configuration.usage;
+    const owned = result.arena.allocator();
+    for (configuration.servers) |url| try result.servers.append(owned, try copyServer(owned, url));
+    for (configuration.cache_servers) |url| try result.cache_servers.append(owned, try copyServer(owned, url));
+    return result;
+}
+
+fn copyServer(allocator: std.mem.Allocator, url: []const u8) ![]const u8 {
+    // Match the reference's removal of one terminal slash, preserving order.
+    return allocator.dupe(u8, if (std.mem.endsWith(u8, url, "/")) url[0 .. url.len - 1] else url);
+}
+
+pub fn configurationView(self: *const Database) DatabaseConfiguration {
+    return .{
+        .database_name = self.name,
+        .signature_policy = self.signature_override,
+        .servers = self.servers.items,
+        .cache_servers = self.cache_servers.items,
+        .usage = self.usage,
+    };
+}
+
+/// Rebuild registration storage without repeatedly normalizing stored URLs.
+pub fn copyRegistration(self: *const Database, path: []const u8, default_policy: SignaturePolicy) !Database {
+    var result = try init(self.allocator, self.name, path, self.signature_override orelse default_policy);
+    errdefer result.deinit();
+    result.kind = self.kind;
+    result.identity = self.identity;
+    result.generation = std.math.add(u64, self.generation, 1) catch return error.IdentityExhausted;
+    result.signature_override = self.signature_override;
+    result.usage = self.usage;
+    const owned = result.arena.allocator();
+    for (self.servers.items) |url| try result.servers.append(owned, try owned.dupe(u8, url));
+    for (self.cache_servers.items) |url| try result.cache_servers.append(owned, try owned.dupe(u8, url));
+    return result;
+}
+
 pub fn deinit(self: *Database) void {
+    self.cache_arena.deinit();
     self.arena.deinit();
     self.* = undefined;
+}
+
+/// Invalidates PackageRef generations; registration/configuration remain owned.
+pub fn invalidateCache(self: *Database) !void {
+    const next = std.math.add(u64, self.generation, 1) catch return error.IdentityExhausted;
+    self.resetCacheStorage();
+    self.generation = next;
+    self.status = .{};
+}
+
+fn resetCacheStorage(self: *Database) void {
+    self.cache_arena.deinit();
+    self.cache_arena = std.heap.ArenaAllocator.init(self.allocator);
+    self.packages = .{};
+    self.groups = .{};
+    self.status.clearCaches();
 }
 
 pub fn loadDatabase(
@@ -76,14 +149,20 @@ pub fn loadDatabase(
     io: std.Io,
     gnupg_path: ?[]const u8,
 ) !void {
+    if (self.kind == .sync) return error.UnsupportedDatabaseBackend;
     if (self.status.package_cache_loaded) return error.DatabaseAlreadyLoaded;
-    const allocator = self.arena.allocator();
+    const allocator = self.cache_arena.allocator();
+    errdefer self.resetCacheStorage();
 
-    var root_dir = try std.Io.Dir.cwd().openDir(io, self.path, .{
+    var root_dir = std.Io.Dir.cwd().openDir(io, self.path, .{
         .iterate = true,
         .access_sub_paths = true,
-    });
+    }) catch |err| {
+        if (err == error.FileNotFound) self.status.markMissing();
+        return err;
+    };
     defer root_dir.close(io);
+    self.status.presence = .exists;
 
     var iterator = root_dir.iterate();
 
@@ -104,6 +183,7 @@ pub fn loadDatabase(
             allocator,
             .limited(1024 * 1024),
         ) catch |err| switch (err) {
+            error.OutOfMemory => return err,
             error.FileNotFound => {
                 std.log.warn("package directory {s} has no desc file", .{entry.name});
                 continue;
@@ -116,12 +196,14 @@ pub fn loadDatabase(
 
         // The arena retains contents because Package fields borrow slices from it.
         var parsed = parseDescription(allocator, contents) catch |err| {
+            if (err == error.OutOfMemory) return err;
             std.log.warn("could not parse {s}/desc: {}", .{ entry.name, err });
             continue;
         };
         defer parsed.deinit(allocator);
 
-        const package = parsed.intoPackage(allocator, self.name) catch |err| {
+        const package = parsed.intoPackage(&self.cache_arena, .{ .origin = .local, .database_name = self.name }) catch |err| {
+            if (err == error.OutOfMemory) return err;
             std.log.warn("could not create package from {s}/desc: {}", .{ entry.name, err });
             continue;
         };
@@ -146,6 +228,11 @@ pub fn loadDatabase(
         try self.packages.ordered.append(allocator, package_id);
     }
 
+    std.mem.sort(PackageId, self.packages.ordered.items, self, struct {
+        fn lessThan(db: *Database, a: PackageId, b: PackageId) bool {
+            return std.mem.lessThan(u8, db.packages.packages.items[@intFromEnum(a)].name, db.packages.packages.items[@intFromEnum(b)].name);
+        }
+    }.lessThan);
     try self.buildGroupIndex(allocator);
     if (self.signature_policy.database == .required and !try self.validateSignature(
         io,
@@ -166,7 +253,8 @@ fn entryMatchesPackage(entry_name: []const u8, package: Package) bool {
 }
 
 fn buildGroupIndex(self: *Database, allocator: std.mem.Allocator) !void {
-    for (self.packages.packages.items) |*package| {
+    for (self.packages.ordered.items) |package_id| {
+        const package = self.packages.packages.items[@intFromEnum(package_id)];
         for (package.groups) |group_name| {
             const group_id = self.groups.by_name.get(group_name) orelse create: {
                 const id: GroupId = @enumFromInt(
@@ -180,161 +268,18 @@ fn buildGroupIndex(self: *Database, allocator: std.mem.Allocator) !void {
                 try self.groups.ordered.append(allocator, id);
                 break :create id;
             };
-            try self.groups.groups.items[@intFromEnum(group_id)].packages.append(allocator, package);
+            try self.groups.groups.items[@intFromEnum(group_id)].packages.append(allocator, package_id);
         }
     }
+    std.mem.sort(GroupId, self.groups.ordered.items, self, struct {
+        fn lessThan(db: *Database, a: GroupId, b: GroupId) bool {
+            return std.mem.lessThan(u8, db.groups.groups.items[@intFromEnum(a)].name, db.groups.groups.items[@intFromEnum(b)].name);
+        }
+    }.lessThan);
 }
 
-fn parseDescription(
-    allocator: std.mem.Allocator,
-    contents: []const u8,
-) !ParsedDescription {
-    var result: ParsedDescription = .{};
-    errdefer result.deinit(allocator);
-
-    var section: DescSection = .none;
-    var lines = std.mem.splitScalar(u8, contents, '\n');
-
-    while (lines.next()) |raw_line| {
-        // Handle files containing Windows-style CRLF line endings.
-        const line = std.mem.trimEnd(u8, raw_line, "\r");
-
-        // A blank line terminates the current section.
-        if (line.len == 0) {
-            section = .none;
-            continue;
-        }
-
-        // Section header, such as "%DEPENDS%".
-        if (line.len >= 2 and
-            line[0] == '%' and
-            line[line.len - 1] == '%')
-        {
-            section = descSectionFromHeader(line);
-            continue;
-        }
-
-        switch (section) {
-            .none => return error.ValueOutsideSection,
-
-            // Unknown sections are skipped until the next blank line/header.
-            .ignore => {},
-
-            .name => try setDescValue(&result.name, line),
-            .version => try setDescValue(&result.version, line),
-            .base => try setDescValue(&result.base, line),
-            .description => try setDescValue(&result.description, line),
-            .url => try setDescValue(&result.url, line),
-            .architecture => try setDescValue(&result.architecture, line),
-            .packager => try setDescValue(&result.packager, line),
-            .installed_database => try setDescValue(&result.installed_database, line),
-
-            .groups => try result.groups.append(allocator, line),
-            .licenses => try result.licenses.append(allocator, line),
-
-            .build_date => {
-                if (result.build_date != null)
-                    return error.DuplicateValue;
-
-                result.build_date = try std.fmt.parseInt(
-                    i64,
-                    line,
-                    10,
-                );
-            },
-
-            .install_date => {
-                if (result.install_date != null)
-                    return error.DuplicateValue;
-
-                result.install_date = try std.fmt.parseInt(
-                    i64,
-                    line,
-                    10,
-                );
-            },
-
-            .installed_size => {
-                if (result.installed_size != null)
-                    return error.DuplicateValue;
-
-                result.installed_size = try std.fmt.parseInt(
-                    u64,
-                    line,
-                    10,
-                );
-            },
-
-            .reason => {
-                if (result.reason != null)
-                    return error.DuplicateValue;
-
-                result.reason = if (std.mem.eql(u8, line, "0"))
-                    .explicit
-                else if (std.mem.eql(u8, line, "1"))
-                    .dependency
-                else
-                    return error.InvalidInstallReason;
-            },
-
-            .validation => {
-                if (std.mem.eql(u8, line, "none")) {
-                    result.validation.none = true;
-                } else if (std.mem.eql(u8, line, "sha256")) {
-                    result.validation.sha256 = true;
-                } else if (std.mem.eql(u8, line, "pgp")) {
-                    result.validation.pgp = true;
-                }
-
-                // Unknown values are ignored, matching libalpm's
-                // forward-compatible behavior.
-            },
-
-            .depends => {
-                try result.depends.append(allocator, line);
-            },
-
-            .optional_depends => {
-                try result.optional_depends.append(allocator, line);
-            },
-
-            .make_depends => {
-                try result.make_depends.append(allocator, line);
-            },
-
-            .check_depends => {
-                try result.check_depends.append(allocator, line);
-            },
-
-            .conflicts => {
-                try result.conflicts.append(allocator, line);
-            },
-
-            .provides => {
-                try result.provides.append(allocator, line);
-            },
-
-            .replaces => {
-                try result.replaces.append(allocator, line);
-            },
-
-            .xdata => {
-                const equals_index =
-                    std.mem.indexOfScalar(u8, line, '=') orelse
-                    return error.InvalidXData;
-
-                if (equals_index == 0)
-                    return error.InvalidXData;
-
-                try result.xdata.append(allocator, .{
-                    .name = line[0..equals_index],
-                    .value = line[equals_index + 1 ..],
-                });
-            },
-        }
-    }
-
-    return result;
+fn parseDescription(allocator: std.mem.Allocator, contents: []const u8) !ParsedDescription {
+    return ParsedDescription.parse(allocator, contents);
 }
 
 fn freeStrings(
@@ -347,121 +292,6 @@ fn freeStrings(
     strings.deinit(allocator);
     strings.* = .empty;
 }
-
-fn descSectionFromHeader(header: []const u8) DescSection {
-    if (std.mem.eql(u8, header, "%NAME%"))
-        return .name;
-
-    if (std.mem.eql(u8, header, "%VERSION%"))
-        return .version;
-
-    if (std.mem.eql(u8, header, "%BASE%"))
-        return .base;
-
-    if (std.mem.eql(u8, header, "%DESC%"))
-        return .description;
-
-    if (std.mem.eql(u8, header, "%GROUPS%"))
-        return .groups;
-
-    if (std.mem.eql(u8, header, "%URL%"))
-        return .url;
-
-    if (std.mem.eql(u8, header, "%LICENSE%"))
-        return .licenses;
-
-    if (std.mem.eql(u8, header, "%ARCH%"))
-        return .architecture;
-
-    if (std.mem.eql(u8, header, "%BUILDDATE%"))
-        return .build_date;
-
-    if (std.mem.eql(u8, header, "%INSTALLDATE%"))
-        return .install_date;
-
-    if (std.mem.eql(u8, header, "%PACKAGER%"))
-        return .packager;
-
-    if (std.mem.eql(u8, header, "%INSTALLED_DB%"))
-        return .installed_database;
-
-    if (std.mem.eql(u8, header, "%SIZE%"))
-        return .installed_size;
-
-    // Synchronized repository databases use ISIZE for installed size.
-    if (std.mem.eql(u8, header, "%ISIZE%"))
-        return .installed_size;
-
-    if (std.mem.eql(u8, header, "%REASON%"))
-        return .reason;
-
-    if (std.mem.eql(u8, header, "%VALIDATION%"))
-        return .validation;
-
-    if (std.mem.eql(u8, header, "%DEPENDS%"))
-        return .depends;
-
-    if (std.mem.eql(u8, header, "%OPTDEPENDS%"))
-        return .optional_depends;
-
-    if (std.mem.eql(u8, header, "%MAKEDEPENDS%"))
-        return .make_depends;
-
-    if (std.mem.eql(u8, header, "%CHECKDEPENDS%"))
-        return .check_depends;
-
-    if (std.mem.eql(u8, header, "%CONFLICTS%"))
-        return .conflicts;
-
-    if (std.mem.eql(u8, header, "%PROVIDES%"))
-        return .provides;
-
-    if (std.mem.eql(u8, header, "%REPLACES%"))
-        return .replaces;
-
-    if (std.mem.eql(u8, header, "%XDATA%"))
-        return .xdata;
-
-    return .ignore;
-}
-
-fn setDescValue(
-    destination: *?[]const u8,
-    value: []const u8,
-) !void {
-    if (destination.* != null)
-        return error.DuplicateValue;
-
-    destination.* = value;
-}
-
-const DescSection = enum {
-    none,
-    ignore,
-    name,
-    version,
-    base,
-    description,
-    groups,
-    url,
-    licenses,
-    architecture,
-    build_date,
-    install_date,
-    packager,
-    installed_database,
-    installed_size,
-    reason,
-    validation,
-    depends,
-    optional_depends,
-    make_depends,
-    check_depends,
-    conflicts,
-    provides,
-    replaces,
-    xdata,
-};
 
 pub fn validateSignature(
     self: *Database,
@@ -537,7 +367,7 @@ test "parseDescription parses a local database desc entry" {
     try std.testing.expectEqualStrings("extra", parsed.installed_database.?);
     try std.testing.expectEqualStrings("glibc>=2.39", parsed.depends.items[0]);
 
-    const package = try parsed.intoPackage(allocator, "local");
+    const package = try parsed.intoPackage(&arena, .{ .origin = .local, .database_name = "local" });
     try std.testing.expectEqualStrings("demo", package.name);
     try std.testing.expectEqualStrings("extra", package.installed_database.?);
     try std.testing.expectEqualStrings("glibc", package.depends[0].name);
@@ -647,7 +477,7 @@ test "parseDescription covers every supported local database field" {
     try std.testing.expectEqual(@as(usize, 2), parsed.xdata.items.len);
     try std.testing.expectEqualStrings("value=containing=equals", parsed.xdata.items[1].value);
 
-    const package = try parsed.intoPackage(allocator, "local");
+    const package = try parsed.intoPackage(&arena, .{ .origin = .local, .database_name = "local" });
     try std.testing.expectEqualStrings("demo", package.name);
     try std.testing.expectEqualStrings("2", package.version.epoch);
     try std.testing.expectEqualStrings("1.2.3", package.version.pkgver);
@@ -662,7 +492,7 @@ test "parseDescription covers every supported local database field" {
 
     try std.testing.expectEqualStrings("glibc", package.depends[0].name);
     switch (package.depends[0].constraint) {
-        .greater_equal => |version| try std.testing.expectEqualStrings("2.39", version.raw),
+        .greater_equal => |version| try std.testing.expectEqualStrings("2.39", version),
         else => return error.TestUnexpectedResult,
     }
     try std.testing.expectEqualStrings("zlib", package.depends[1].name);
@@ -673,7 +503,7 @@ test "parseDescription covers every supported local database field" {
     try std.testing.expectEqualStrings("demo-old", package.conflicts[0].name);
     try std.testing.expectEqualStrings("virtual-demo", package.provides[0].name);
     switch (package.provides[0].constraint) {
-        .equal => |version| try std.testing.expectEqualStrings("2", version.epoch),
+        .equal => |version| try std.testing.expectEqualStrings("2:1.2.3", version),
         else => return error.TestUnexpectedResult,
     }
     try std.testing.expectEqualStrings("old-demo", package.replaces[0].name);
@@ -691,7 +521,7 @@ test "parseDescription accepts CRLF and ignores unknown sections" {
 
     var parsed = try parseDescription(allocator, contents);
     defer parsed.deinit(allocator);
-    const package = try parsed.intoPackage(allocator, "local");
+    const package = try parsed.intoPackage(&arena, .{ .origin = .local, .database_name = "local" });
 
     try std.testing.expectEqualStrings("demo", package.name);
     try std.testing.expectEqualStrings("0", package.version.epoch);
@@ -716,10 +546,9 @@ test "parseDescription rejects malformed scalar values" {
         error.InvalidCharacter,
         parseDescription(allocator, "%BUILDDATE%\nnot-a-number\n"),
     );
-    try std.testing.expectError(
-        error.InvalidInstallReason,
-        parseDescription(allocator, "%REASON%\n9\n"),
-    );
+    var unknown_reason = try parseDescription(allocator, "%REASON%\n9\n");
+    defer unknown_reason.deinit(allocator);
+    try std.testing.expectEqual(.unknown, unknown_reason.reason.?);
     try std.testing.expectError(
         error.InvalidXData,
         parseDescription(allocator, "%XDATA%\nmissing-equals\n"),
@@ -735,24 +564,24 @@ test "ParsedDescription requires package identity and valid relations" {
     defer missing_name.deinit(allocator);
     try std.testing.expectError(
         error.MissingPackageName,
-        missing_name.intoPackage(allocator, "local"),
+        missing_name.intoPackage(&arena, .{ .origin = .local, .database_name = "local" }),
     );
 
     var missing_version = try parseDescription(allocator, "%NAME%\ndemo\n");
     defer missing_version.deinit(allocator);
     try std.testing.expectError(
         error.MissingPackageVersion,
-        missing_version.intoPackage(allocator, "local"),
+        missing_version.intoPackage(&arena, .{ .origin = .local, .database_name = "local" }),
     );
 
     var invalid_relation = try parseDescription(
         allocator,
-        "%NAME%\ndemo\n\n%VERSION%\n1.0-1\n\n%DEPENDS%\n>=2\n",
+        "%NAME%\ndemo\n\n%VERSION%\n1.0-1\n\n%DEPENDS%\ninvalid\x00relation\n",
     );
     defer invalid_relation.deinit(allocator);
     try std.testing.expectError(
         error.InvalidPackageRelation,
-        invalid_relation.intoPackage(allocator, "local"),
+        invalid_relation.intoPackage(&arena, .{ .origin = .local, .database_name = "local" }),
     );
 }
 
@@ -803,7 +632,7 @@ test "loadDatabase owns and indexes parsed packages" {
     const group_id = database.groups.by_name.get("base") orelse return error.TestUnexpectedResult;
     const group = database.groups.groups.items[@intFromEnum(group_id)];
     try std.testing.expectEqual(@as(usize, 1), group.packages.items.len);
-    try std.testing.expectEqualStrings("demo", group.packages.items[0].name);
+    try std.testing.expectEqual(package_id, group.packages.items[0]);
     try std.testing.expectError(
         error.DatabaseAlreadyLoaded,
         database.loadDatabase(std.testing.io, null),
@@ -853,208 +682,212 @@ test "loadDatabase skips missing and malformed package descriptions" {
     try std.testing.expect(!database.packages.by_name.contains("missing"));
 }
 
-test "integration parses the actual local package database" {
-    const local_database_path = "/var/lib/pacman/local";
-    var probe = std.Io.Dir.cwd().openDir(std.testing.io, local_database_path, .{}) catch |err| switch (err) {
-        error.FileNotFound, error.AccessDenied => return error.SkipZigTest,
-        else => return err,
-    };
-    probe.close(std.testing.io);
+/// Opt-in host smoke tests; never referenced by the ordinary test root.
+pub const HostTests = struct {
+    test "host-readonly: parses the actual local package database" {
+        const local_database_path = "/var/lib/pacman/local";
+        var probe = std.Io.Dir.cwd().openDir(std.testing.io, local_database_path, .{}) catch |err| switch (err) {
+            error.FileNotFound, error.AccessDenied => return error.SkipZigTest,
+            else => return err,
+        };
+        probe.close(std.testing.io);
 
-    const previous_log_level = std.testing.log_level;
-    std.testing.log_level = .err;
-    defer std.testing.log_level = previous_log_level;
+        const previous_log_level = std.testing.log_level;
+        std.testing.log_level = .err;
+        defer std.testing.log_level = previous_log_level;
 
-    var database = try Database.init(std.testing.allocator, "local", local_database_path, .{});
-    defer database.deinit();
-    database.signature_policy.database = .disabled;
-    try database.loadDatabase(std.testing.io, null);
+        var database = try Database.init(std.testing.allocator, "local", local_database_path, .{});
+        defer database.deinit();
+        database.signature_policy.database = .disabled;
+        try database.loadDatabase(std.testing.io, null);
 
-    try std.testing.expect(database.status.package_cache_loaded);
-    try std.testing.expect(database.packages.packages.items.len > 0);
-    try std.testing.expectEqual(
-        database.packages.packages.items.len,
-        database.packages.ordered.items.len,
-    );
-    try std.testing.expectEqual(
-        database.packages.packages.items.len,
-        database.packages.by_name.count(),
-    );
-
-    const preview_count = @min(database.packages.ordered.items.len, 5);
-    std.debug.print(
-        "\nlocal database preview ({d} of {d} packages):\n",
-        .{ preview_count, database.packages.packages.items.len },
-    );
-    for (database.packages.ordered.items[0..preview_count]) |package_id| {
-        const package = database.packages.packages.items[@intFromEnum(package_id)];
-        std.debug.print("  {s} {s}\n", .{ package.name, package.version.raw });
-    }
-
-    for (database.packages.ordered.items) |package_id| {
-        const package = database.packages.packages.items[@intFromEnum(package_id)];
-        try std.testing.expect(package.name.len > 0);
-        try std.testing.expect(package.version.raw.len > 0);
+        try std.testing.expect(database.status.package_cache_loaded);
+        try std.testing.expect(database.packages.packages.items.len > 0);
         try std.testing.expectEqual(
-            package_id,
-            database.packages.by_name.get(package.name).?,
+            database.packages.packages.items.len,
+            database.packages.ordered.items.len,
         );
+        try std.testing.expectEqual(
+            database.packages.packages.items.len,
+            database.packages.by_name.count(),
+        );
+
+        const preview_count = @min(database.packages.ordered.items.len, 5);
+        std.debug.print(
+            "\nlocal database preview ({d} of {d} packages):\n",
+            .{ preview_count, database.packages.packages.items.len },
+        );
+        for (database.packages.ordered.items[0..preview_count]) |package_id| {
+            const package = database.packages.packages.items[@intFromEnum(package_id)];
+            std.debug.print("  {s} {s}\n", .{ package.name, package.version.raw });
+        }
+
+        for (database.packages.ordered.items) |package_id| {
+            const package = database.packages.packages.items[@intFromEnum(package_id)];
+            try std.testing.expect(package.name.len > 0);
+            try std.testing.expect(package.version.raw.len > 0);
+            try std.testing.expectEqual(
+                package_id,
+                database.packages.by_name.get(package.name).?,
+            );
+        }
     }
-}
 
-test "integration parses descriptions from actual sync databases" {
-    const sync_database_path = "/var/lib/pacman/sync";
-    var sync_dir = std.Io.Dir.cwd().openDir(std.testing.io, sync_database_path, .{
-        .iterate = true,
-        .access_sub_paths = true,
-    }) catch |err| switch (err) {
-        error.FileNotFound, error.AccessDenied => return error.SkipZigTest,
-        else => return err,
-    };
-    defer sync_dir.close(std.testing.io);
+    test "host-readonly: parses descriptions from actual sync databases" {
+        const sync_database_path = "/var/lib/pacman/sync";
+        var sync_dir = std.Io.Dir.cwd().openDir(std.testing.io, sync_database_path, .{
+            .iterate = true,
+            .access_sub_paths = true,
+        }) catch |err| switch (err) {
+            error.FileNotFound, error.AccessDenied => return error.SkipZigTest,
+            else => return err,
+        };
+        defer sync_dir.close(std.testing.io);
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
 
-    var parsed_databases: usize = 0;
-    var parsed_packages: usize = 0;
-    var preview_remaining: usize = 10;
-    std.debug.print("\nsync database preview (up to {d} packages):\n", .{preview_remaining});
+        var parsed_databases: usize = 0;
+        var parsed_packages: usize = 0;
+        var preview_remaining: usize = 10;
+        std.debug.print("\nsync database preview (up to {d} packages):\n", .{preview_remaining});
 
-    var iterator = sync_dir.iterate();
-    while (try iterator.next(std.testing.io)) |entry| {
-        if (!std.mem.endsWith(u8, entry.name, ".db")) continue;
-        if (entry.kind != .file and entry.kind != .sym_link and entry.kind != .unknown) continue;
+        var iterator = sync_dir.iterate();
+        while (try iterator.next(std.testing.io)) |entry| {
+            if (!std.mem.endsWith(u8, entry.name, ".db")) continue;
+            if (entry.kind != .file and entry.kind != .sym_link and entry.kind != .unknown) continue;
 
-        var file = sync_dir.openFile(std.testing.io, entry.name, .{}) catch continue;
-        defer file.close(std.testing.io);
+            var file = sync_dir.openFile(std.testing.io, entry.name, .{}) catch continue;
+            defer file.close(std.testing.io);
 
-        var magic: [4]u8 = undefined;
-        const magic_length = try file.readPositionalAll(std.testing.io, &magic, 0);
-        if (magic_length < 2) continue;
+            var magic: [4]u8 = undefined;
+            const magic_length = try file.readPositionalAll(std.testing.io, &magic, 0);
+            if (magic_length < 2) continue;
 
-        const archive_contents: []const u8 = archive: {
-            if (magic[0] == 0x1f and magic[1] == 0x8b) {
+            const archive_contents: []const u8 = archive: {
+                if (magic[0] == 0x1f and magic[1] == 0x8b) {
+                    var read_buffer: [64 * 1024]u8 = undefined;
+                    var file_reader = file.reader(std.testing.io, &read_buffer);
+                    var decompression_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+                    var decompressor: std.compress.flate.Decompress = .init(
+                        &file_reader.interface,
+                        .gzip,
+                        &decompression_buffer,
+                    );
+                    break :archive try decompressor.reader.allocRemaining(
+                        allocator,
+                        .limited(256 * 1024 * 1024),
+                    );
+                }
+
+                // Zstandard-compressed repository databases need a different
+                // decoder. Skip them rather than mistaking them for a tar stream.
+                if (magic_length == magic.len and std.mem.eql(u8, &magic, "\x28\xb5\x2f\xfd")) {
+                    continue;
+                }
+
                 var read_buffer: [64 * 1024]u8 = undefined;
                 var file_reader = file.reader(std.testing.io, &read_buffer);
-                var decompression_buffer: [std.compress.flate.max_window_len]u8 = undefined;
-                var decompressor: std.compress.flate.Decompress = .init(
-                    &file_reader.interface,
-                    .gzip,
-                    &decompression_buffer,
-                );
-                break :archive try decompressor.reader.allocRemaining(
+                break :archive try file_reader.interface.allocRemaining(
                     allocator,
                     .limited(256 * 1024 * 1024),
                 );
-            }
+            };
 
-            // Zstandard-compressed repository databases need a different
-            // decoder. Skip them rather than mistaking them for a tar stream.
-            if (magic_length == magic.len and std.mem.eql(u8, &magic, "\x28\xb5\x2f\xfd")) {
-                continue;
-            }
-
-            var read_buffer: [64 * 1024]u8 = undefined;
-            var file_reader = file.reader(std.testing.io, &read_buffer);
-            break :archive try file_reader.interface.allocRemaining(
-                allocator,
-                .limited(256 * 1024 * 1024),
+            const database_name = entry.name[0 .. entry.name.len - ".db".len];
+            const package_count = try parseSyncTarDescriptions(
+                &arena,
+                database_name,
+                archive_contents,
+                &preview_remaining,
             );
-        };
+            try std.testing.expect(package_count > 0);
+            std.debug.print("  [{s}: {d} packages parsed]\n", .{ database_name, package_count });
+            parsed_databases += 1;
+            parsed_packages += package_count;
+        }
 
-        const database_name = entry.name[0 .. entry.name.len - ".db".len];
-        const package_count = try parseSyncTarDescriptions(
-            allocator,
-            database_name,
-            archive_contents,
-            &preview_remaining,
-        );
-        try std.testing.expect(package_count > 0);
-        std.debug.print("  [{s}: {d} packages parsed]\n", .{ database_name, package_count });
-        parsed_databases += 1;
-        parsed_packages += package_count;
+        if (parsed_databases == 0) return error.SkipZigTest;
+        try std.testing.expect(parsed_packages >= parsed_databases);
     }
 
-    if (parsed_databases == 0) return error.SkipZigTest;
-    try std.testing.expect(parsed_packages >= parsed_databases);
-}
+    fn parseSyncTarDescriptions(
+        arena: *std.heap.ArenaAllocator,
+        database_name: []const u8,
+        archive_contents: []const u8,
+        preview_remaining: *usize,
+    ) !usize {
+        const allocator = arena.allocator();
+        const tar_block_size = 512;
+        var offset: usize = 0;
+        var package_count: usize = 0;
 
-fn parseSyncTarDescriptions(
-    allocator: std.mem.Allocator,
-    database_name: []const u8,
-    archive_contents: []const u8,
-    preview_remaining: *usize,
-) !usize {
-    const tar_block_size = 512;
-    var offset: usize = 0;
-    var package_count: usize = 0;
+        while (offset + tar_block_size <= archive_contents.len) {
+            const header = archive_contents[offset .. offset + tar_block_size];
+            if (isZeroTarBlock(header)) break;
 
-    while (offset + tar_block_size <= archive_contents.len) {
-        const header = archive_contents[offset .. offset + tar_block_size];
-        if (isZeroTarBlock(header)) break;
+            const file_size = try parseTarOctal(header[124..136]);
+            const data_start = offset + tar_block_size;
+            if (file_size > archive_contents.len - data_start) return error.TruncatedTarArchive;
+            const data_end = data_start + file_size;
 
-        const file_size = try parseTarOctal(header[124..136]);
-        const data_start = offset + tar_block_size;
-        if (file_size > archive_contents.len - data_start) return error.TruncatedTarArchive;
-        const data_end = data_start + file_size;
-
-        const entry_name = tarString(header[0..100]);
-        const type_flag = header[156];
-        if ((type_flag == 0 or type_flag == '0') and std.mem.endsWith(u8, entry_name, "/desc")) {
-            var parsed = try parseDescription(allocator, archive_contents[data_start..data_end]);
-            defer parsed.deinit(allocator);
-            const package = try parsed.intoPackage(allocator, database_name);
-            if (preview_remaining.* > 0) {
-                std.debug.print(
-                    "  {s}/{s} {s}\n",
-                    .{ database_name, package.name, package.version.raw },
-                );
-                preview_remaining.* -= 1;
+            const entry_name = tarString(header[0..100]);
+            const type_flag = header[156];
+            if ((type_flag == 0 or type_flag == '0') and std.mem.endsWith(u8, entry_name, "/desc")) {
+                var parsed = try parseDescription(allocator, archive_contents[data_start..data_end]);
+                defer parsed.deinit(allocator);
+                const package = try parsed.intoPackage(arena, .{ .origin = .sync, .database_name = database_name });
+                if (preview_remaining.* > 0) {
+                    std.debug.print(
+                        "  {s}/{s} {s}\n",
+                        .{ database_name, package.name, package.version.raw },
+                    );
+                    preview_remaining.* -= 1;
+                }
+                package_count += 1;
             }
-            package_count += 1;
+
+            const remainder = file_size % tar_block_size;
+            const padded_size = if (remainder == 0)
+                file_size
+            else
+                file_size + (tar_block_size - remainder);
+            if (padded_size > archive_contents.len - data_start) return error.TruncatedTarArchive;
+            offset = data_start + padded_size;
         }
 
-        const remainder = file_size % tar_block_size;
-        const padded_size = if (remainder == 0)
-            file_size
-        else
-            file_size + (tar_block_size - remainder);
-        if (padded_size > archive_contents.len - data_start) return error.TruncatedTarArchive;
-        offset = data_start + padded_size;
+        return package_count;
     }
 
-    return package_count;
-}
-
-fn isZeroTarBlock(block: []const u8) bool {
-    for (block) |byte| {
-        if (byte != 0) return false;
-    }
-    return true;
-}
-
-fn tarString(field: []const u8) []const u8 {
-    const end = std.mem.indexOfScalar(u8, field, 0) orelse field.len;
-    return std.mem.trimEnd(u8, field[0..end], " ");
-}
-
-fn parseTarOctal(field: []const u8) !usize {
-    const digits = std.mem.trim(u8, field, " \x00");
-    if (digits.len == 0) return 0;
-
-    var value: usize = 0;
-    for (digits) |digit| {
-        if (digit < '0' or digit > '7') return error.InvalidTarHeader;
-        const numeric_digit: usize = digit - '0';
-        if (value > (std.math.maxInt(usize) - numeric_digit) / 8) {
-            return error.InvalidTarHeader;
+    fn isZeroTarBlock(block: []const u8) bool {
+        for (block) |byte| {
+            if (byte != 0) return false;
         }
-        value = value * 8 + numeric_digit;
+        return true;
     }
-    return value;
-}
+
+    fn tarString(field: []const u8) []const u8 {
+        const end = std.mem.indexOfScalar(u8, field, 0) orelse field.len;
+        return std.mem.trimEnd(u8, field[0..end], " ");
+    }
+
+    fn parseTarOctal(field: []const u8) !usize {
+        const digits = std.mem.trim(u8, field, " \x00");
+        if (digits.len == 0) return 0;
+
+        var value: usize = 0;
+        for (digits) |digit| {
+            if (digit < '0' or digit > '7') return error.InvalidTarHeader;
+            const numeric_digit: usize = digit - '0';
+            if (value > (std.math.maxInt(usize) - numeric_digit) / 8) {
+                return error.InvalidTarHeader;
+            }
+            value = value * 8 + numeric_digit;
+        }
+        return value;
+    }
+};
 
 test "freeStrings frees each string and the list storage" {
     const allocator = std.testing.allocator;

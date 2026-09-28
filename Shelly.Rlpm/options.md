@@ -1,0 +1,146 @@
+# Owner options and lifetimes
+
+`Owner.init(io, allocator, configuration, repositories)` copies configuration
+and registration inputs and loads a read-only snapshot of local descriptions.
+`OwnerConfiguration` and `DatabaseConfiguration` are borrowed input values;
+the owner and each database retain their own arena storage. No allocator pointer
+or owner back-pointer points into an initializer's temporary stack value.
+
+```zig
+const rlpm = @import("Shelly_Rlpm");
+var owner = try rlpm.Owner.init(io, allocator, .{
+    .root = root_path,
+    .database_path = database_path,
+    .cache_directories = &.{cache_path},
+    .architectures = &.{"x86_64"},
+}, &.{
+    .{ .database_name = "core", .servers = &.{core_url} },
+    .{ .database_name = "cachyos", .servers = &.{cachyos_url} },
+});
+defer owner.deinit() catch unreachable;
+const local = owner.localDatabase().?;
+if (try owner.findPackage(local, "example")) |reference| {
+    const package = try owner.package(reference);
+    // package is a borrowed view; use or copy it before another mutation.
+    _ = package;
+}
+```
+
+## Paths and defaults
+
+Root and database path must already be directories. Both are canonicalized with
+realpath and receive a terminal slash; an explicitly supplied DB path is
+independent of root. Local metadata uses `<dbpath>/local/`, sync registrations use
+`<dbpath>/sync/<name><database_extension>`, and the future lock uses
+`<dbpath>/db.lck`. Repository registration performs no download and does not
+require an existing sync archive.
+
+Cache/hook/GPG directory options receive a terminal slash but are not resolved,
+created or prefixed with root. Relative paths stay relative to the caller's
+working directory. A null hook-directory list chooses
+`<root>/usr/share/libalpm/hooks/`; an empty list chooses no directories. Explicit
+hook lists replace that default. Logfile paths are copied as supplied.
+
+Library defaults match the pinned handle defaults: no cache or architecture
+lists, one parallel download, check-space/syslog/download-timeout-disable off,
+and all sandbox-disable switches off. Default/local/remote signature policies
+start disabled, as in an unconfigured libalpm handle. `SignaturePolicy{}` itself
+retains the project's required-signature defaults; supply it explicitly where
+wanted. Null repository/local/remote overrides inherit the owner's current
+default policy. A local installed database never receives a detached repository
+signature policy. Pacman.conf parsing, Include, `$repo`/`$arch` expansion, and
+frontend policy defaults stay in PackageManager.
+
+The pinned libalpm initializer creates a missing local database/version file.
+M1 deliberately provides read-only opening: absent local storage becomes an
+empty snapshot with `presence = missing`, and no directory or version file is
+created. M3 owns format validation/creation and production sync loading. The
+ledger keeps `alpm_initialize` partial until those effects are implemented.
+
+## Option inventory
+
+All fields below are copied and available through `options()`. Storing an option
+is not implementation of its downstream effects. The compatibility ledger keeps
+these rows partial until the consuming milestones' fixtures pass.
+
+| Configuration field | Implemented now | Remaining consumer |
+| --- | --- | --- |
+| `root`, `database_path` | Independent canonical directory paths; immutable after initialization | M3 format validation; M8–M10 execution |
+| `database_extension` | Sync registration paths and replacement; rejects NUL/path separators | M3 database loading; M7 refresh |
+| `cache_directories` | Owned ordered list and directory spelling | M7 cache selection, verification and downloads |
+| `hook_directories` | Owned ordered list and root-relative library default | M9 discovery, overrides and execution |
+| `gpg_directory` | Owned path | M4 verification/key policy |
+| `log_file`, `use_syslog` | Owned setting | M6 operation logging/syslog |
+| `architectures` | Owned ordered list | M5 candidate validation; M11 frontend auto mapping |
+| `ignore_packages`, `ignore_groups` | Owned ordered lists | M5 candidate/future-state decisions |
+| `assume_installed` | Deep-copied typed relations, permissive raw versions and descriptions | M5 dependency checks |
+| `no_upgrade`, `no_extract`, `overwrite_files` | Owned patterns, including negation spelling | M8 matching/preflight; M10 file effects |
+| `check_space` | Boolean setting | M8 filesystem capacity checks |
+| `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Effective inheritance and marginal/unknown trust settings | M4 complete verification/trust enforcement |
+| `disable_download_timeout`, `parallel_downloads` | Validated settings; concurrency must be at least one | M7 existing PackageManager downloader/queue integration |
+| `sandbox_user` | Owned name; no account lookup during read-only initialization | M7 account validation and privilege separation |
+| `sandbox.disable_filesystem`, `sandbox.disable_syscalls` | Independent settings | M7 download sandbox |
+| `sandbox.disable_network` | CachyOS setting; global `setDisabled` updates all three switches | M9 hook/scriptlet/ldconfig behavior |
+| `callbacks` | Typed callbacks and independent borrowed contexts; guarded event/question dispatch | M6 transaction ordering, logging/progress; M7 download/fetch integration |
+| Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned ordered lists, usage flags, inherited/explicit policy | M3 queries; M4 verification; M5 selection; M7 transfer |
+
+`setOptions` constructs a complete replacement before publishing it. Failed
+allocation or validation leaves the old configuration and registrations intact.
+It preserves database IDs, invalidates sync cache generations, and retains local
+metadata. `setList`, `addListValue`, and `removeListValue` provide typed list
+updates; duplicates remain ordered and removal affects the first match. Directory
+removal uses the same terminal-slash normalization as insertion. To update typed
+assumed-installed relations, supply a replacement list through `setOptions`.
+
+`PhysicalArchitectures.init(allocator)` queries runtime CPU/OS state, independent
+of the binary's compile target, and owns its result until `deinit`. It retains
+CachyOS's ordered base/v2/v3/v4 feature rules, including OS vector-state checks.
+The pinned source tests ECX bit 0 under its SSSE3 label; RLPM preserves that
+observed rule. Aarch64 returns its base architecture. `Architecture=auto` mapping
+remains M11. `Sandbox.legacyDisabledState()` retains the source's filesystem/
+syscall-only aggregate getter, even though the global setter affects networking.
+
+## References, callbacks and cancellation
+
+Owner is an owning value: do not shallow-copy it. Keep its address stable after
+publishing it to callbacks or cancellation callers. `deinit` is fallible so a
+callback or active operation cannot destroy the handle underneath its caller.
+A cancelled idle owner can always be released.
+
+Database references combine a process-local owner ID and a monotonically
+assigned database ID. Registration order remains repository priority; removing
+one repository preserves other entries' order. IDs are not reused after removal.
+Even another owner over the same paths rejects a foreign reference. The local
+database can also be unregistered, matching the public reference operation.
+
+Package references additionally contain cache generation and package ID.
+`invalidateDatabase` discards metadata and changes its generation; old package
+references fail before and after reload. Group membership stores IDs rather than
+pointers into a growable array. Local enumeration and group membership follow
+package-name order. Borrowed strings, database/group views and slices must not
+be retained across mutations or owner release. Resolve references again instead.
+These IDs are not persistent identifiers to serialize across process runs.
+
+Configuration and metadata use separate arenas. An unsuccessful local load
+releases its candidate storage, clears partial indexes, propagates OOM and can
+be retried. Complete corrupt-database/format compatibility remains M3.
+
+Callbacks run synchronously on the owner's thread. Their payloads and contexts
+are borrowed; callers own context lifetimes. They must not reenter owner
+operations or mutate configuration/databases directly. Event/question dispatch
+rejects reentry and checks cancellation before and after callbacks. Questions
+start with conservative answers, enforce provider bounds, and reject changing
+the union tag. A rejected or cancelled answer restores the original question.
+Future phases emit these contracts; M1 does not simulate transaction events.
+
+`requestCancellation()` is the only method permitted from another thread or an
+active callback. Other access is thread-confined; a download worker must send
+results back to the owner thread. Reset cancellation only when idle. No callback
+payload survives its call unless the receiver makes an owned copy.
+
+Errors are Zig errors. Registration, configuration replacement, cache operations
+and event/question dispatch retain a value-only `Diagnostic` with operation,
+category, cause and optional database reference, so error context cannot dangle
+after input strings or a registration are freed. `Diagnostic.format` provides a
+plain textual description. Query errors and errors before entering those
+operations (such as list-helper temporary allocation) are returned directly.

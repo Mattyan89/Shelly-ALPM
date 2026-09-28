@@ -20,6 +20,7 @@ jobs:
       gtk: ${{ steps.filter.outputs.gtk }}
       tui: ${{ steps.filter.outputs.tui }}
       key: ${{ steps.filter.outputs.key }}
+      rlpm: ${{ steps.filter.outputs.rlpm }}
       notifications: ${{ steps.filter.outputs.notifications }}
       pkgbuild: ${{ steps.filter.outputs.pkgbuild }}
     steps:
@@ -51,6 +52,11 @@ jobs:
             key:
               - 'Shelly.Key/**'
               - 'Shelly.Diagnostics/**'
+            rlpm:
+              - 'Shelly.Rlpm/**'
+              - 'Shelly.Key/**'
+              - 'Shelly.Diagnostics/**'
+              - '.github/workflows/build-and-publish.yml'
             notifications:
               - 'Shelly.Notifications.Zig/**'
               - 'Shelly.Diagnostics/**'
@@ -212,6 +218,34 @@ jobs:
           cd Shelly.Key
           zig build
           zig build test
+
+  rlpm:
+    needs: changes
+    if: ${{ needs.changes.outputs.rlpm == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    container:
+      image: archlinux:latest
+    strategy:
+      matrix:
+        optimize: [Debug, ReleaseSafe]
+    steps:
+      - run: |
+          pacman -Syu --noconfirm
+          pacman -S --needed --noconfirm zig base-devel glibc git libarchive gnupg
+      - uses: actions/checkout@v6
+      - name: Build and run hermetic RLPM tests
+        working-directory: Shelly.Rlpm
+        run: |
+          zig version
+          zig build -Doptimize=${{ matrix.optimize }}
+          zig build test -Doptimize=${{ matrix.optimize }} --summary all
+      - name: Verify detached signatures with isolated GPG homes
+        if: ${{ matrix.optimize == 'Debug' }}
+        working-directory: Shelly.Rlpm
+        run: zig build test-signature --summary all
 
   notifications:
     needs: changes

@@ -14,7 +14,7 @@ defer version.deinit(allocator);
 const result = Version.compareStrings(":1.0", "1.0"); // .equal
 ```
 
-`compareStrings` follows libalpm's ordering for ASCII, NUL-free strings, including
+`compareStrings` follows libalpm's C-locale ordering for NUL-free byte strings, including
 empty inputs, empty components, and unusual colon/hyphen placement. An epoch is
 recognized only at an initial digit sequence followed by `:`; an initial colon
 uses epoch zero. Numeric runs are compared without integer conversion. pkgrel
@@ -28,13 +28,19 @@ PKGBUILD's version grammar. Missing pkgrel and internal hyphens remain supported
 `InvalidVersion` and `InvalidCharacter` describe validation failures; numeric
 epoch overflow is no longer possible.
 
+M2 adds `initRaw`, which owns a permissive NUL-free version without applying
+structural validation. Package metadata uses this constructor. Relation
+constraints now borrow or own raw strings directly and call `compareStrings`;
+they do not construct strict Version values. Bytes outside ASCII are separators,
+including individual UTF-8 bytes; this does not provide locale-sensitive sorting.
+
 ## API migration and ownership
 
 `epoch` changed from `u64` to `[]const u8`. Compare its value with string operations,
 or use the version comparison APIs for ordering. Explicit leading zeros are
 preserved; missing epochs expose `"0"`.
 
-`init` owns one copy of `raw`. The parsed components borrow slices of that buffer,
+`init` and `initRaw` own one copy of `raw`. The parsed components borrow slices of that buffer,
 except the static default epoch. `deinit` frees only `raw`. Do not free components
 individually or call `deinit` on multiple shallow copies of the same value.
 
@@ -58,10 +64,13 @@ reverse ordering, reflexivity, and the owned-value comparison path for inputs
 that pass metadata validation. They cover large epochs, empty components,
 unusual syntax, numeric runs, case sensitivity, and separator behavior.
 
-All version tests live in `Version.zig` and run without linking or invoking
-libalpm. The separate fixture files and live differential test target were removed
+Those original version tests live in `Version.zig` and run without linking or invoking
+libalpm. The previous separate fixture files and live differential test target were removed
 on 2026-09-24; the 54 recorded input pairs and expected results were retained
 unchanged in the version test. The full `test` step includes these tests too.
+It now runs only hermetic tests, public API checks, and reference-ledger validation.
+Real GPG integration and host database reads have separate opt-in targets; see
+[README.md](README.md).
 
 ## Expected-result provenance
 
@@ -77,6 +86,14 @@ The 54 additional expected signs were recorded on 2026-09-23 by calling
   `1ca93466764e2ab223ba231780c513f097ba95a511010fa49a2a46a87a06d5af`.
 
 This identifies the downstream build used for the original results. Independent
-verification of pristine upstream source was unavailable. The fixed examples
-are compatibility evidence, not an exhaustive proof. Embedded NUL, non-ASCII,
-and nullable C pointers are outside the declared compatibility contract.
+verification of pristine upstream source was unavailable at the time of capture.
+M0 later acquired the full upstream revision
+`54d94116164b0b2202c6061c4a59c6f3e70820d8` and pinned the actual CachyOS source
+revision `4056cd687f6379e61e7decb9b66e9b57cb3949a9` plus packaging patches in the
+[reference manifest](src/tests/reference/manifest.json). No expectations were
+changed or relabeled as pristine-upstream execution results. The fixed examples
+are compatibility evidence, not an exhaustive proof. M2 adds nine independently
+recorded byte-version cases under the C locale in
+[metadata-reference.json](src/tests/fixtures/metadata-reference.json), consumed by
+`test-metadata` and `test`. The original 54 pairs/signs are unchanged. Embedded
+NUL and nullable C pointers remain outside the declared comparison contract.

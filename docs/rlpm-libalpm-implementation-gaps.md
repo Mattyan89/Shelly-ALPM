@@ -1,5 +1,11 @@
 # RLPM implementation gaps relative to libalpm
 
+For the current implementation sequence, see the
+[RLPM completion plan](rlpm-libalpm-completion-plan.md), prepared on 2026-09-27.
+This document is the earlier assessment: package archive `.PKGINFO` loading,
+archive-owned storage, and `Package.deinit` have since been implemented. The
+completion plan accounts for that work and records fresh baseline checks.
+
 Re-evaluated on 2026-09-23 against repository commit `d880f9e1`, including the
 completed [version compatibility work](../Shelly.Rlpm/version-compatibility.md).
 Version-test layout updated on 2026-09-24: fixed expected-result tests now live
