@@ -62,4 +62,5 @@ test {
 test {
     _ = @import("database.zig");
     _ = @import("verification.zig");
+    _ = @import("resolver.zig");
 }

@@ -364,13 +364,17 @@ test "M2 Owner copies permissive assumed-installed relations and rejects embedde
     defer temporary.cleanup();
     const path = try temporary.dir.realPathFileAlloc(io, ".", allocator);
     defer allocator.free(path);
-    const relations = [_]rlpm.PackageRelation{ try .parse("foo>=alpha:1.0: description"), try .parse("empty="), try .parse("") };
+    const relations = [_]rlpm.PackageRelation{ try .parse("foo=alpha:1.0: description"), try .parse("empty="), try .parse("") };
     var owner = try rlpm.Owner.init(io, allocator, .{ .root = path, .database_path = path, .assume_installed = &relations }, &.{});
     defer owner.deinit() catch unreachable;
-    try std.testing.expectEqualStrings("alpha:1.0", owner.options().assume_installed[0].constraint.greater_equal);
+    try std.testing.expectEqualStrings("alpha:1.0", owner.options().assume_installed[0].constraint.equal);
     try std.testing.expectEqualStrings("", owner.options().assume_installed[1].constraint.equal);
     var update = owner.options();
     update.assume_installed = &.{.{ .name = "bad", .constraint = .{ .equal = "1\x00two" } }};
     try std.testing.expectError(error.InvalidPackageRelation, owner.setOptions(io, update));
+    try std.testing.expectEqual(3, owner.options().assume_installed.len);
+    // M5 consumes assumed entries as provisions, so only ANY/EQ are legal.
+    update.assume_installed = &.{try .parse("foo>=alpha:1.0")};
+    try std.testing.expectError(error.InvalidOption, owner.setOptions(io, update));
     try std.testing.expectEqual(3, owner.options().assume_installed.len);
 }

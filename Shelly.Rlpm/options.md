@@ -74,9 +74,9 @@ these rows partial until the consuming milestones' fixtures pass.
 | `gpg_directory` | Explicit home for verification and consented key operations; null uses system pacman keyring | — |
 | `key_acquisition` | Owned single-key source paths, WKD/keyserver controls; import requires callback consent and reverification | Live server interoperability |
 | `log_file`, `use_syslog` | Owned setting | M6 operation logging/syslog |
-| `architectures` | Owned ordered list | M5 candidate validation; M11 frontend auto mapping |
-| `ignore_packages`, `ignore_groups` | Owned ordered lists | M5 candidate/future-state decisions |
-| `assume_installed` | Deep-copied typed relations, permissive raw versions and descriptions | M5 dependency checks |
+| `architectures` | Owned list and M5 initial-target validation, including CachyOS architectures | M11 frontend auto mapping |
+| `ignore_packages`, `ignore_groups` | Owned lists, glob matching, candidate questions and upgrade filtering | — |
+| `assume_installed` | Owned unversioned/exact provisions, permissive raw versions, descriptions and M5 dependency checks | — |
 | `no_upgrade`, `no_extract`, `overwrite_files` | Owned patterns, including negation spelling | M8 matching/preflight; M10 file effects |
 | `check_space` | Boolean setting | M8 filesystem capacity checks |
 | `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Enforced inheritance, presence, crypto validity and trust; sealed package/database snapshots | M7/M8 integration with transfers and transactions |
@@ -85,7 +85,7 @@ these rows partial until the consuming milestones' fixtures pass.
 | `sandbox.disable_filesystem`, `sandbox.disable_syscalls` | Independent settings | M7 download sandbox |
 | `sandbox.disable_network` | CachyOS setting; global `setDisabled` updates all three switches | M9 hook/scriptlet/ldconfig behavior |
 | `callbacks` | Typed callbacks and independent borrowed contexts; guarded event/question dispatch | M6 transaction ordering, logging/progress; M7 download/fetch integration |
-| Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned ordered lists and mutation, operation-specific usage, enforced inherited/explicit signature policy | M5 selection; M7 transfer |
+| Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned lists, queries, resolver usage/priority, enforced inherited/explicit policy | M7 transfer |
 
 `setOptions` constructs a complete replacement before publishing it. Failed
 allocation or validation leaves the old configuration and registrations intact.
@@ -94,7 +94,10 @@ changed paths/effective signature policies/GPG directories; unrelated options
 retain cached package/group data. `setList`, `addListValue`, and `removeListValue` provide typed list
 updates; duplicates remain ordered and removal affects the first match. Directory
 removal uses the same terminal-slash normalization as insertion. To update typed
-assumed-installed relations, supply a replacement list through `setOptions`.
+assumed-installed relations, supply a replacement list through `setOptions` or
+use `addAssumedInstalled`/`removeAssumedInstalled`. Only ANY/EQ provisions are
+accepted; removal compares the name and raw version, ignoring description/operator.
+See [resolution plans](resolution.md) for flags and selection semantics.
 
 `PhysicalArchitectures.init(allocator)` queries runtime CPU/OS state, independent
 of the binary's compile target, and owns its result until `deinit`. It retains

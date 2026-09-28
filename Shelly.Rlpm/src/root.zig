@@ -29,6 +29,9 @@ pub const DatabaseStatus = @import("structs/DatabaseStatus.zig");
 pub const Callbacks = @import("structs/Callbacks.zig");
 pub const Diagnostic = @import("structs/Diagnostic.zig");
 pub const PhysicalArchitectures = @import("structs/PhysicalArchitectures.zig");
+pub const Resolver = @import("structs/Resolver.zig");
+pub const TransactionPlan = @import("structs/TransactionPlan.zig");
+pub const TransactionFlags = @import("structs/TransactionFlags.zig");
 pub const version = "0.0.0";
 
 pub const Capabilities = struct {
@@ -40,6 +43,7 @@ pub const Capabilities = struct {
     sync_databases: bool = true,
     sqlite_sync_databases: bool = true,
     signature_policy_enforcement: bool = true,
+    resolution_plans: bool = true,
     downloads: bool = false,
     transactions: bool = false,
     localization: bool = false,

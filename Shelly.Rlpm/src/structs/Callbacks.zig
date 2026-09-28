@@ -45,15 +45,18 @@ pub const Download = union(enum) {
     completed: struct { name: []const u8, downloaded: u64, result: enum { updated, unchanged, failed } },
 };
 pub const Key = struct { fingerprint: []const u8, user_id: ?[]const u8 = null };
+/// Borrowed metadata for resolution callbacks, which cannot reenter Owner.
+/// Archive references resolve through the returned plan, not Owner.package.
+pub const PackageView = struct { reference: PackageRef, package: *const @import("Package.zig") };
 /// Answers start with libalpm's conservative defaults. A provider answer is an
 /// index into candidates. The callback must retain the question's union tag.
 pub const Question = union(enum) {
-    install_ignored: struct { package: PackageRef, install: bool = false },
-    replace: struct { old: PackageRef, new: PackageRef, database: DatabaseRef, replace: bool = false },
-    conflict: struct { first: PackageRef, second: PackageRef, reason: PackageRelation, remove: bool = false },
+    install_ignored: struct { package: PackageRef, install: bool = false, views: []const PackageView = &.{} },
+    replace: struct { old: PackageRef, new: PackageRef, database: DatabaseRef, replace: bool = false, views: []const PackageView = &.{} },
+    conflict: struct { first: PackageRef, second: PackageRef, reason: PackageRelation, remove: bool = false, views: []const PackageView = &.{} },
     corrupted: struct { path: []const u8, reason: anyerror, remove: bool = false },
-    remove_packages: struct { packages: []const PackageRef, skip: bool = false },
-    select_provider: struct { dependency: PackageRelation, candidates: []const PackageRef, selected: usize = 0 },
+    remove_packages: struct { packages: []const PackageRef, skip: bool = false, views: []const PackageView = &.{} },
+    select_provider: struct { dependency: PackageRelation, candidates: []const PackageRef, selected: usize = 0, views: []const PackageView = &.{} },
     import_key: struct { key: Key, import: bool = false },
 };
 pub const Fetch = struct { url: []const u8, destination_directory: []const u8, force: bool };

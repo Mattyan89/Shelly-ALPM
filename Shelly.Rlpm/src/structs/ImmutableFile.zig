@@ -15,6 +15,15 @@ pub fn deinit(self: *ImmutableFile) void {
     _ = c.close(self.fd);
     self.* = undefined;
 }
+/// Retains the same sealed bytes for an independently owned transaction plan.
+pub fn clone(self: *const ImmutableFile) !ImmutableFile {
+    const fd = c.fcntl(self.fd, c.F.DUPFD_CLOEXEC, @as(c_int, 0));
+    if (fd < 0) return failure();
+    var result: ImmutableFile = .{ .fd = fd };
+    errdefer result.deinit();
+    result.name_len = (try std.fmt.bufPrint(&result.name, "/proc/{d}/fd/{d}", .{ c.getpid(), fd })).len;
+    return result;
+}
 fn create() !ImmutableFile {
     const fd = c.memfd_create("rlpm-verified", c.MFD.CLOEXEC | c.MFD.ALLOW_SEALING);
     if (fd < 0) return failure();

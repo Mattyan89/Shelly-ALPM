@@ -99,6 +99,7 @@ pub fn copy(self: OwnerConfiguration, allocator: std.mem.Allocator, io: std.Io) 
     result.sandbox_user = try copyOptional(allocator, self.sandbox_user);
     const assumed = try allocator.alloc(PackageRelation, self.assume_installed.len);
     for (self.assume_installed, assumed) |relation, *owned| {
+        if (relation.constraint != .any and relation.constraint != .equal) return error.InvalidOption;
         try validateString(relation.name, true);
         owned.* = try relation.clone(allocator);
     }

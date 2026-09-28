@@ -191,3 +191,28 @@ from the low-level helper's acceptance of KEY_EXPIRED under allowed trust. The
 All original manifest assets remain unchanged. See the
 [verification guide](../../../verification.md) for limits and remaining transfer/
 transaction integration.
+
+M5 records prepare-time resolution without performing a transaction commit:
+
+```sh
+python3 src/tests/reference/record_resolver.py \
+  --library /usr/lib/libalpm.so.16.0.1
+```
+
+It checks the same frozen library hash and uses private local/repository/archive
+fixtures, the C locale, scripted question answers and `NOLOCK`. It never calls
+commit, downloads, refresh or the host package database. Native prepare runs in
+forked workers; the parent owns and cleans the temporary tree. The recorder's
+36 frozen pacman adaptations retain source paths/hashes and expected-failure
+annotations. They exercise package selection, rather than the originals'
+filesystem assertions. Another 118 focused cases and 160 seeded small universes
+record ordered identities, preparation reasons, removals, questions, cycles,
+failure payloads and final dependency edges/provisions. Nine option cases record
+the native ANY/EQ restriction on AssumeInstalled; raw versions remain permissive.
+
+The [resolver fixture](../fixtures/resolver-reference.json) is consumed offline
+by `test-resolver` and `test`. Query captures include ignore and new-version
+behavior. The final reason overrides are additionally checked against the pinned
+commit source without committing any package. The [resolution guide](../../../resolution.md)
+documents plan ownership, safety boundaries, evidence and deferred execution work.
+This is prepare coverage, not a complete run of pacman's installation test suite.

@@ -18,7 +18,7 @@ ALPM_DOWNLOAD_INIT	constant	upstream	M7	Callbacks.Download.ALPM_DOWNLOAD_INIT pa
 ALPM_DOWNLOAD_PROGRESS	constant	upstream	M7	Callbacks.Download.ALPM_DOWNLOAD_PROGRESS payload/lifetime/order	missing	-	M7/ALPM_DOWNLOAD_PROGRESS	downstream-alpm.h:1167
 ALPM_DOWNLOAD_RETRY	constant	upstream	M7	Callbacks.Download.ALPM_DOWNLOAD_RETRY payload/lifetime/order	missing	-	M7/ALPM_DOWNLOAD_RETRY	downstream-alpm.h:1169
 ALPM_ERR_BADPERMS	constant	upstream	M6	Diagnostic.badperms error category and failure payload	missing	-	M6/ALPM_ERR_BADPERMS	downstream-alpm.h:214
-ALPM_ERR_CONFLICTING_DEPS	constant	upstream	M6	Diagnostic.conflicting_deps error category and failure payload	missing	-	M6/ALPM_ERR_CONFLICTING_DEPS	downstream-alpm.h:307
+ALPM_ERR_CONFLICTING_DEPS	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_CONFLICTING_DEPS	downstream-alpm.h:307
 ALPM_ERR_DB_CREATE	constant	upstream	M6	Diagnostic.db_create error category and failure payload	missing	-	M6/ALPM_ERR_DB_CREATE	downstream-alpm.h:234
 ALPM_ERR_DB_INVALID	constant	upstream	M6	Diagnostic.db_invalid error category and failure payload	missing	-	M6/ALPM_ERR_DB_INVALID	downstream-alpm.h:242
 ALPM_ERR_DB_INVALID_SIG	constant	upstream	M6	Diagnostic.db_invalid_sig error category and failure payload	missing	-	M6/ALPM_ERR_DB_INVALID_SIG	downstream-alpm.h:244
@@ -45,14 +45,14 @@ ALPM_ERR_NOT_A_DIR	constant	upstream	M6	Diagnostic.not_a_dir error category and 
 ALPM_ERR_NOT_A_FILE	constant	upstream	M6	Diagnostic.not_a_file error category and failure payload	missing	-	M6/ALPM_ERR_NOT_A_FILE	downstream-alpm.h:216
 ALPM_ERR_OK	constant	upstream	M6	Diagnostic.ok error category and failure payload	missing	-	M6/ALPM_ERR_OK	downstream-alpm.h:208
 ALPM_ERR_PKG_CANT_REMOVE	constant	upstream	M6	Diagnostic.pkg_cant_remove error category and failure payload	missing	-	M6/ALPM_ERR_PKG_CANT_REMOVE	downstream-alpm.h:293
-ALPM_ERR_PKG_IGNORED	constant	upstream	M6	Diagnostic.pkg_ignored error category and failure payload	missing	-	M6/ALPM_ERR_PKG_IGNORED	downstream-alpm.h:281
+ALPM_ERR_PKG_IGNORED	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_PKG_IGNORED	downstream-alpm.h:281
 ALPM_ERR_PKG_INVALID	constant	upstream	M6	Diagnostic.pkg_invalid error category and failure payload	missing	-	M6/ALPM_ERR_PKG_INVALID	downstream-alpm.h:283
-ALPM_ERR_PKG_INVALID_ARCH	constant	upstream	M6	Diagnostic.pkg_invalid_arch error category and failure payload	missing	-	M6/ALPM_ERR_PKG_INVALID_ARCH	downstream-alpm.h:297
+ALPM_ERR_PKG_INVALID_ARCH	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_PKG_INVALID_ARCH	downstream-alpm.h:297
 ALPM_ERR_PKG_INVALID_CHECKSUM	constant	upstream	M6	Diagnostic.pkg_invalid_checksum error category and failure payload	missing	-	M6/ALPM_ERR_PKG_INVALID_CHECKSUM	downstream-alpm.h:285
 ALPM_ERR_PKG_INVALID_NAME	constant	upstream	M6	Diagnostic.pkg_invalid_name error category and failure payload	missing	-	M6/ALPM_ERR_PKG_INVALID_NAME	downstream-alpm.h:295
 ALPM_ERR_PKG_INVALID_SIG	constant	upstream	M6	Diagnostic.pkg_invalid_sig error category and failure payload	missing	-	M6/ALPM_ERR_PKG_INVALID_SIG	downstream-alpm.h:287
 ALPM_ERR_PKG_MISSING_SIG	constant	upstream	M6	Diagnostic.pkg_missing_sig error category and failure payload	missing	-	M6/ALPM_ERR_PKG_MISSING_SIG	downstream-alpm.h:289
-ALPM_ERR_PKG_NOT_FOUND	constant	upstream	M6	Diagnostic.pkg_not_found error category and failure payload	missing	-	M6/ALPM_ERR_PKG_NOT_FOUND	downstream-alpm.h:279
+ALPM_ERR_PKG_NOT_FOUND	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_PKG_NOT_FOUND	downstream-alpm.h:279
 ALPM_ERR_PKG_OPEN	constant	upstream	M6	Diagnostic.pkg_open error category and failure payload	missing	-	M6/ALPM_ERR_PKG_OPEN	downstream-alpm.h:291
 ALPM_ERR_RETRIEVE	constant	upstream	M6	Diagnostic.retrieve error category and failure payload	missing	-	M6/ALPM_ERR_RETRIEVE	downstream-alpm.h:314
 ALPM_ERR_RETRIEVE_PREPARE	constant	upstream	M6	Diagnostic.retrieve_prepare error category and failure payload	missing	-	M6/ALPM_ERR_RETRIEVE_PREPARE	downstream-alpm.h:312
@@ -62,8 +62,8 @@ ALPM_ERR_SIG_INVALID	constant	upstream	M6	Diagnostic.sig_invalid error category 
 ALPM_ERR_SIG_MISSING	constant	upstream	M6	Diagnostic.sig_missing error category and failure payload	missing	-	M6/ALPM_ERR_SIG_MISSING	downstream-alpm.h:300
 ALPM_ERR_SYSTEM	constant	upstream	M6	Diagnostic.system error category and failure payload	missing	-	M6/ALPM_ERR_SYSTEM	downstream-alpm.h:212
 ALPM_ERR_TRANS_ABORT	constant	upstream	M6	Diagnostic.trans_abort error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_ABORT	downstream-alpm.h:270
-ALPM_ERR_TRANS_DUP_FILENAME	constant	upstream	M6	Diagnostic.trans_dup_filename error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_DUP_FILENAME	downstream-alpm.h:264
-ALPM_ERR_TRANS_DUP_TARGET	constant	upstream	M6	Diagnostic.trans_dup_target error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_DUP_TARGET	downstream-alpm.h:262
+ALPM_ERR_TRANS_DUP_FILENAME	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_TRANS_DUP_FILENAME	downstream-alpm.h:264
+ALPM_ERR_TRANS_DUP_TARGET	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_TRANS_DUP_TARGET	downstream-alpm.h:262
 ALPM_ERR_TRANS_HOOK_FAILED	constant	upstream	M6	Diagnostic.trans_hook_failed error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_HOOK_FAILED	downstream-alpm.h:276
 ALPM_ERR_TRANS_NOT_INITIALIZED	constant	upstream	M6	Diagnostic.trans_not_initialized error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_NOT_INITIALIZED	downstream-alpm.h:266
 ALPM_ERR_TRANS_NOT_LOCKED	constant	upstream	M6	Diagnostic.trans_not_locked error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_NOT_LOCKED	downstream-alpm.h:274
@@ -71,7 +71,7 @@ ALPM_ERR_TRANS_NOT_NULL	constant	upstream	M6	Diagnostic.trans_not_null error cat
 ALPM_ERR_TRANS_NOT_PREPARED	constant	upstream	M6	Diagnostic.trans_not_prepared error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_NOT_PREPARED	downstream-alpm.h:268
 ALPM_ERR_TRANS_NULL	constant	upstream	M6	Diagnostic.trans_null error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_NULL	downstream-alpm.h:260
 ALPM_ERR_TRANS_TYPE	constant	upstream	M6	Diagnostic.trans_type error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_TYPE	downstream-alpm.h:272
-ALPM_ERR_UNSATISFIED_DEPS	constant	upstream	M6	Diagnostic.unsatisfied_deps error category and failure payload	missing	-	M6/ALPM_ERR_UNSATISFIED_DEPS	downstream-alpm.h:305
+ALPM_ERR_UNSATISFIED_DEPS	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_UNSATISFIED_DEPS	downstream-alpm.h:305
 ALPM_ERR_WRONG_ARGS	constant	upstream	M6	Diagnostic.wrong_args error category and failure payload	missing	-	M6/ALPM_ERR_WRONG_ARGS	downstream-alpm.h:220
 ALPM_EVENT_CHECKDEPS_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_CHECKDEPS_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_CHECKDEPS_DONE	downstream-alpm.h:717
 ALPM_EVENT_CHECKDEPS_START	constant	upstream	M6	Callbacks.ALPM_EVENT_CHECKDEPS_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_CHECKDEPS_START	downstream-alpm.h:715
@@ -170,22 +170,22 @@ ALPM_SIG_PACKAGE_MARGINAL_OK	constant	upstream	M4	SignaturePolicy effective requ
 ALPM_SIG_PACKAGE_OPTIONAL	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_PACKAGE_OPTIONAL	downstream-alpm.h:387
 ALPM_SIG_PACKAGE_UNKNOWN_OK	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_PACKAGE_UNKNOWN_OK	downstream-alpm.h:391
 ALPM_SIG_USE_DEFAULT	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_USE_DEFAULT	downstream-alpm.h:404
-ALPM_TRANS_FLAG_ALLDEPS	constant	upstream	M5	TransactionFlags.alldeps operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_ALLDEPS	downstream-alpm.h:2869
-ALPM_TRANS_FLAG_ALLEXPLICIT	constant	upstream	M5	TransactionFlags.allexplicit operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_ALLEXPLICIT	downstream-alpm.h:2880
-ALPM_TRANS_FLAG_CASCADE	constant	upstream	M5	TransactionFlags.cascade operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_CASCADE	downstream-alpm.h:2861
-ALPM_TRANS_FLAG_DBONLY	constant	upstream	M10	TransactionFlags.dbonly operational behavior and flag interactions	missing	-	M10/ALPM_TRANS_FLAG_DBONLY	downstream-alpm.h:2865
-ALPM_TRANS_FLAG_DOWNLOADONLY	constant	upstream	M7	TransactionFlags.downloadonly operational behavior and flag interactions	missing	-	M7/ALPM_TRANS_FLAG_DOWNLOADONLY	downstream-alpm.h:2871
-ALPM_TRANS_FLAG_NEEDED	constant	upstream	M5	TransactionFlags.needed operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_NEEDED	downstream-alpm.h:2878
-ALPM_TRANS_FLAG_NOCONFLICTS	constant	upstream	M5	TransactionFlags.noconflicts operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_NOCONFLICTS	downstream-alpm.h:2875
-ALPM_TRANS_FLAG_NODEPS	constant	upstream	M5	TransactionFlags.nodeps operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_NODEPS	downstream-alpm.h:2854
-ALPM_TRANS_FLAG_NODEPVERSION	constant	upstream	M5	TransactionFlags.nodepversion operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_NODEPVERSION	downstream-alpm.h:2859
-ALPM_TRANS_FLAG_NOHOOKS	constant	upstream	M9	TransactionFlags.nohooks operational behavior and flag interactions	missing	-	M9/ALPM_TRANS_FLAG_NOHOOKS	downstream-alpm.h:2867
-ALPM_TRANS_FLAG_NOLOCK	constant	upstream	M6	TransactionFlags.nolock operational behavior and flag interactions	missing	-	M6/ALPM_TRANS_FLAG_NOLOCK	downstream-alpm.h:2886
-ALPM_TRANS_FLAG_NOSAVE	constant	upstream	M10	TransactionFlags.nosave operational behavior and flag interactions	missing	-	M10/ALPM_TRANS_FLAG_NOSAVE	downstream-alpm.h:2857
-ALPM_TRANS_FLAG_NOSCRIPTLET	constant	upstream	M9	TransactionFlags.noscriptlet operational behavior and flag interactions	missing	-	M9/ALPM_TRANS_FLAG_NOSCRIPTLET	downstream-alpm.h:2873
-ALPM_TRANS_FLAG_RECURSE	constant	upstream	M5	TransactionFlags.recurse operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_RECURSE	downstream-alpm.h:2863
-ALPM_TRANS_FLAG_RECURSEALL	constant	upstream	M5	TransactionFlags.recurseall operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_RECURSEALL	downstream-alpm.h:2884
-ALPM_TRANS_FLAG_UNNEEDED	constant	upstream	M5	TransactionFlags.unneeded operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_UNNEEDED	downstream-alpm.h:2882
+ALPM_TRANS_FLAG_ALLDEPS	constant	upstream	M5	TransactionFlags.all_dependencies in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_ALLDEPS	downstream-alpm.h:2869
+ALPM_TRANS_FLAG_ALLEXPLICIT	constant	upstream	M5	TransactionFlags.all_explicit in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_ALLEXPLICIT	downstream-alpm.h:2880
+ALPM_TRANS_FLAG_CASCADE	constant	upstream	M5	TransactionFlags.cascade in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_CASCADE	downstream-alpm.h:2861
+ALPM_TRANS_FLAG_DBONLY	constant	upstream	M10	TransactionFlags.database_only retained in owned plan; execution effect remains M10	partial	resolver-m5-unit	M10/ALPM_TRANS_FLAG_DBONLY	downstream-alpm.h:2865
+ALPM_TRANS_FLAG_DOWNLOADONLY	constant	upstream	M7	TransactionFlags.download_only retained in owned plan; execution effect remains M7	partial	resolver-m5-unit	M7/ALPM_TRANS_FLAG_DOWNLOADONLY	downstream-alpm.h:2871
+ALPM_TRANS_FLAG_NEEDED	constant	upstream	M5	TransactionFlags.needed in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_NEEDED	downstream-alpm.h:2878
+ALPM_TRANS_FLAG_NOCONFLICTS	constant	upstream	M5	TransactionFlags.no_conflicts in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_NOCONFLICTS	downstream-alpm.h:2875
+ALPM_TRANS_FLAG_NODEPS	constant	upstream	M5	TransactionFlags.no_dependencies in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_NODEPS	downstream-alpm.h:2854
+ALPM_TRANS_FLAG_NODEPVERSION	constant	upstream	M5	TransactionFlags.no_dependency_versions in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_NODEPVERSION	downstream-alpm.h:2859
+ALPM_TRANS_FLAG_NOHOOKS	constant	upstream	M9	TransactionFlags.no_hooks retained in owned plan; execution effect remains M9	partial	resolver-m5-unit	M9/ALPM_TRANS_FLAG_NOHOOKS	downstream-alpm.h:2867
+ALPM_TRANS_FLAG_NOLOCK	constant	upstream	M6	TransactionFlags.no_lock retained in owned plan; execution effect remains M6	partial	resolver-m5-unit	M6/ALPM_TRANS_FLAG_NOLOCK	downstream-alpm.h:2886
+ALPM_TRANS_FLAG_NOSAVE	constant	upstream	M10	TransactionFlags.no_save retained in owned plan; execution effect remains M10	partial	resolver-m5-unit	M10/ALPM_TRANS_FLAG_NOSAVE	downstream-alpm.h:2857
+ALPM_TRANS_FLAG_NOSCRIPTLET	constant	upstream	M9	TransactionFlags.no_scriptlets retained in owned plan; execution effect remains M9	partial	resolver-m5-unit	M9/ALPM_TRANS_FLAG_NOSCRIPTLET	downstream-alpm.h:2873
+ALPM_TRANS_FLAG_RECURSE	constant	upstream	M5	TransactionFlags.recurse in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_RECURSE	downstream-alpm.h:2863
+ALPM_TRANS_FLAG_RECURSEALL	constant	upstream	M5	TransactionFlags.recurse_all in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_RECURSEALL	downstream-alpm.h:2884
+ALPM_TRANS_FLAG_UNNEEDED	constant	upstream	M5	TransactionFlags.unneeded in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_UNNEEDED	downstream-alpm.h:2882
 FREELIST	macro	upstream	M1	Zig slices/ArrayList with explicit allocator ownership and stable iteration	representation_only	-	M1/FREELIST	alpm_list.h:61
 alpm_add_pkg	function	upstream	M6	Transaction.addPackage with duplicate and ownership checks	missing	-	M6/alpm_add_pkg	downstream-alpm.h:2961
 alpm_backup_t	type	upstream	M2	BackupFile: name and optional installed hash	partial	metadata-m2-reference	M2/alpm_backup_t	downstream-alpm.h:158
@@ -197,12 +197,12 @@ alpm_cb_fetch	type	upstream	M7	Callbacks.Download.alpm_cb_fetch payload/lifetime
 alpm_cb_log	type	upstream	M6	Callbacks.Log.alpm_cb_log severity and formatting	partial	owner-unit	M6/alpm_cb_log	downstream-alpm.h:1511
 alpm_cb_progress	type	upstream	M6	Callbacks.alpm_cb_progress typed payload and meaningful event order	partial	owner-unit	M6/alpm_cb_progress	downstream-alpm.h:1153
 alpm_cb_question	type	upstream	M6	Callbacks.Question.alpm_cb_question typed payload and answer effect	partial	owner-unit	M6/alpm_cb_question	downstream-alpm.h:1114
-alpm_checkconflicts	function	upstream	M5	Resolver package conflict checks	missing	-	M5/alpm_checkconflicts	downstream-alpm.h:664
-alpm_checkdeps	function	upstream	M5	Resolver future-state dependency checks with reverse dependencies	missing	-	M5/alpm_checkdeps	downstream-alpm.h:631
+alpm_checkconflicts	function	upstream	M5	Resolver bidirectional conflict preparation; TransactionPlan.issues.conflict	partial	resolver-m5-reference	M5/alpm_checkconflicts	downstream-alpm.h:664
+alpm_checkdeps	function	upstream	M5	Resolver final future-state checks; TransactionPlan.issues.missing and owned edges/provisions	partial	resolver-m5-reference	M5/alpm_checkdeps	downstream-alpm.h:631
 alpm_compute_md5sum	function	upstream	M4	Checksum.file(.md5) streaming lowercase hex	partial	verification-m4-reference	M4/alpm_compute_md5sum	downstream-alpm.h:2996
 alpm_compute_sha256sum	function	upstream	M4	Checksum.file(.sha256) streaming lowercase hex	partial	verification-m4-reference	M4/alpm_compute_sha256sum	downstream-alpm.h:3002
-alpm_conflict_free	function	upstream	M5	Resolver conflict diagnostic ownership	missing	-	M5/alpm_conflict_free	downstream-alpm.h:698
-alpm_conflict_t	type	upstream	M5	Resolver diagnostic alpm_conflict_t	missing	-	M5/alpm_conflict_t	downstream-alpm.h:604
+alpm_conflict_free	function	upstream	M5	TransactionPlan.deinit releases owned conflict diagnostics	partial	resolver-m5-unit	M5/alpm_conflict_free	downstream-alpm.h:698
+alpm_conflict_t	type	upstream	M5	TransactionPlan.Conflict: package identities and original conflict relation	partial	resolver-m5-unit	M5/alpm_conflict_t	downstream-alpm.h:604
 alpm_db_add_cache_server	function	upstream	M3	Owner.addServer: copied ordered list, one terminal slash, first-match removal; transfer remains M7	partial	database-m3-unit	M3/alpm_db_add_cache_server	downstream-alpm.h:1359
 alpm_db_add_server	function	upstream	M3	Owner.addServer: copied ordered list, one terminal slash, first-match removal; transfer remains M7	partial	database-m3-unit	M3/alpm_db_add_server	downstream-alpm.h:1331
 alpm_db_check_pgp_signature	function	upstream	M4	Verification.verify structured results; Database.last_verification on policy-checked loads	partial	verification-m4-integration	M4/alpm_db_check_pgp_signature	downstream-alpm.h:496
@@ -232,8 +232,8 @@ alpm_dep_compute_string	function	upstream	M2	PackageRelation.format / formatAllo
 alpm_dep_free	function	upstream	M2	PackageRelation.deinit for clone-owned values; borrowed parse values need no release	partial	metadata-m2-unit	M2/alpm_dep_free	downstream-alpm.h:682
 alpm_dep_from_string	function	upstream	M2	PackageRelation.parse: borrowed NUL-free input; comparator precedence, descriptions and raw versions	partial	metadata-m2-reference	M2/alpm_dep_from_string	downstream-alpm.h:677
 alpm_depend_t	type	upstream	M2	PackageRelation	partial	metadata-m2-reference	M2/alpm_depend_t	downstream-alpm.h:583
-alpm_depmissing_free	function	upstream	M5	Resolver missing dependency diagnostic ownership	missing	-	M5/alpm_depmissing_free	downstream-alpm.h:692
-alpm_depmissing_t	type	upstream	M5	Resolver diagnostic alpm_depmissing_t	missing	-	M5/alpm_depmissing_t	downstream-alpm.h:594
+alpm_depmissing_free	function	upstream	M5	TransactionPlan.deinit releases owned missing-dependency diagnostics	partial	resolver-m5-unit	M5/alpm_depmissing_free	downstream-alpm.h:692
+alpm_depmissing_t	type	upstream	M5	TransactionPlan.Missing: requiring package, relation and causing package	partial	resolver-m5-unit	M5/alpm_depmissing_t	downstream-alpm.h:594
 alpm_depmod_t	type	upstream	M2	PackageRelation.Constraint	partial	metadata-m2-reference	M2/alpm_depmod_t	downstream-alpm.h:554
 alpm_download_event_completed_t	type	upstream	M7	Callbacks.Download.alpm_download_event_completed_t payload/lifetime/order	missing	-	M7/alpm_download_event_completed_t	downstream-alpm.h:1204
 alpm_download_event_init_t	type	upstream	M7	Callbacks.Download.alpm_download_event_init_t payload/lifetime/order	missing	-	M7/alpm_download_event_init_t	downstream-alpm.h:1178
@@ -263,9 +263,9 @@ alpm_fileconflict_t	type	upstream	M8	FileConflict.alpm_fileconflict_t target/fil
 alpm_fileconflicttype_t	type	upstream	M8	FileConflict.alpm_fileconflicttype_t target/filesystem distinction	missing	-	M8/alpm_fileconflicttype_t	downstream-alpm.h:566
 alpm_filelist_contains	function	upstream	M2	Package.findFile: exact sorted name lookup	partial	metadata-m2-reference	M2/alpm_filelist_contains	downstream-alpm.h:168
 alpm_filelist_t	type	upstream	M2	Package.files: sorted arena-owned PackageFile slice	partial	metadata-m2-reference	M2/alpm_filelist_t	downstream-alpm.h:150
-alpm_find_dbs_satisfier	function	upstream	M5	Resolver dependency/provider lookup across ordered databases	missing	-	M5/alpm_find_dbs_satisfier	downstream-alpm.h:654
+alpm_find_dbs_satisfier	function	upstream	M5	Owner.resolve text targets: literal/provider priority, installed providers, usage/ignore and questions	partial	resolver-m5-reference	M5/alpm_find_dbs_satisfier	downstream-alpm.h:654
 alpm_find_group_pkgs	function	upstream	M3	Owner.groupPackages: raw ordered deduplicated group membership; ignore questions/NEEDED remain M5/M6	partial	database-m3-unit	M3/alpm_find_group_pkgs	downstream-alpm.h:194
-alpm_find_satisfier	function	upstream	M5	Package.satisfies / PackageRelation.satisfiedBy literal and versioned provisions; ordered package-universe selection remains M5	partial	metadata-m2-reference	M5/alpm_find_satisfier	downstream-alpm.h:640
+alpm_find_satisfier	function	upstream	M5	Resolver.findSatisfier scans supplied list order; Package.satisfies checks literal/versioned provisions	partial	resolver-m5-reference	M5/alpm_find_satisfier	downstream-alpm.h:640
 alpm_get_localdb	function	upstream	M1	Owner.local borrowed database view	partial	owner-unit	M1/alpm_get_localdb	downstream-alpm.h:1242
 alpm_get_syncdbs	function	upstream	M1	Owner.sync_databases in registration order	partial	owner-reference	M1/alpm_get_syncdbs	downstream-alpm.h:1251
 alpm_group_t	type	upstream	M3	Group with typed package IDs and lazy cache	partial	database-m3-reference	M3/alpm_group_t	downstream-alpm.h:185
@@ -307,16 +307,16 @@ alpm_list_to_array	function	upstream	M1	Zig slices/ArrayList with explicit alloc
 alpm_logaction	function	upstream	M6	Owner action log and syslog	missing	-	M6/alpm_logaction	downstream-alpm.h:1519
 alpm_loglevel_t	type	upstream	M6	Callbacks.Log.alpm_loglevel_t severity and formatting	missing	-	M6/alpm_loglevel_t	downstream-alpm.h:1498
 alpm_option_add_architecture	function	upstream	M1	OwnerConfiguration.architectures; Owner.addListValue; M1 configuration coverage is partial compatibility	partial	owner-unit	M1/alpm_option_add_architecture	downstream-alpm.h:2146
-alpm_option_add_assumeinstalled	function	upstream	M5	OwnerConfiguration.assume_installed; replace via Owner.setOptions; relation-specific add/remove matching remains M2/M5; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_add_assumeinstalled	downstream-alpm.h:2102
+alpm_option_add_assumeinstalled	function	upstream	M5	Owner.options/setOptions/addAssumedInstalled/removeAssumedInstalled: owned ANY/EQ provisions, raw-version matching and Resolver consumption	partial	resolver-m5-reference	M5/alpm_option_add_assumeinstalled	downstream-alpm.h:2102
 alpm_option_add_cachedir	function	upstream	M7	OwnerConfiguration.cache_directories; Owner.addListValue; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_add_cachedir	downstream-alpm.h:1732
 alpm_option_add_hookdir	function	upstream	M9	OwnerConfiguration.hook_directories; Owner.addListValue; operational consumer remains M9; M1 configuration coverage is partial compatibility	partial	owner-unit	M9/alpm_option_add_hookdir	downstream-alpm.h:1770
-alpm_option_add_ignoregroup	function	upstream	M5	OwnerConfiguration.ignore_groups; Owner.addListValue; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_add_ignoregroup	downstream-alpm.h:2062
-alpm_option_add_ignorepkg	function	upstream	M5	OwnerConfiguration.ignore_packages; Owner.addListValue; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_add_ignorepkg	downstream-alpm.h:2023
+alpm_option_add_ignoregroup	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_groups; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_add_ignoregroup	downstream-alpm.h:2062
+alpm_option_add_ignorepkg	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_packages; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_add_ignorepkg	downstream-alpm.h:2023
 alpm_option_add_noextract	function	upstream	M8	OwnerConfiguration.no_extract; Owner.addListValue; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_add_noextract	downstream-alpm.h:1975
 alpm_option_add_noupgrade	function	upstream	M8	OwnerConfiguration.no_upgrade; Owner.addListValue; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_add_noupgrade	downstream-alpm.h:1929
 alpm_option_add_overwrite_file	function	upstream	M8	OwnerConfiguration.overwrite_files; Owner.addListValue; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_add_overwrite_file	downstream-alpm.h:1811
 alpm_option_get_architectures	function	upstream	M1	OwnerConfiguration.architectures; M1 configuration coverage is partial compatibility	partial	owner-reference	M1/alpm_option_get_architectures	downstream-alpm.h:2140
-alpm_option_get_assumeinstalled	function	upstream	M5	OwnerConfiguration.assume_installed; replace via Owner.setOptions; relation-specific add/remove matching remains M2/M5; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_get_assumeinstalled	downstream-alpm.h:2095
+alpm_option_get_assumeinstalled	function	upstream	M5	Owner.options/setOptions/addAssumedInstalled/removeAssumedInstalled: owned ANY/EQ provisions, raw-version matching and Resolver consumption	partial	resolver-m5-reference	M5/alpm_option_get_assumeinstalled	downstream-alpm.h:2095
 alpm_option_get_cachedirs	function	upstream	M7	OwnerConfiguration.cache_directories; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-reference	M7/alpm_option_get_cachedirs	downstream-alpm.h:1717
 alpm_option_get_checkspace	function	upstream	M8	OwnerConfiguration.check_space; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-reference	M8/alpm_option_get_checkspace	downstream-alpm.h:2175
 alpm_option_get_dbext	function	upstream	M1	OwnerConfiguration.database_extension; M1 configuration coverage is partial compatibility	partial	owner-reference	M1/alpm_option_get_dbext	downstream-alpm.h:2204
@@ -335,8 +335,8 @@ alpm_option_get_fetchcb	function	upstream	M6	OwnerConfiguration.callbacks.fetch;
 alpm_option_get_fetchcb_ctx	function	upstream	M6	OwnerConfiguration.callbacks.fetch_context; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_fetchcb_ctx	downstream-alpm.h:1585
 alpm_option_get_gpgdir	function	upstream	M4	OwnerConfiguration.gpg_directory; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_get_gpgdir	downstream-alpm.h:1857
 alpm_option_get_hookdirs	function	upstream	M9	OwnerConfiguration.hook_directories; operational consumer remains M9; M1 configuration coverage is partial compatibility	partial	owner-reference	M9/alpm_option_get_hookdirs	downstream-alpm.h:1755
-alpm_option_get_ignoregroups	function	upstream	M5	OwnerConfiguration.ignore_groups; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-reference	M5/alpm_option_get_ignoregroups	downstream-alpm.h:2055
-alpm_option_get_ignorepkgs	function	upstream	M5	OwnerConfiguration.ignore_packages; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-reference	M5/alpm_option_get_ignorepkgs	downstream-alpm.h:2016
+alpm_option_get_ignoregroups	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_groups; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_get_ignoregroups	downstream-alpm.h:2055
+alpm_option_get_ignorepkgs	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_packages; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_get_ignorepkgs	downstream-alpm.h:2016
 alpm_option_get_local_file_siglevel	function	upstream	M4	OwnerConfiguration.local_file_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_get_local_file_siglevel	downstream-alpm.h:2237
 alpm_option_get_lockfile	function	upstream	M6	Owner.lock_file; locking remains M6; M1 configuration coverage is partial compatibility	partial	owner-reference	M6/alpm_option_get_lockfile	downstream-alpm.h:1703
 alpm_option_get_logcb	function	upstream	M6	OwnerConfiguration.callbacks.log; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_logcb	downstream-alpm.h:1539
@@ -358,16 +358,16 @@ alpm_option_get_usesyslog	function	upstream	M6	OwnerConfiguration.use_syslog; op
 alpm_option_match_noextract	function	upstream	M8	OwnerConfiguration.noextract with validation and owned configuration; filesystem preflight/commit behavior	missing	-	M8/alpm_option_match_noextract	downstream-alpm.h:1998
 alpm_option_match_noupgrade	function	upstream	M8	OwnerConfiguration.noupgrade with validation and owned configuration; filesystem preflight/commit behavior	missing	-	M8/alpm_option_match_noupgrade	downstream-alpm.h:1952
 alpm_option_remove_architecture	function	upstream	M1	OwnerConfiguration.architectures; Owner.removeListValue; M1 configuration coverage is partial compatibility	partial	owner-unit	M1/alpm_option_remove_architecture	downstream-alpm.h:2158
-alpm_option_remove_assumeinstalled	function	upstream	M5	OwnerConfiguration.assume_installed; replace via Owner.setOptions; relation-specific add/remove matching remains M2/M5; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_remove_assumeinstalled	downstream-alpm.h:2117
+alpm_option_remove_assumeinstalled	function	upstream	M5	Owner.options/setOptions/addAssumedInstalled/removeAssumedInstalled: owned ANY/EQ provisions, raw-version matching and Resolver consumption	partial	resolver-m5-reference	M5/alpm_option_remove_assumeinstalled	downstream-alpm.h:2117
 alpm_option_remove_cachedir	function	upstream	M7	OwnerConfiguration.cache_directories; Owner.removeListValue; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_remove_cachedir	downstream-alpm.h:1739
 alpm_option_remove_hookdir	function	upstream	M9	OwnerConfiguration.hook_directories; Owner.removeListValue; operational consumer remains M9; M1 configuration coverage is partial compatibility	partial	owner-unit	M9/alpm_option_remove_hookdir	downstream-alpm.h:1777
-alpm_option_remove_ignoregroup	function	upstream	M5	OwnerConfiguration.ignore_groups; Owner.removeListValue; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_remove_ignoregroup	downstream-alpm.h:2077
-alpm_option_remove_ignorepkg	function	upstream	M5	OwnerConfiguration.ignore_packages; Owner.removeListValue; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_remove_ignorepkg	downstream-alpm.h:2038
+alpm_option_remove_ignoregroup	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_groups; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_remove_ignoregroup	downstream-alpm.h:2077
+alpm_option_remove_ignorepkg	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_packages; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_remove_ignorepkg	downstream-alpm.h:2038
 alpm_option_remove_noextract	function	upstream	M8	OwnerConfiguration.no_extract; Owner.removeListValue; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_remove_noextract	downstream-alpm.h:1990
 alpm_option_remove_noupgrade	function	upstream	M8	OwnerConfiguration.no_upgrade; Owner.removeListValue; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_remove_noupgrade	downstream-alpm.h:1944
 alpm_option_remove_overwrite_file	function	upstream	M8	OwnerConfiguration.overwrite_files; Owner.removeListValue; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_remove_overwrite_file	downstream-alpm.h:1820
 alpm_option_set_architectures	function	upstream	M1	OwnerConfiguration.architectures; Owner.setList; M1 configuration coverage is partial compatibility	partial	owner-unit	M1/alpm_option_set_architectures	downstream-alpm.h:2152
-alpm_option_set_assumeinstalled	function	upstream	M5	OwnerConfiguration.assume_installed; replace via Owner.setOptions; relation-specific add/remove matching remains M2/M5; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_set_assumeinstalled	downstream-alpm.h:2110
+alpm_option_set_assumeinstalled	function	upstream	M5	Owner.options/setOptions/addAssumedInstalled/removeAssumedInstalled: owned ANY/EQ provisions, raw-version matching and Resolver consumption	partial	resolver-m5-reference	M5/alpm_option_set_assumeinstalled	downstream-alpm.h:2110
 alpm_option_set_cachedirs	function	upstream	M7	OwnerConfiguration.cache_directories; Owner.setList; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_set_cachedirs	downstream-alpm.h:1725
 alpm_option_set_checkspace	function	upstream	M8	OwnerConfiguration.check_space; Owner.setOptions; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_set_checkspace	downstream-alpm.h:2181
 alpm_option_set_dbext	function	upstream	M1	OwnerConfiguration.database_extension; Owner.setOptions; M1 configuration coverage is partial compatibility	partial	owner-unit	M1/alpm_option_set_dbext	downstream-alpm.h:2211
@@ -382,8 +382,8 @@ alpm_option_set_eventcb	function	upstream	M6	OwnerConfiguration.callbacks.event;
 alpm_option_set_fetchcb	function	upstream	M6	OwnerConfiguration.callbacks.fetch; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_fetchcb	downstream-alpm.h:1593
 alpm_option_set_gpgdir	function	upstream	M4	OwnerConfiguration.gpg_directory; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_set_gpgdir	downstream-alpm.h:1863
 alpm_option_set_hookdirs	function	upstream	M9	OwnerConfiguration.hook_directories; Owner.setList; operational consumer remains M9; M1 configuration coverage is partial compatibility	partial	owner-unit	M9/alpm_option_set_hookdirs	downstream-alpm.h:1763
-alpm_option_set_ignoregroups	function	upstream	M5	OwnerConfiguration.ignore_groups; Owner.setList; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_set_ignoregroups	downstream-alpm.h:2070
-alpm_option_set_ignorepkgs	function	upstream	M5	OwnerConfiguration.ignore_packages; Owner.setList; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_set_ignorepkgs	downstream-alpm.h:2031
+alpm_option_set_ignoregroups	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_groups; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_set_ignoregroups	downstream-alpm.h:2070
+alpm_option_set_ignorepkgs	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_packages; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_set_ignorepkgs	downstream-alpm.h:2031
 alpm_option_set_local_file_siglevel	function	upstream	M4	OwnerConfiguration.local_file_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_set_local_file_siglevel	downstream-alpm.h:2244
 alpm_option_set_logcb	function	upstream	M6	OwnerConfiguration.callbacks.log; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_logcb	downstream-alpm.h:1553
 alpm_option_set_logfile	function	upstream	M6	OwnerConfiguration.log_file; Owner.setOptions; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_logfile	downstream-alpm.h:1842
@@ -448,7 +448,7 @@ alpm_pkg_mtree_close	function	upstream	M2	MtreeIterator.deinit	partial	metadata-
 alpm_pkg_mtree_next	function	upstream	M2	MtreeIterator.next: borrowed typed entries	partial	metadata-m2-reference	M2/alpm_pkg_mtree_next	downstream-alpm.h:2817
 alpm_pkg_mtree_open	function	upstream	M2	Package.openMtree: owned archive mtree iterator; archive/local mtree iteration	partial	metadata-m2-reference	M2/alpm_pkg_mtree_open	downstream-alpm.h:2809
 alpm_pkg_set_reason	function	upstream	M10	Owner.setInstallReason with local database persistence	missing	-	M10/alpm_pkg_set_reason	downstream-alpm.h:2756
-alpm_pkg_should_ignore	function	upstream	M5	Resolver package and group ignore policy	missing	-	M5/alpm_pkg_should_ignore	downstream-alpm.h:2508
+alpm_pkg_should_ignore	function	upstream	M5	Owner.shouldIgnore / Resolver.shouldIgnore: fnmatch package/group patterns without inversion	partial	resolver-m5-reference	M5/alpm_pkg_should_ignore	downstream-alpm.h:2508
 alpm_pkg_t	type	upstream	M2	Package	partial	metadata-m2-reference	M2/alpm_pkg_t	downstream-alpm.h:115
 alpm_pkg_vercmp	function	upstream	M2	Version.compareStrings / compareVersions; original 54 signs retained, M2 adds nine C-locale byte cases	partial	version-fixed-54	M2/alpm_pkg_vercmp	downstream-alpm.h:2483
 alpm_pkg_xdata_t	type	upstream	M2	Package.XData	partial	metadata-m2-reference	M2/alpm_pkg_xdata_t	downstream-alpm.h:123
@@ -477,8 +477,8 @@ alpm_sigresult_t	type	upstream	M4	SignatureResult.Signature: crypto validity sep
 alpm_sigstatus_t	type	upstream	M4	SignatureResult.Status with explicit revoked status	partial	verification-m4-unit	M4/alpm_sigstatus_t	downstream-alpm.h:421
 alpm_sigvalidity_t	type	upstream	M4	SignatureResult.Trust: full, marginal, unknown, never	partial	verification-m4-unit	M4/alpm_sigvalidity_t	downstream-alpm.h:434
 alpm_strerror	function	upstream	M1	Diagnostic.format operation/category/cause; complete error mapping remains M6	partial	owner-unit	M1/alpm_strerror	downstream-alpm.h:340
-alpm_sync_get_new_version	function	upstream	M5	Resolver newest eligible repository candidate	missing	-	M5/alpm_sync_get_new_version	downstream-alpm.h:2990
-alpm_sync_sysupgrade	function	upstream	M5	Transaction system-upgrade target selection	missing	-	M5/alpm_sync_sysupgrade	downstream-alpm.h:2952
+alpm_sync_get_new_version	function	upstream	M5	Owner.newVersion / Resolver.newVersion: first literal repository match; query ignores usage/ignore policy	partial	resolver-m5-reference	M5/alpm_sync_get_new_version	downstream-alpm.h:2990
+alpm_sync_sysupgrade	function	upstream	M5	Owner.resolve system_upgrade: priority, replacements, ignores, opt-in downgrade, absent locals	partial	resolver-m5-reference	M5/alpm_sync_sysupgrade	downstream-alpm.h:2952
 alpm_time_t	type	upstream	M2	Package.build_date / install_date: optional i64 timestamps	partial	metadata-m2-reference	M2/alpm_time_t	downstream-alpm.h:127
 alpm_trans_commit	function	upstream	M10	Transaction.commit filesystem/database/hooks execution	missing	-	M10/alpm_trans_commit	downstream-alpm.h:2928
 alpm_trans_get_add	function	upstream	M6	TransactionPlan ordered additions	missing	-	M6/alpm_trans_get_add	downstream-alpm.h:2899
@@ -510,10 +510,10 @@ behavior.fetch-refresh-failures	behavior	upstream	M7	Reuse PackageManager CoreDo
 behavior.filesystem-conflicts	behavior	upstream	M8	Ownership conflicts; symlink ancestors; traversal; hardlinks; overwrite patterns; disk-space failures	missing	-	M8/behavior.filesystem-conflicts	upstream-source-tests.tar.gz!lib/libalpm/conflict.c
 behavior.hook-matching-order	behavior	upstream	M9	Package/path triggers; negation; directory override; Depends; NeedsTargets; AbortOnFail; deterministic order	missing	-	M9/behavior.hook-matching-order	upstream-source-tests.tar.gz!lib/libalpm/hook.c
 behavior.local-files-backup	behavior	upstream	M2	LocalBackend correlates local files/backup hashes with lazy Package metadata	partial	database-m3-unit	M2/behavior.local-files-backup	upstream-source-tests.tar.gz!lib/libalpm/be_local.c
-behavior.remove-semantics	behavior	upstream	M10	Reverse ordering; recursive/cascade/unneeded; shared dirs; modified backup; missing files	missing	-	M10/behavior.remove-semantics	upstream-source-tests.tar.gz!lib/libalpm/remove.c
+behavior.remove-semantics	behavior	upstream	M10	M5 reverse ordering, cascade/recurse/unneeded and shared providers; filesystem/backup/local-DB removal remains M10	partial	resolver-m5-reference	M10/behavior.remove-semantics	upstream-source-tests.tar.gz!lib/libalpm/remove.c
 behavior.scriptlet-order	behavior	upstream	M9	Install/upgrade/remove phases; versions; chroot/environment/output; suppression flags; failure effects	missing	-	M9/behavior.scriptlet-order	upstream-source-tests.tar.gz!lib/libalpm/trans.c
 behavior.signature-policy-matrix	behavior	upstream	M4	Effective policy; all signatures; consent/import/reverification; sealed package/database bytes; reference file-expired-key preflight	partial	verification-m4-reference	M4/behavior.signature-policy-matrix	upstream-source-tests.tar.gz!lib/libalpm/signing.c
-behavior.solver-selection	behavior	upstream	M5	Ordered providers; versioned provides; replacement/ignore decisions; future-state dependency graph	missing	-	M5/behavior.solver-selection	upstream-source-tests.tar.gz!lib/libalpm/deps.c
-behavior.solver-system-upgrade	behavior	upstream	M5	Repository precedence; upgrades/downgrades/reinstalls; ignored packages; dependency cycles	missing	-	M5/behavior.solver-system-upgrade	upstream-source-tests.tar.gz!lib/libalpm/sync.c
+behavior.solver-selection	behavior	upstream	M5	Resolver shared closure, questions, conflicts and final future-state edges/provisions; owned plan diagnostics	partial	resolver-m5-reference	M5/behavior.solver-selection	upstream-source-tests.tar.gz!lib/libalpm/deps.c
+behavior.solver-system-upgrade	behavior	upstream	M5	Resolver ordered system-upgrade/replacement/removal selection, reasons, flags and cycle ordering	partial	resolver-m5-reference	M5/behavior.solver-system-upgrade	upstream-source-tests.tar.gz!lib/libalpm/sync.c
 behavior.sync-formats	behavior	upstream	M3	SyncBackend: libarchive plain/gzip/xz/zstd/bzip2 db/files, merged desc/depends/files, transactional failure	partial	database-m3-reference	M3/behavior.sync-formats	upstream-source-tests.tar.gz!lib/libalpm/be_sync.c
 behavior.transaction-lifecycle	behavior	upstream	M6	State transitions; lock contention; cancellation; question answers; deterministic event order	missing	-	M6/behavior.transaction-lifecycle	upstream-source-tests.tar.gz!lib/libalpm/trans.c

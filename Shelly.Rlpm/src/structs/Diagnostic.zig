@@ -11,6 +11,7 @@ pub const Operation = enum {
     load_package,
     invalidate_database,
     query,
+    resolve,
     callback,
 };
 pub const Category = enum {
@@ -18,6 +19,7 @@ pub const Category = enum {
     invalid_argument,
     database,
     integrity,
+    resolution,
     stale_reference,
     busy,
     cancelled,
@@ -32,6 +34,10 @@ database: ?DatabaseRef = null,
 pub fn init(operation: Operation, cause: anyerror, database: ?DatabaseRef) Diagnostic {
     return .{ .operation = operation, .cause = cause, .database = database, .category = switch (cause) {
         error.OutOfMemory => .memory,
+        error.TargetNotFound, error.PackageIgnored, error.DuplicateTarget, error.InvalidArchitecture, error.UnsatisfiedDependencies, error.ConflictingDependencies, error.DuplicateFilename => .resolution,
+        error.InvalidTransactionFlags, error.InvalidSnapshot => .invalid_argument,
+        error.DatabaseNotFound, error.InvalidDatabase, error.IncompleteMetadata => .database,
+        error.UnsupportedPackageOrigin => .unsupported,
         error.ChecksumMismatch, error.ChecksumMissing, error.SignatureMissing, error.InvalidSignature, error.SignatureTooLarge, error.KeyImportDeclined, error.KeyImportFailed, error.KeyAcquisitionUnavailable, error.GpgFailed, error.InvalidKeySource, error.PackageIdentityMismatch => .integrity,
         error.InvalidPath, error.InvalidOption, error.InvalidVersion, error.InvalidCharacter, error.InvalidPackageRelation, error.InvalidDatabaseName, error.ReservedDatabaseName, error.ImmutablePath, error.InvalidAnswer, error.InvalidRegex => .invalid_argument,
         error.DuplicateDatabase, error.DatabaseNotLoaded, error.DatabaseAlreadyLoaded, error.UnsupportedDatabaseVersion, error.InvalidDatabaseEntry, error.InvalidSqliteDatabase, error.DuplicatePackage, error.InvalidPackageFilename, error.ArchiveFailed => .database,

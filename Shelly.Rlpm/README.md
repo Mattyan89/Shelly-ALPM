@@ -3,8 +3,8 @@
 RLPM is the native Zig package backend under development. The
 [completion plan](../docs/rlpm-libalpm-completion-plan.md) targets libalpm's
 functional behavior **including CachyOS extensions**, following the existing
-Owner/Database/Package design. M0–M3 are accepted; M4 is implemented and
-awaiting acceptance before M5. RLPM is not yet a replacement for libalpm.
+Owner/Database/Package design. M0–M4 are accepted; M5 is implemented and
+awaiting acceptance before M6. RLPM is not yet a replacement for libalpm.
 
 M1 exports an owning `Owner` with copied options, ordered repository registration,
 read-only local queries, stable database identity, package cache generations,
@@ -27,6 +27,9 @@ The [database guide](databases.md) documents the APIs and explicit compatibility
 boundaries. M4 adds checksum, signature and trust enforcement, consented key
 import, structured GPG results and sealed archive snapshots. The
 [verification guide](verification.md) documents policy, ownership and APIs.
+M5 adds native resolution and owned install/removal/system-upgrade plans with
+provider questions, future-state checks and dependency ordering. The
+[resolution guide](resolution.md) covers plans, flags, lifetimes and evidence.
 Provenance writes and hook/scriptlet network isolation remain required
 later milestones. M7 will reuse PackageManager's
 downloader, queue and mirror logic with its Shelly.Http transport, extracting
@@ -47,6 +50,7 @@ module dependency. From this directory:
 | `zig build test-public-api` | External Owner and metadata API, ownership, references and failure cases |
 | `zig build test-database` | M3 local/tar/SQLite metadata, queries, reloads and allocation failures |
 | `zig build test-verification` | M4 policy/status, checksums, reference cases, imports and sealed-file tests |
+| `zig build test-resolver` | M5 plans, flags, questions, removal/upgrade behavior and 314 reference scenarios |
 | `zig build test-metadata` | M2 relation, archive, metadata and independent reference fixtures |
 | `zig build test-compatibility` | Frozen reference integrity, complete API inventory and evidence schema |
 | `zig build test-version` | Existing fixed version expectations and ownership tests |
@@ -88,7 +92,7 @@ bytes. Sealed snapshots require RAM/swap proportional to archive size.
   [Reference documentation](src/tests/reference/README.md) explains attribution,
   corpus provenance and optional capture on disposable roots.
 - The [ledger](src/tests/compatibility-ledger.tsv) tracks 493 public symbols and
-  25 behavioral contracts. There are 223 missing, 262 partial and 33
+  25 behavioral contracts. There are 187 missing, 298 partial and 33
   representation-only rows. No row claims verified full compatibility, and
   every CachyOS extension remains required.
 - [Owner reference fixtures](src/tests/fixtures/owner-reference.json) capture
@@ -115,14 +119,24 @@ bytes. Sealed snapshots require RAM/swap proportional to archive size.
   digest/issuer expectations. Normal tests replay these offline without libalpm
   or GPG. The original frozen corpus remains unchanged.
 
-M4 validation on 2026-09-28: `test` passes **105 tests** in Debug and ReleaseSafe
+M5 validation on 2026-09-28: `test` passes **117 tests** in Debug and ReleaseSafe
+(47 library, 66 external consumer, four ledger checks). The 12 focused resolver
+tests overlap the normal suite and replay **314 independent prepare cases**,
+including 36 frozen corpus adaptations, final edges/provisions, and 160 generated
+universes. Nine additional reference cases validate AssumeInstalled options.
+Owner lifetime/cancellation, allocation failures, sealed archive retention and a
+1,024-package chain pass. All **12 real GPG regression cases** also pass. M5 is
+ready for acceptance; M6 has not started. See [resolution limits](resolution.md).
+CI is configured but was not run remotely.
+
+Historical M4 validation on 2026-09-28: `test` passed **105 tests** in Debug and ReleaseSafe
 (47 library, 54 external consumer, four ledger checks). The focused verification
 and standalone package targets pass 14 and 25 tests respectively, overlapping
 the normal suite. All **12 real GPG cases** pass; `Shelly.Key` passes its **147
 tests**. The reference matrix covers **144 file-policy decisions**. No live
 WKD/keyserver service was contacted. See the [verification guide](verification.md)
 for limits and ownership. CI is configured but was not run remotely.
-M4 is the current acceptance checkpoint; M5 has not started.
+M4 is accepted.
 
 Historical M3 validation on 2026-09-28: `test` passed **91 tests** in both Debug and
 ReleaseSafe (47 library, 40 external consumer, four ledger checks). This includes

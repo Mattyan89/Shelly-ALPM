@@ -71,6 +71,14 @@ pub fn build(b: *std.Build) void {
     }) });
     b.step("test-verification", "Run M4 integrity, trust, status, import and immutable-file fixtures").dependOn(&b.addRunArtifact(verification_tests).step);
 
+    const resolver_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/resolver.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    b.step("test-resolver", "Run M5 resolution, removal, system-upgrade and reference fixtures").dependOn(&b.addRunArtifact(resolver_tests).step);
+
     const ledger_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/compatibility.zig"),
         .target = target,

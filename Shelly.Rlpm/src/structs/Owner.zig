@@ -119,6 +119,7 @@ fn registerInternal(self: *Owner, configuration: DatabaseConfiguration) !Databas
     try configuration.validate();
     if (self.findDatabase(configuration.database_name) != null) return error.DuplicateDatabase;
     const next = std.math.add(u64, self.next_database_id, 1) catch return error.IdentityExhausted;
+    if (self.next_database_id == @intFromEnum(DatabaseRef.Id.archive)) return error.IdentityExhausted;
     const path = try self.syncPath(self.allocator, self.configuration, configuration.database_name);
     defer self.allocator.free(path);
     var db = try Database.initSync(self.allocator, configuration, path, self.configuration.default_signature_policy);
@@ -239,6 +240,67 @@ pub fn loadDatabase(self: *Owner, io: std.Io, reference: DatabaseRef) !void {
     try self.begin(.load_database);
     defer self.busy = false;
     self.loadInternal(io, reference) catch |err| return self.fail(.load_database, err, reference);
+}
+
+pub fn addAssumedInstalled(self: *Owner, io: std.Io, relation: @import("PackageRelation.zig")) !void {
+    try self.checkIdle();
+    const old = self.configuration.assume_installed;
+    const values = try self.allocator.alloc(@import("PackageRelation.zig"), old.len + 1);
+    defer self.allocator.free(values);
+    @memcpy(values[0..old.len], old);
+    values[old.len] = relation;
+    var config = self.configuration;
+    config.assume_installed = values;
+    try self.setOptions(io, config);
+}
+/// Removes the first equal name/raw-version, ignoring description/operator.
+pub fn removeAssumedInstalled(self: *Owner, io: std.Io, relation: @import("PackageRelation.zig")) !bool {
+    try self.checkIdle();
+    const old = self.configuration.assume_installed;
+    for (old, 0..) |item, index| {
+        if (!std.mem.eql(u8, item.name, relation.name)) continue;
+        const wanted = switch (relation.constraint) {
+            .any => null,
+            inline else => |v| @as(?[]const u8, v),
+        };
+        const actual = switch (item.constraint) {
+            .any => null,
+            inline else => |v| @as(?[]const u8, v),
+        };
+        if (!optionalEqual(wanted, actual)) continue;
+        const values = try self.allocator.alloc(@import("PackageRelation.zig"), old.len - 1);
+        defer self.allocator.free(values);
+        @memcpy(values[0..index], old[0..index]);
+        @memcpy(values[index..], old[index + 1 ..]);
+        var config = self.configuration;
+        config.assume_installed = values;
+        try self.setOptions(io, config);
+        return true;
+    }
+    return false;
+}
+
+pub fn shouldIgnore(self: *Owner, io: std.Io, reference: PackageRef) !bool {
+    const pkg = try self.packageMetadata(io, reference, .{});
+    try self.begin(.query);
+    defer self.busy = false;
+    return @import("Resolver.zig").shouldIgnore(self.allocator, .{ .ignore_packages = self.configuration.ignore_packages, .ignore_groups = self.configuration.ignore_groups }, pkg) catch |err| return self.fail(.query, err, reference.database);
+}
+/// Query only: first literal repository match, regardless of usage/ignore policy.
+pub fn newVersion(self: *Owner, io: std.Io, target: *const Package) !?PackageRef {
+    try self.begin(.query);
+    defer self.busy = false;
+    for (self.sync_databases.items) |*db| {
+        self.ensureInternal(io, db.identity.?) catch |err| {
+            if (err == error.FileNotFound) continue;
+            return self.fail(.query, err, db.identity);
+        };
+        const id = db.packages.by_name.get(target.name) orelse continue;
+        const candidate = &db.packages.packages.items[@intFromEnum(id)];
+        if (@import("Version.zig").compareStrings(candidate.version.raw, target.version.raw) != .greaterThan) return null;
+        return .{ .database = db.identity.?, .generation = db.generation, .id = id };
+    }
+    return null;
 }
 fn loadInternal(self: *Owner, io: std.Io, reference: DatabaseRef) !void {
     try self.checkCancelled();
@@ -570,6 +632,59 @@ fn reverseOne(self: *Owner, io: std.Io, allocator: std.mem.Allocator, db: *Datab
             break;
         }
     }
+}
+
+/// Read-only preparation over owned snapshots. Semantic errors are returned in
+/// the plan (check plan.check()); operational errors also set Owner.diagnostic.
+/// This does not acquire a transaction lock or authorize a future commit.
+pub fn resolve(self: *Owner, io: std.Io, request: @import("Resolver.zig").Request) !@import("TransactionPlan.zig") {
+    try self.begin(.resolve);
+    defer self.busy = false;
+    return self.resolveInternal(io, request) catch |err| return self.fail(.resolve, err, null);
+}
+fn resolveInternal(self: *Owner, io: std.Io, request: @import("Resolver.zig").Request) !@import("TransactionPlan.zig") {
+    const Resolver = @import("Resolver.zig");
+    // Reject invalid identities before unrelated lazy database I/O can mask the
+    // reference error (or invoke verification callbacks for an invalid request).
+    for (request.install) |target| if (target == .reference) {
+        const reference = target.reference;
+        const db = try self.resolveDatabase(reference.database);
+        if (db.generation != reference.generation or !db.status.package_cache_loaded or @intFromEnum(reference.id) >= db.packages.packages.items.len) return error.StalePackageReference;
+    };
+    var scratch = std.heap.ArenaAllocator.init(self.allocator);
+    defer scratch.deinit();
+    const a = scratch.allocator();
+    const local_ref = self.localDatabase() orelse return error.StaleDatabaseReference;
+    const local = try self.resolutionEntries(io, a, local_ref);
+    var repos: std.ArrayList(Resolver.Repository) = .empty;
+    if (request.install.len != 0 or request.system_upgrade) for (self.sync_databases.items) |*db| {
+        const entries = self.resolutionEntries(io, a, db.identity.?) catch |err| if (err == error.FileNotFound) &.{} else return err;
+        try repos.append(a, .{ .reference = db.identity.?, .name = db.name, .usage = db.usage, .packages = entries, .status = if (db.status.presence == .missing) .missing else .valid });
+    };
+    return Resolver.resolve(self.allocator, .{ .owner = self.id, .local = local, .repositories = repos.items }, .{
+        .architectures = self.configuration.architectures,
+        .ignore_packages = self.configuration.ignore_packages,
+        .ignore_groups = self.configuration.ignore_groups,
+        .assume_installed = self.configuration.assume_installed,
+    }, request, .{ .user = self, .question = resolutionQuestion, .check_cancelled = verificationCancellation });
+}
+fn resolutionEntries(self: *Owner, io: std.Io, a: std.mem.Allocator, reference: DatabaseRef) ![]const @import("Resolver.zig").Entry {
+    try self.ensureInternal(io, reference);
+    const db = try self.mutableDatabase(reference);
+    const entries = try a.alloc(@import("Resolver.zig").Entry, db.packages.ordered.items.len);
+    for (db.packages.ordered.items, entries) |id, *entry| {
+        try self.checkCancelled();
+        // Incomplete local metadata cannot safely participate in a solve.
+        try db.loadMetadata(io, id, .{});
+        const pkg = &db.packages.packages.items[@intFromEnum(id)];
+        if (pkg.metadata_error) |err| return err;
+        entry.* = .{ .reference = .{ .database = reference, .generation = db.generation, .id = id }, .package = pkg };
+    }
+    return entries;
+}
+fn resolutionQuestion(context: ?*anyopaque, question: *Callbacks.Question) anyerror!void {
+    const self: *Owner = @ptrCast(@alignCast(context.?));
+    try self.askInternal(question);
 }
 
 pub fn setCallbacks(self: *Owner, callbacks: Callbacks) !void {

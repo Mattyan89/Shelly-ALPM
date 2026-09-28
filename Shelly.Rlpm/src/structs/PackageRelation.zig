@@ -103,6 +103,11 @@ pub fn matchesVersion(self: PackageRelation, version: []const u8) bool {
 }
 pub fn satisfiedBy(self: PackageRelation, name: []const u8, version: []const u8, provisions: []const PackageRelation) bool {
     if (std.mem.eql(u8, self.name, name) and self.matchesVersion(version)) return true;
+    return self.providedBy(provisions);
+}
+/// Provision-only matching also handles permissively parsed empty names without
+/// inventing a literal package identity for AssumeInstalled or graph edges.
+pub fn providedBy(self: PackageRelation, provisions: []const PackageRelation) bool {
     for (provisions) |provision| {
         if (!std.mem.eql(u8, self.name, provision.name)) continue;
         if (self.constraint == .any) return true;
