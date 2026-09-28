@@ -827,9 +827,13 @@ pub const Manager = struct {
 fn legacyEvent(data: ?*anyopaque, event: rlpm.Callbacks.Event) void {
     const self: *Manager = @ptrCast(@alignCast(data.?));
     switch (event) {
-        .scriptlet_output => |text| self.dispatcher.raiseScriptlet(.{ .line = text }),
-        .hook_run => |hook| self.dispatcher.raiseHook(.{ .name = hook.name, .description = hook.description, .position = 0, .total = 0 }),
-        .diagnostic => |value| self.dispatcher.raiseError(.{ .message = @errorName(value.cause) }),
+        .scriptlet_output => |text| self.dispatcher.notifyScriptletHandlers(.{ .line = text }),
+        .hook_run => |hook| if (hook.boundary == .start) {
+            var buffer: [512]u8 = undefined;
+            const description = @import("native_output").hookMessage(&buffer, hook.name, hook.description, hook.position, hook.total);
+            self.dispatcher.notifyHookHandlers(.{ .name = hook.name, .description = description, .position = hook.position, .total = hook.total });
+        },
+        .diagnostic => |value| self.dispatcher.notifyErrorHandlers(.{ .message = @errorName(value.cause) }),
         else => {},
     }
 }

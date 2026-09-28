@@ -449,6 +449,11 @@ pub const Dispatcher = struct {
 
     pub fn raiseScriptlet(self: *Dispatcher, args: ScriptletArgs) void {
         if (self.operation) |operation| operation.status(.information, args.line, "alpm.scriptlet", null);
+        self.notifyScriptletHandlers(args);
+    }
+
+    /// The RLPM adapter already publishes the shared operation event.
+    pub fn notifyScriptletHandlers(self: *Dispatcher, args: ScriptletArgs) void {
         self.dispatch(ScriptletArgs, &self.scriptlet, args);
     }
 
@@ -460,6 +465,10 @@ pub const Dispatcher = struct {
             .percentage = if (args.total == 0) 100 else @as(f64, @floatFromInt(args.position)) * 100.0 / @as(f64, @floatFromInt(args.total)),
             .message = args.description,
         });
+        self.notifyHookHandlers(args);
+    }
+
+    pub fn notifyHookHandlers(self: *Dispatcher, args: HookArgs) void {
         self.dispatch(HookArgs, &self.hook, args);
     }
 

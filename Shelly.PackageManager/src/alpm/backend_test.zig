@@ -532,7 +532,7 @@ test "native backend output observers receive preparation and transaction progre
     const Capture = struct {
         checking_databases: bool = false,
         checking_archives: bool = false,
-        initialized_after_checks: bool = false,
+        internal_status_seen: bool = false,
         package_started: bool = false,
         progress: bool = false,
         completions: usize = 0,
@@ -543,7 +543,7 @@ test "native backend output observers receive preparation and transaction progre
             switch (value) {
                 .status => |status| {
                     if (std.mem.startsWith(u8, status.message, "Checking package databases")) self.checking_databases = true;
-                    if (std.mem.eql(u8, status.message, "initialized")) self.initialized_after_checks = self.checking_databases;
+                    if (std.mem.eql(u8, status.code orelse "", "rlpm.lifecycle")) self.internal_status_seen = true;
                     if (std.mem.startsWith(u8, status.message, "Checking package archive (1/1): backend-fixture")) self.checking_archives = true;
                     if (status.package_name) |name| {
                         if (std.mem.eql(u8, name, "backend-fixture")) self.package_started = self.checking_archives;
@@ -562,7 +562,7 @@ test "native backend output observers receive preparation and transaction progre
     var capture: Capture = .{};
     const handler = try manager.dispatcher.addOperationHandler(.{ .function = Capture.event, .data = &capture });
     try manager.install_local_packages(&.{fixture.archive}, .{ .nohooks = true, .noscriptlet = true });
-    try t.expect(capture.checking_databases and capture.initialized_after_checks);
+    try t.expect(capture.checking_databases and !capture.internal_status_seen);
     try t.expect(capture.checking_archives and capture.package_started and capture.progress);
     try t.expectEqual(@as(usize, 1), capture.completions);
     try manager.sync(false);

@@ -1646,3 +1646,98 @@ test "interactive PKGBUILD review renders unified diff and honors risky default"
     try std.testing.expect(std.mem.indexOf(u8, rendered, "pkgver=2") != null);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "(y/N)") != null);
 }
+
+test "native backends render package actions consistently in standard and structured output" {
+    const t = std.testing;
+    for ([_]PackageManager.Manager.Backend{ .rlpm, .libalpm }) |backend| {
+        if (!backend.available()) continue;
+        var temporary = t.tmpDir(.{});
+        defer temporary.cleanup();
+        var arena = std.heap.ArenaAllocator.init(t.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const path = try temporary.dir.realPathFileAlloc(t.io, ".", a);
+        for ([_][]const u8{ "root", "db", "cache", "gpg" }) |directory| try temporary.dir.createDirPath(t.io, directory);
+        try temporary.dir.writeFile(t.io, .{ .sub_path = "pacman.conf", .data = "[options]\nArchitecture = auto\nSigLevel = Never\nLocalFileSigLevel = Never\n" });
+        for ([_][]const u8{ "1-1", "2-1" }) |version| {
+            var file = try temporary.dir.createFile(t.io, try std.fmt.allocPrint(a, "{s}.pkg.tar", .{version}), .{});
+            defer file.close(t.io);
+            var buffer: [4096]u8 = undefined;
+            var writer = file.writer(t.io, &buffer);
+            var tar: std.tar.Writer = .{ .underlying_writer = &writer.interface };
+            try tar.writeFileBytes(".PKGINFO", try std.fmt.allocPrint(a, "pkgname = native-output-fixture\npkgver = {s}\narch = any\nsize = 8\n", .{version}), .{ .mode = 0o644 });
+            try tar.writeFileBytes("usr/share/native-output-fixture", "fixture\n", .{ .mode = 0o644 });
+            try tar.finishPedantically();
+            try writer.interface.flush();
+        }
+        var stdout: std.Io.Writer.Allocating = .init(t.allocator);
+        defer stdout.deinit();
+        var structured: std.Io.Writer.Allocating = .init(t.allocator);
+        defer structured.deinit();
+        var stderr: std.Io.Writer.Allocating = .init(t.allocator);
+        defer stderr.deinit();
+        var environment = std.process.Environ.Map.init(a);
+        try environment.put("XDG_CONFIG_HOME", path);
+        try environment.put("COLUMNS", "80");
+        var context: runtime.RuntimeContext = .{ .allocator = a, .io = t.io, .stdout = &stdout.writer, .stderr = &stderr.writer, .environment = &environment };
+        var ui_context = context;
+        ui_context.stdout = &structured.writer;
+        var reporter: @import("ui_operation.zig").Reporter = .{ .context = &ui_context };
+        var operations = PackageManager.OperationContext.init(t.allocator, t.io);
+        defer operations.deinit();
+        const Accept = struct {
+            fn question(_: ?*anyopaque, _: PackageManager.operation.Question) PackageManager.operation.QuestionResponse {
+                return .accepted;
+            }
+        };
+        operations.setQuestionHandler(.{ .function = Accept.question });
+        _ = try operations.subscribe(.{ .function = @import("ui_operation.zig").Reporter.handle, .data = &reporter });
+        var renderer = try Renderer.init(&context, true);
+        defer renderer.deinit();
+        try renderer.attach(&operations);
+        defer renderer.detach();
+        const manager = try PackageManager.Manager.init(t.allocator, t.environ, .{
+            .backend = backend,
+            .config_path = try std.fs.path.join(a, &.{ path, "pacman.conf" }),
+            .root_directory = try std.fs.path.join(a, &.{ path, "root" }),
+            .database_path = try std.fs.path.join(a, &.{ path, "db" }),
+            .cache_directory = try std.fs.path.join(a, &.{ path, "cache" }),
+            .gpg_directory = try std.fs.path.join(a, &.{ path, "gpg" }),
+            .log_file = try std.fs.path.join(a, &.{ path, "log" }),
+            .root_hooks_only = true,
+            .operation_context = &operations,
+        });
+        defer manager.deinit();
+        for ([_][]const u8{ "1-1", "2-1", "2-1", "1-1" }) |version| {
+            const archive = try std.fmt.allocPrint(a, "{s}/{s}.pkg.tar", .{ path, version });
+            try manager.install_local_packages(&.{archive}, .{ .nohooks = true, .noscriptlet = true });
+        }
+        var targets = [_][:0]const u8{"native-output-fixture"};
+        try manager.remove_packages_with_confirmation(&targets, .{ .nohooks = true, .noscriptlet = true }, true, .already_approved);
+        try renderer.finish(true);
+        try t.expect(!reporter.failed());
+        const text = stdout.written();
+        for ([_][]const u8{ "AddStart", "UpgradeStart", "ReinstallStart", "DowngradeStart", "RemoveStart" }) |action| {
+            const label = try std.fmt.allocPrint(a, "{s} native-output-fixture", .{action});
+            try t.expectEqual(@as(usize, 1), std.mem.count(u8, text, label));
+        }
+        var decoded_frames: std.Io.Writer.Allocating = .init(t.allocator);
+        defer decoded_frames.deinit();
+        var frames = std.mem.splitSequence(u8, structured.written(), "[/JSON]\n");
+        while (frames.next()) |frame| {
+            if (frame.len == 0) continue;
+            try t.expect(std.mem.startsWith(u8, frame, "[JSON]"));
+            const encoded = frame["[JSON]".len..];
+            const decoded = try a.alloc(u8, try std.base64.standard.Decoder.calcSizeForSlice(encoded));
+            try std.base64.standard.Decoder.decode(decoded, encoded);
+            try decoded_frames.writer.writeAll(decoded);
+        }
+        for ([_][]const u8{ "PackageInstalled", "PackageUpgraded", "PackageReinstalled", "PackageDowngraded", "PackageRemoved" }) |event_type| {
+            const field = try std.fmt.allocPrint(a, "\"EventType\":\"{s}\"", .{event_type});
+            try t.expectEqual(@as(usize, 1), std.mem.count(u8, decoded_frames.written(), field));
+        }
+        try t.expect(std.mem.indexOf(u8, decoded_frames.written(), "\"PackageName\":\"native-output-fixture\"") != null);
+        try t.expect(std.mem.indexOf(u8, text, "\nupgrade\n") == null);
+        try t.expect(std.mem.indexOf(u8, text, "\nprepared\n") == null);
+    }
+}

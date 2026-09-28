@@ -1,6 +1,7 @@
 //! Runs only in a fresh user/mount/PID namespace; never needs host root.
 const std = @import("std");
-const Manager = @import("PackageManager").Manager;
+const pm = @import("PackageManager");
+const Manager = pm.Manager;
 const fixture = @import("hook_fixture");
 
 test "native provisioning discovers newly installed guest hooks and detects their failures" {
@@ -79,14 +80,45 @@ test "native provisioning discovers newly installed guest hooks and detects thei
 
             const Capture = struct {
                 saw_failed_hook: bool = false,
+                hooks: usize = 0,
+                legacy_hooks: usize = 0,
+                hook_format_valid: bool = true,
+                fn question(_: ?*anyopaque, _: pm.operation.Question) pm.operation.QuestionResponse {
+                    return .accepted;
+                }
+                fn operationEvent(data: ?*anyopaque, event: pm.OperationEvent) void {
+                    const self: *@This() = @ptrCast(@alignCast(data.?));
+                    if (event == .progress and std.mem.eql(u8, event.progress.update.stage orelse "", "hook")) {
+                        const update = event.progress.update;
+                        self.hooks += 1;
+                        var expected: [64]u8 = undefined;
+                        const prefix = std.fmt.bufPrint(&expected, "({d}/{d}) ", .{ update.completed orelse 0, update.total orelse 0 }) catch unreachable;
+                        self.hook_format_valid = self.hook_format_valid and std.mem.startsWith(u8, update.message orelse "", prefix) and update.completed == self.hooks;
+                    }
+                }
+                fn hook(data: ?*anyopaque, args: Manager.events.HookArgs) void {
+                    const self: *@This() = @ptrCast(@alignCast(data.?));
+                    self.legacy_hooks += 1;
+                    self.hook_format_valid = self.hook_format_valid and args.position == self.legacy_hooks and args.total >= args.position;
+                }
                 fn errorMessage(data: ?*anyopaque, args: Manager.events.ErrorArgs) void {
                     const self: *@This() = @ptrCast(@alignCast(data.?));
                     if (std.mem.indexOf(u8, args.message, "30-failure.hook") != null) self.saw_failed_hook = true;
                 }
             };
             var capture: Capture = .{};
+            var operations = pm.OperationContext.init(allocator, io);
+            defer operations.deinit();
+            operations.setQuestionHandler(.{ .function = Capture.question });
+            _ = try operations.subscribe(.{ .function = Capture.operationEvent, .data = &capture });
+            manager.setOperationContext(&operations);
+            defer manager.setOperationContext(null);
+            _ = try manager.dispatcher.addHookHandler(.{ .function = Capture.hook, .data = &capture });
             _ = try manager.dispatcher.addErrorHandler(.{ .function = Capture.errorMessage, .data = &capture });
             try manager.install_local_packages(&.{package}, .{});
+            try std.testing.expectEqual(@as(usize, if (fail) 3 else 2), capture.hooks);
+            try std.testing.expectEqual(capture.hooks, capture.legacy_hooks);
+            try std.testing.expect(capture.hook_format_valid);
             try std.testing.expectEqual(fail, manager.packageSetupFailed());
             try std.testing.expectEqual(fail, capture.saw_failed_hook);
             for ([_][]const u8{ "root/first", "root/second" }) |marker| {

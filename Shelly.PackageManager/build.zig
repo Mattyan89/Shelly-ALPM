@@ -51,11 +51,17 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     operation_context_mod.addImport("diagnostics", diagnostics);
+    const native_output = b.createModule(.{
+        .root_source_file = b.path("src/shared/native_output.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const rlpm_adapter = b.addModule("rlpm_operation_adapter", .{
         .root_source_file = b.path("src/rlpm/operation_adapter.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "native_output", .module = native_output },
             .{ .name = "operation_context", .module = operation_context_mod },
             .{ .name = "Shelly_Rlpm", .module = rlpm_dependency.module("Shelly_Rlpm") },
             .{ .name = "diagnostics", .module = diagnostics },
@@ -122,6 +128,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    mod.addImport("native_output", native_output);
     mod.addImport("diagnostics", diagnostics);
     mod.addImport("Shelly_Download", shelly_download);
     if (enable_libalpm) {
@@ -379,6 +386,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    shellybuild_test_module.addImport("native_output", native_output);
     shellybuild_test_module.addImport("diagnostics", diagnostics);
     shellybuild_test_module.addImport("Shelly_Download", shelly_download);
     shellybuild_test_module.addImport("toml", toml_module);

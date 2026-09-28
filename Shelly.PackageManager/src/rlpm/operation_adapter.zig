@@ -6,10 +6,15 @@ const Adapter = @This();
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
 const op = @import("operation_context");
+const output = @import("native_output");
 owner: *rlpm.Owner,
 operation: *op.Operation,
 previous: rlpm.Callbacks,
 cancellation_subscription: op.SubscriptionId,
+active_package: ?[]u8 = null,
+active_reference: ?rlpm.PackageRef = null,
+active_action: ?output.PackageAction = null,
+downloads: std.StringHashMapUnmanaged(op.Operation) = .empty,
 failure_handler: ?struct {
     function: *const fn (?*anyopaque, []const u8) void,
     data: ?*anyopaque,
@@ -42,7 +47,20 @@ pub fn deinit(self: *Adapter) !void {
     try self.owner.setCallbacks(self.previous);
     _ = self.operation.context.unsubscribeCancellation(self.cancellation_subscription);
     self.operation.context.waitForCancellationCallbacks();
+    self.clearPackage();
+    var downloads = self.downloads.iterator();
+    while (downloads.next()) |entry| {
+        entry.value_ptr.finish(if (self.operation.isCancelled()) .cancelled else .failed);
+        self.operation.context.allocator.free(entry.key_ptr.*);
+    }
+    self.downloads.deinit(self.operation.context.allocator);
     self.* = undefined;
+}
+fn clearPackage(self: *Adapter) void {
+    if (self.active_package) |package| self.operation.context.allocator.free(package);
+    self.active_package = null;
+    self.active_reference = null;
+    self.active_action = null;
 }
 fn from(data: ?*anyopaque) *Adapter {
     return @ptrCast(@alignCast(data.?));
@@ -166,37 +184,94 @@ fn event(data: ?*anyopaque, value: rlpm.Callbacks.Event) void {
                 self.operation.finish(.failed);
             },
             .released => self.operation.finish(if (result.cause != null and result.cause.? != error.Cancelled) .failed else .cancelled),
-            else => self.operation.status(.information, @tagName(result.state), "rlpm.lifecycle", null),
+            else => {},
         },
         .phase => |phase| {
-            self.operation.status(if (phase.boundary == .failed) .warning else .information, phaseDescription(phase.phase), @tagName(phase.boundary), null);
-            if (phase.total_packages != null or phase.total_bytes != null) self.operation.progress(.{ .stage = @tagName(phase.phase), .total = phase.total_packages, .bytes_total = phase.total_bytes });
+            if (phaseEvent(phase.phase, phase.boundary)) |event_type| self.information(event_type);
         },
         .package_operation => |package_event| {
-            const ref = package_event.new orelse package_event.old;
-            var package_name: ?[]const u8 = null;
-            if (ref) |identity| for (package_event.views) |view| {
-                if (std.meta.eql(view.reference, identity)) {
-                    package_name = view.package.name;
-                    break;
-                }
-            };
-            self.operation.packageStatus(.information, @tagName(package_event.operation), @tagName(package_event.boundary), null, package_name);
+            const action = std.meta.stringToEnum(output.PackageAction, @tagName(package_event.operation)).?;
+            const old = packageView(package_event.views, package_event.old);
+            const package = packageView(package_event.views, package_event.new) orelse old;
+            const package_name = if (package) |pkg| pkg.name else "unknown";
+            switch (package_event.boundary) {
+                .start => {
+                    self.clearPackage();
+                    // Callback views are borrowed. Progress arrives after this
+                    // callback returns, so retain our own copy of the name.
+                    self.active_package = self.operation.context.allocator.dupe(u8, package_name) catch null;
+                    self.active_reference = package_event.new orelse package_event.old;
+                    self.active_action = action;
+                    const message = output.packageMessage(self.operation.context.allocator, action, package_name, if (package) |pkg| pkg.version.raw else "?", if (old) |pkg| pkg.version.raw else null) catch null;
+                    defer if (message) |text| self.operation.context.allocator.free(text);
+                    self.operation.status(.information, message orelse package_name, "alpm.information", @intFromEnum(output.EventType.package_operation_start));
+                },
+                .done => {
+                    self.operation.packageStatus(.information, output.information(.package_operation_done).?, action.completionCode(), @intFromEnum(output.EventType.package_operation_done), package_name);
+                    self.clearPackage();
+                },
+                .failed => self.clearPackage(),
+            }
         },
-        .hook => |hook| self.operation.status(.information, @tagName(hook.when), @tagName(hook.boundary), null),
-        .database_missing => |database| {
-            var buffer: [96]u8 = undefined;
-            const message = std.fmt.bufPrint(&buffer, "Database {d} is missing", .{@intFromEnum(database.id)}) catch unreachable;
-            self.operation.status(.warning, message, "rlpm.database_missing", null);
+        .hook => |hook| switch (hook.boundary) {
+            .start => self.information(.hook_start),
+            .done => self.information(.hook_done),
+            .failed => {},
         },
-        .optional_dependency_removed => |dependency| self.operation.status(.warning, dependency.dependency.name, "rlpm.optional_dependency_removed", null),
-        .scriptlet_output => |message| self.operation.status(.information, message, "rlpm.scriptlet", null),
-        .pacnew_created => |backup| self.operation.status(.warning, backup.path, "rlpm.pacnew", null),
-        .pacsave_created => |backup| self.operation.status(.warning, backup.path, "rlpm.pacsave", null),
-        .hook_run => |hook| self.operation.status(.information, hook.description orelse hook.name, "rlpm.hook", null),
+        .database_missing => self.information(.database_missing),
+        .optional_dependency_removed => self.information(.optdep_removal),
+        .scriptlet_output => |message| self.operation.status(.information, message, "alpm.scriptlet", null),
+        .pacnew_created => |backup| self.operation.status(.warning, backup.path, "alpm.pacnew", null),
+        .pacsave_created => |backup| self.operation.status(.warning, backup.path, "alpm.pacsave", null),
+        .hook_run => |hook| switch (hook.boundary) {
+            .start => {
+                var buffer: [512]u8 = undefined;
+                const message = output.hookMessage(&buffer, hook.name, hook.description, hook.position, hook.total);
+                self.operation.progress(.{
+                    .stage = "hook",
+                    .message = message,
+                    .completed = hook.position,
+                    .total = hook.total,
+                    .percentage = if (hook.total == 0) 100 else @as(f64, @floatFromInt(hook.position)) * 100 / @as(f64, @floatFromInt(hook.total)),
+                });
+                self.operation.status(.information, message, "alpm.information", @intFromEnum(output.EventType.hook_run_start));
+            },
+            .done => self.information(.hook_run_done),
+            .failed => {},
+        },
         .diagnostic => |diagnostic| self.operation.reportError(diagnostic.cause, @errorName(diagnostic.cause), "rlpm", null, false),
     }
     if (self.previous.event) |callback| callback(self.previous.event_context, value);
+}
+fn packageView(views: []const rlpm.Callbacks.PackageView, ref: ?rlpm.PackageRef) ?*const rlpm.Package {
+    const identity = ref orelse return null;
+    for (views) |view| if (std.meta.eql(view.reference, identity)) return view.package;
+    return null;
+}
+fn information(self: *Adapter, event_type: output.EventType) void {
+    self.operation.status(.information, output.information(event_type) orelse return, "alpm.information", @intFromEnum(event_type));
+}
+fn phaseEvent(phase: rlpm.Callbacks.Phase, boundary: rlpm.Callbacks.Boundary) ?output.EventType {
+    if (boundary == .failed) return switch (phase) {
+        .database_retrieve => .db_retrieve_failed,
+        .package_retrieve => .pkg_retrieve_failed,
+        else => null,
+    };
+    const start = boundary == .start;
+    return switch (phase) {
+        .dependencies => if (start) .checkdeps_start else .checkdeps_done,
+        .resolve_dependencies => if (start) .resolvedeps_start else .resolvedeps_done,
+        .conflicts, .inter_conflicts => if (start) .interconflicts_start else .interconflicts_done,
+        .file_conflicts => if (start) .fileconflicts_start else .fileconflicts_done,
+        .transaction => if (start) .transaction_start else .transaction_done,
+        .integrity => if (start) .integrity_start else .integrity_done,
+        .load_packages => if (start) .load_start else .load_done,
+        .disk_space => if (start) .diskspace_start else .diskspace_done,
+        .keyring => if (start) .keyring_start else .keyring_done,
+        .key_download => if (start) .key_download_start else .key_download_done,
+        .database_retrieve => if (start) .db_retrieve_start else .db_retrieve_done,
+        .package_retrieve => if (start) .pkg_retrieve_start else .pkg_retrieve_done,
+    };
 }
 fn log(data: ?*anyopaque, value: rlpm.Callbacks.Log) void {
     const self = from(data);
@@ -209,33 +284,78 @@ fn log(data: ?*anyopaque, value: rlpm.Callbacks.Log) void {
     if (self.previous.log) |callback| callback(self.previous.log_context, value);
 }
 
-fn phaseDescription(phase: rlpm.Callbacks.Phase) []const u8 {
-    return switch (phase) {
-        .dependencies, .resolve_dependencies => "Resolving dependencies",
-        .conflicts, .inter_conflicts => "Checking package conflicts",
-        .file_conflicts => "Checking file conflicts",
-        .transaction => "Applying package changes",
-        .integrity => "Checking package integrity",
-        .load_packages => "Checking package archives",
-        .disk_space => "Checking available disk space",
-        .keyring => "Checking signing keys",
-        .key_download => "Retrieving signing keys",
-        .database_retrieve => "Refreshing package databases",
-        .package_retrieve => "Retrieving packages",
-    };
-}
 fn progress(data: ?*anyopaque, value: rlpm.Callbacks.Progress) void {
     const self = from(data);
-    self.operation.progress(.{ .stage = @tagName(value.phase), .percentage = @floatFromInt(value.percent), .completed = value.position, .total = value.total });
+    const package_matches = value.package != null and self.active_reference != null and std.meta.eql(value.package.?, self.active_reference.?);
+    const code: ?i64 = switch (value.phase) {
+        .transaction => if (package_matches and self.active_action != null) @intFromEnum(self.active_action.?) else null,
+        .conflicts, .inter_conflicts, .file_conflicts => 5,
+        .disk_space => 6,
+        .integrity => 7,
+        .load_packages => 8,
+        .keyring => 9,
+        else => null,
+    };
+    self.operation.progress(.{
+        .stage = if (code != null) "transaction" else output.information(phaseEvent(value.phase, .start).?).?,
+        .percentage = @floatFromInt(value.percent),
+        .completed = value.position,
+        .total = value.total,
+        .message = if (package_matches) self.active_package else "",
+        .native_code = code,
+    });
     if (self.previous.progress) |callback| callback(self.previous.progress_context, value);
 }
 fn download(data: ?*anyopaque, value: rlpm.Callbacks.Download) void {
     const self = from(data);
     switch (value) {
-        .progress => |update| self.operation.progress(.{ .stage = "download", .message = update.name, .bytes_completed = update.downloaded, .bytes_total = update.total }),
-        inline else => |update| self.operation.status(.information, update.name, @tagName(value), null),
+        .init => |update| {
+            const operation = self.downloadOperation(update.name);
+            operation.status(.information, "Download started", "download.start", null);
+        },
+        .progress => |update| self.downloadOperation(update.name).progress(.{
+            .stage = "download",
+            .message = update.name,
+            .bytes_completed = update.downloaded,
+            .bytes_total = update.total,
+            .native_code = downloadCode(update.name),
+        }),
+        .retry => |update| self.downloadOperation(update.name).status(.information, "Retrying download", "download.retry", null),
+        .completed => |update| {
+            const operation = self.downloadOperation(update.name);
+            if (update.result == .updated) operation.progress(.{
+                .stage = "download",
+                .message = update.name,
+                .bytes_completed = update.downloaded,
+                .bytes_total = update.downloaded,
+                .percentage = 100,
+                .native_code = downloadCode(update.name),
+            });
+            if (update.result != .failed) operation.status(if (update.result == .updated) .success else .information, if (update.result == .updated) "Download completed" else "Download skipped", if (update.result == .updated) "download.complete" else "download.skipped", null);
+            // A failed transfer is diagnosed by the transaction or sync caller.
+            // Completing its child clears only that file's progress bar.
+            if (self.downloads.fetchRemove(update.name)) |removed| {
+                var child = removed.value;
+                child.finish(if (update.result != .failed) .success else if (self.operation.isCancelled()) .cancelled else .failed);
+                self.operation.context.allocator.free(removed.key);
+            }
+        },
     }
     if (self.previous.download) |callback| callback(self.previous.download_context, value);
+}
+fn downloadCode(name_value: []const u8) i64 {
+    return if (std.mem.endsWith(u8, name_value, ".db") or std.mem.endsWith(u8, name_value, ".db.sig")) 101 else 100;
+}
+fn downloadOperation(self: *Adapter, file: []const u8) *op.Operation {
+    if (self.downloads.getPtr(file)) |operation| return operation;
+    const allocator = self.operation.context.allocator;
+    const owned_name = allocator.dupe(u8, file) catch return self.operation;
+    const entry = self.downloads.getOrPut(allocator, owned_name) catch {
+        allocator.free(owned_name);
+        return self.operation;
+    };
+    entry.value_ptr.* = self.operation.child(.{ .backend = .download, .kind = .download, .subject = owned_name });
+    return entry.value_ptr;
 }
 
 test "adapter owns all seven deferred question payloads and copies only answers" {
@@ -475,4 +595,102 @@ test "payload finishing and download progress reach operation subscribers" {
     callbacks.progress.?(callbacks.progress_context, .{ .phase = .transaction, .package = null, .percent = 99, .position = 1, .total = 1 });
     callbacks.download.?(callbacks.download_context, .{ .progress = .{ .name = "fixture.pkg.tar", .downloaded = 4, .total = 8 } });
     try std.testing.expect(capture.status_seen and capture.progress_seen and capture.download_seen);
+}
+
+test "native presentation preserves actions hook numbering and per-file download completion" {
+    const t = std.testing;
+    const Capture = struct {
+        writer: *std.Io.Writer,
+        fn receive(data: ?*anyopaque, value: op.Event) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            switch (value) {
+                .status => |status| self.writer.print("{s}|{?d}|{s}|{s}\n", .{ status.code orelse "", status.native_code, status.package_name orelse "", status.message }) catch unreachable,
+                .progress => |p| self.writer.print("progress|{s}|{?d}|{s}|{?d}\n", .{ p.update.stage orelse "", p.update.native_code, p.update.message orelse "", p.update.percentage }) catch unreachable,
+                .completed => |c| self.writer.print("completed|{s}|{t}\n", .{ c.envelope.subject orelse "", c.status }) catch unreachable,
+                else => {},
+            }
+        }
+    };
+    var temporary = t.tmpDir(.{});
+    defer temporary.cleanup();
+    const path = try temporary.dir.realPathFileAlloc(t.io, ".", t.allocator);
+    defer t.allocator.free(path);
+    var owner = try rlpm.Owner.init(t.io, t.allocator, .{ .root = path, .database_path = path }, &.{});
+    defer owner.deinit() catch unreachable;
+    var context = op.OperationContext.init(t.allocator, t.io);
+    defer context.deinit();
+    var transcript: std.Io.Writer.Allocating = .init(t.allocator);
+    defer transcript.deinit();
+    var capture: Capture = .{ .writer = &transcript.writer };
+    _ = try context.subscribe(.{ .function = Capture.receive, .data = &capture });
+    var operation = context.begin(.{ .backend = .alpm, .kind = .install, .subject = "batch" });
+    defer operation.finish(.success);
+    var adapter: Adapter = undefined;
+    try adapter.init(&owner, &operation);
+    defer adapter.deinit() catch unreachable;
+    const cb = owner.options().callbacks;
+    const old_ref: rlpm.PackageRef = .{ .database = .{ .owner = @enumFromInt(1), .id = .local }, .generation = 1, .id = @enumFromInt(0) };
+    var new_ref = old_ref;
+    new_ref.id = @enumFromInt(1);
+    var old_version = try rlpm.Version.init("1-1", t.allocator);
+    defer old_version.deinit(t.allocator);
+    var new_version = try rlpm.Version.init("2-1", t.allocator);
+    defer new_version.deinit(t.allocator);
+    const old: rlpm.Package = .{ .name = "demo", .version = old_version, .database_name = "local" };
+    var package: rlpm.Package = .{ .name = "demo", .version = new_version, .database_name = "core" };
+    const views = [_]rlpm.Callbacks.PackageView{ .{ .reference = old_ref, .package = &old }, .{ .reference = new_ref, .package = &package } };
+    const actions = [_]rlpm.Callbacks.PackageOperation{ .install, .upgrade, .downgrade, .reinstall, .remove };
+    const expected = [_][]const u8{
+        "Installing package: demo-2-1", "Upgrading package: demo 1-1 -> 2-1", "Downgrading package: demo 1-1 -> 2-1", "Reinstalling package: demo-2-1", "Removing package: demo-1-1",
+    };
+    const codes = [_][]const u8{ "installed", "upgraded", "downgraded", "reinstalled", "removed" };
+    for (actions, expected, codes, 0..) |action, message, code, index| {
+        transcript.clearRetainingCapacity();
+        var event_value: rlpm.Callbacks.Event = .{ .package_operation = .{ .operation = action, .boundary = .start, .old = if (action == .install) null else old_ref, .new = if (action == .remove) null else new_ref, .views = &views } };
+        cb.event.?(cb.event_context, event_value);
+        // Mutating the borrowed view must not change the retained progress name.
+        package.name = "borrowed-view-expired";
+        cb.progress.?(cb.progress_context, .{ .phase = .transaction, .package = if (action == .remove) old_ref else new_ref, .percent = 100, .position = 1, .total = 1 });
+        package.name = "demo";
+        event_value.package_operation.boundary = .done;
+        cb.event.?(cb.event_context, event_value);
+        const wanted = try std.fmt.allocPrint(t.allocator, "alpm.information|11||{s}\nprogress|transaction|{d}|demo|100\nalpm.package_{s}|12|demo|Package operation completed.\n", .{ message, index, code });
+        defer t.allocator.free(wanted);
+        try t.expectEqualStrings(wanted, transcript.written());
+    }
+    transcript.clearRetainingCapacity();
+    cb.event.?(cb.event_context, .{ .lifecycle = .{ .state = .prepared } });
+    cb.event.?(cb.event_context, .{ .phase = .{ .phase = .integrity, .boundary = .start } });
+    cb.event.?(cb.event_context, .{ .phase = .{ .phase = .integrity, .boundary = .done } });
+    cb.event.?(cb.event_context, .{ .hook_run = .{ .name = "cache.hook", .description = "Updating cache", .position = 2, .total = 3, .boundary = .start } });
+    cb.event.?(cb.event_context, .{ .hook_run = .{ .name = "cache.hook", .description = "Updating cache", .position = 2, .total = 3, .boundary = .done } });
+    cb.event.?(cb.event_context, .{ .scriptlet_output = "setup output" });
+    cb.event.?(cb.event_context, .{ .pacnew_created = .{ .path = "/etc/demo.pacnew", .old = old_ref, .new = new_ref, .from_no_upgrade = false } });
+    cb.event.?(cb.event_context, .{ .pacsave_created = .{ .path = "/etc/demo.pacsave", .old = old_ref } });
+    try t.expect(std.mem.indexOf(u8, transcript.written(), "prepared") == null);
+    try t.expect(std.mem.indexOf(u8, transcript.written(), "Checking package integrity...") != null);
+    try t.expect(std.mem.indexOf(u8, transcript.written(), "Package integrity check finished.") != null);
+    try t.expectEqual(@as(usize, 1), std.mem.count(u8, transcript.written(), "progress|hook|"));
+    try t.expect(std.mem.indexOf(u8, transcript.written(), "(2/3) Updating cache") != null);
+    try t.expect(std.mem.indexOf(u8, transcript.written(), "alpm.scriptlet|null||setup output") != null);
+    try t.expect(std.mem.indexOf(u8, transcript.written(), "alpm.pacnew|null||/etc/demo.pacnew") != null);
+    try t.expect(std.mem.indexOf(u8, transcript.written(), "alpm.pacsave|null||/etc/demo.pacsave") != null);
+
+    transcript.clearRetainingCapacity();
+    for ([_][]const u8{ "core.db", "demo.pkg.tar", "failed.pkg.tar", "cached.pkg.tar" }) |file| cb.download.?(cb.download_context, .{ .init = .{ .name = file, .optional = false } });
+    cb.download.?(cb.download_context, .{ .retry = .{ .name = "demo.pkg.tar", .resuming = true } });
+    cb.download.?(cb.download_context, .{ .progress = .{ .name = "failed.pkg.tar", .downloaded = 2, .total = 8 } });
+    cb.download.?(cb.download_context, .{ .completed = .{ .name = "core.db", .downloaded = 8, .result = .updated } });
+    cb.download.?(cb.download_context, .{ .completed = .{ .name = "demo.pkg.tar", .downloaded = 16, .result = .updated } });
+    cb.download.?(cb.download_context, .{ .completed = .{ .name = "failed.pkg.tar", .downloaded = 2, .result = .failed } });
+    cb.download.?(cb.download_context, .{ .completed = .{ .name = "cached.pkg.tar", .downloaded = 0, .result = .unchanged } });
+    const text = transcript.written();
+    try t.expectEqual(@as(usize, 0), adapter.downloads.count());
+    try t.expectEqual(@as(usize, 2), std.mem.count(u8, text, "|100\n"));
+    try t.expect(std.mem.indexOf(u8, text, "progress|download|101|core.db|100") != null);
+    try t.expect(std.mem.indexOf(u8, text, "progress|download|100|demo.pkg.tar|100") != null);
+    try t.expect(std.mem.indexOf(u8, text, "completed|core.db|success") != null);
+    try t.expect(std.mem.indexOf(u8, text, "completed|failed.pkg.tar|failed") != null);
+    try t.expect(std.mem.indexOf(u8, text, "download.skipped|") != null);
+    try t.expect(std.mem.indexOf(u8, text, "completed|batch|") == null);
 }

@@ -107,59 +107,67 @@ const DiagnosticOutput = struct {
     fn handleOperation(data: ?*anyopaque, event: operation_api.Event) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
         switch (event) {
-            .status => |status| {
-                if (status.level == .debug) return;
-                // These have dedicated legacy handlers, including hook names.
-                if (status.code) |code| if (std.mem.eql(u8, code, "rlpm.scriptlet") or std.mem.eql(u8, code, "alpm.scriptlet") or std.mem.eql(u8, code, "rlpm.hook")) return;
-                defer self.stderr.flush() catch {};
-                if (status.package_name) |name| {
-                    self.stderr.print("shellystrap: {s}: {s}: {s}\n", .{ name, status.message, status.code orelse "" }) catch {};
-                } else {
-                    self.stderr.print("shellystrap: {s}", .{status.message}) catch {};
-                    if (status.code) |code| if (std.mem.eql(u8, code, "start") or std.mem.eql(u8, code, "done") or std.mem.eql(u8, code, "failed") or std.mem.eql(u8, code, "completed") or std.mem.eql(u8, code, "retry")) {
-                        self.stderr.print(": {s}", .{code}) catch {};
-                    };
-                    self.stderr.writeByte('\n') catch {};
-                }
-            },
-            .progress => |progress| {
-                const update = progress.update;
-                const stage = update.stage orelse "transaction";
-                if (std.mem.eql(u8, stage, "hook")) return;
-                const key = std.hash.Wyhash.hash(0, stage);
-                // Byte callbacks can be very frequent. Preserve stage changes
-                // and completion while limiting intermediate output to 4 Hz.
-                if (self.io) |io| {
-                    const now = std.Io.Clock.awake.now(io);
-                    const complete = if (update.percentage) |percent|
-                        percent >= 100
-                    else if (update.bytes_total) |total|
-                        total != 0 and (update.bytes_completed orelse 0) >= total
-                    else
-                        false;
-                    if (self.last_progress) |last| {
-                        if (self.last_progress_stage == key and !complete and last.durationTo(now).toMilliseconds() < 250) return;
-                    }
-                    self.last_progress = now;
-                }
-                self.last_progress_stage = key;
-                defer self.stderr.flush() catch {};
-                self.stderr.print("shellystrap: {s}", .{stage}) catch {};
-                if (update.message) |message| self.stderr.print(": {s}", .{message}) catch {};
-                if (update.percentage) |percent| self.stderr.print(" {d:.0}%", .{percent}) catch {};
-                if (update.bytes_completed) |bytes| {
-                    self.stderr.print(" ({d}", .{bytes}) catch {};
-                    if (update.bytes_total) |total| self.stderr.print("/{d}", .{total}) catch {};
-                    self.stderr.writeAll(" bytes)") catch {};
-                } else if (update.completed) |completed| {
-                    self.stderr.print(" ({d}", .{completed}) catch {};
-                    if (update.total) |total| self.stderr.print("/{d}", .{total}) catch {};
-                    self.stderr.writeAll(")") catch {};
-                }
-                self.stderr.writeByte('\n') catch {};
-            },
+            .status => |status| self.writeStatus(status),
+            .progress => |progress| self.writeProgress(progress.update),
             else => {},
         }
+    }
+
+    fn writeStatus(self: *DiagnosticOutput, status: anytype) void {
+        if (status.level == .debug) return;
+        // Hooks and scriptlets also reach the dedicated legacy handlers.
+        if (status.code) |code| if (std.mem.eql(u8, code, "alpm.scriptlet")) return;
+        if (status.native_code == @intFromEnum(@import("native_output").EventType.hook_run_start)) return;
+        defer self.stderr.flush() catch {};
+        if (status.package_name) |name| {
+            self.stderr.print("shellystrap: {s}: {s}\n", .{ name, status.message }) catch {};
+        } else self.stderr.print("shellystrap: {s}\n", .{status.message}) catch {};
+    }
+
+    fn writeProgress(self: *DiagnosticOutput, update: operation_api.ProgressUpdate) void {
+        const stage = @import("native_output").progressLabel(update.native_code) orelse update.stage orelse "Transaction";
+        if (std.mem.eql(u8, stage, "hook")) return;
+        const key = std.hash.Wyhash.hash(0, stage);
+        // Byte callbacks can be very frequent. Preserve stage changes
+        // and completion while limiting intermediate output to 4 Hz.
+        if (self.io) |io| {
+            const now = std.Io.Clock.awake.now(io);
+            const complete = if (update.percentage) |percent|
+                percent >= 100
+            else if (update.bytes_total) |total|
+                total != 0 and (update.bytes_completed orelse 0) >= total
+            else
+                false;
+            if (self.last_progress) |last| {
+                if (self.last_progress_stage == key and !complete and last.durationTo(now).toMilliseconds() < 250) return;
+            }
+            self.last_progress = now;
+        }
+        self.last_progress_stage = key;
+        defer self.stderr.flush() catch {};
+        self.stderr.print("shellystrap: {s}", .{stage}) catch {};
+        if (update.message) |message| self.stderr.print(": {s}", .{message}) catch {};
+        if (update.percentage) |percent| self.stderr.print(" {d:.0}%", .{percent}) catch {};
+        if (update.bytes_completed) |bytes| {
+            self.stderr.print(" ({d}", .{bytes}) catch {};
+            if (update.bytes_total) |total| self.stderr.print("/{d}", .{total}) catch {};
+            self.stderr.writeAll(" bytes)") catch {};
+        } else if (update.completed) |completed| {
+            self.stderr.print(" ({d}", .{completed}) catch {};
+            if (update.total) |total| self.stderr.print("/{d}", .{total}) catch {};
+            self.stderr.writeAll(")") catch {};
+        }
+        self.stderr.writeByte('\n') catch {};
+    }
+
+    fn handleInformational(data: ?*anyopaque, args: events.InformationalArgs) void {
+        const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        self.writeStatus(.{ .level = operation_api.StatusLevel.information, .message = args.message, .package_name = args.package_name, .code = args.code, .native_code = @as(?i64, @intFromEnum(args.event_type)) });
+    }
+
+    fn handleProgress(data: ?*anyopaque, args: events.ProgressArgs) void {
+        const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        self.writeProgress(.{ .stage = "transaction", .message = args.pkg_name, .percentage = @floatFromInt(std.math.clamp(args.percent, 0, 100)), .completed = args.current, .total = args.howmany, .native_code = args.progress_type });
     }
 
     fn handleError(data: ?*anyopaque, args: events.ErrorArgs) void {
@@ -322,7 +330,12 @@ fn bootstrapReporting(
     var diagnostic_output: DiagnosticOutput = undefined;
     if (diagnostic_writer) |writer| {
         diagnostic_output = .{ .stderr = writer, .io = io };
-        _ = try manager.dispatcher.addOperationHandler(.{ .function = DiagnosticOutput.handleOperation, .data = &diagnostic_output });
+        if (manager.backend() == .rlpm) {
+            _ = try manager.dispatcher.addOperationHandler(.{ .function = DiagnosticOutput.handleOperation, .data = &diagnostic_output });
+        } else {
+            _ = try manager.dispatcher.addInformationalHandler(.{ .function = DiagnosticOutput.handleInformational, .data = &diagnostic_output });
+            _ = try manager.dispatcher.addProgressHandler(.{ .function = DiagnosticOutput.handleProgress, .data = &diagnostic_output });
+        }
         _ = try manager.dispatcher.addErrorHandler(.{
             .function = DiagnosticOutput.handleError,
             .data = &diagnostic_output,
@@ -710,16 +723,55 @@ test "bootstrap streams short diagnostics and progress before provisioning finis
     }
     // Operation mirrors of legacy hook/scriptlet output must not print twice.
     DiagnosticOutput.handleOperation(&output, .{ .status = .{ .envelope = operation.envelope, .level = .information, .message = "duplicate", .code = "alpm.scriptlet" } });
-    DiagnosticOutput.handleOperation(&output, .{ .status = .{ .envelope = operation.envelope, .level = .information, .message = "duplicate", .code = "rlpm.hook" } });
+    DiagnosticOutput.handleOperation(&output, .{ .status = .{ .envelope = operation.envelope, .level = .information, .message = "duplicate", .native_code = 36 } });
     try t.expectEqual(previous_size, (try file.stat(t.io)).size);
     output.io = t.io;
     // Force an active throttle window without timing-sensitive sleeps.
     output.last_progress = std.Io.Clock.awake.now(t.io).addDuration(.fromSeconds(60));
-    DiagnosticOutput.handleOperation(&output, .{ .progress = .{ .envelope = operation.envelope, .update = .{ .stage = "download", .bytes_completed = 5, .bytes_total = 8 } } });
+    DiagnosticOutput.handleOperation(&output, .{ .progress = .{ .envelope = operation.envelope, .update = .{ .stage = "download", .message = "fixture.pkg.tar", .bytes_completed = 5, .bytes_total = 8 } } });
     try t.expectEqual(previous_size, (try file.stat(t.io)).size);
-    DiagnosticOutput.handleOperation(&output, .{ .progress = .{ .envelope = operation.envelope, .update = .{ .stage = "download", .bytes_completed = 8, .bytes_total = 8 } } });
+    DiagnosticOutput.handleOperation(&output, .{ .progress = .{ .envelope = operation.envelope, .update = .{ .stage = "download", .message = "fixture.pkg.tar", .bytes_completed = 8, .bytes_total = 8 } } });
     try t.expect((try file.stat(t.io)).size > previous_size);
     const contents = try fixture.dir.readFileAlloc(t.io, "output", t.allocator, .limited(4096));
     defer t.allocator.free(contents);
     try t.expect(std.mem.indexOf(u8, contents, "fixture.pkg.tar (4/8 bytes)") != null);
+}
+
+test "bootstrap native operation and legacy callbacks use identical readable formatting" {
+    const t = std.testing;
+    var legacy: std.Io.Writer.Allocating = .init(t.allocator);
+    defer legacy.deinit();
+    var shared: std.Io.Writer.Allocating = .init(t.allocator);
+    defer shared.deinit();
+    var legacy_output: DiagnosticOutput = .{ .stderr = &legacy.writer };
+    var shared_output: DiagnosticOutput = .{ .stderr = &shared.writer };
+    var context = operation_api.OperationContext.init(t.allocator, t.io);
+    defer context.deinit();
+    _ = try context.subscribe(.{ .function = DiagnosticOutput.handleOperation, .data = &shared_output });
+    var operation = context.begin(.{ .backend = .alpm, .kind = .install });
+    defer operation.finish(.success);
+    var dispatcher = events.Dispatcher.init(t.allocator);
+    defer dispatcher.deinit();
+    dispatcher.setOperation(&operation);
+    _ = try dispatcher.addInformationalHandler(.{ .function = DiagnosticOutput.handleInformational, .data = &legacy_output });
+    _ = try dispatcher.addProgressHandler(.{ .function = DiagnosticOutput.handleProgress, .data = &legacy_output });
+    for ([_]*DiagnosticOutput{ &legacy_output, &shared_output }) |output| {
+        _ = try dispatcher.addHookHandler(.{ .function = DiagnosticOutput.handleHook, .data = output });
+        _ = try dispatcher.addScriptletHandler(.{ .function = DiagnosticOutput.handleScriptlet, .data = output });
+    }
+    dispatcher.raiseInformational(.{ .event_type = .package_operation_start, .message = "Installing package: demo-1-1" });
+    dispatcher.raiseProgress(.{ .progress_type = 0, .pkg_name = "demo", .percent = 100, .current = 1, .howmany = 2 });
+    dispatcher.raiseInformational(.{ .event_type = .package_operation_done, .message = "Package operation completed.", .package_name = "demo", .code = "alpm.package_installed" });
+    dispatcher.raiseScriptlet(.{ .line = "setup output\n" });
+    dispatcher.raiseHook(.{ .name = "demo.hook", .description = "(1/1) Updating cache", .position = 1, .total = 1 });
+    dispatcher.raiseInformational(.{ .event_type = .hook_run_start, .message = "(1/1) Updating cache" });
+    try t.expectEqualStrings(legacy.written(), shared.written());
+    try t.expectEqualStrings(
+        "shellystrap: Installing package: demo-1-1\n" ++
+            "shellystrap: Installing: demo 100% (1/2)\n" ++
+            "shellystrap: demo: Package operation completed.\n" ++
+            "shellystrap: scriptlet: setup output\n" ++
+            "shellystrap: hook: demo.hook: (1/1) Updating cache\n",
+        shared.written(),
+    );
 }

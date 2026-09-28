@@ -1,4 +1,5 @@
 const std = @import("std");
+const native_output = @import("native_output");
 const bindings = @import("bindings.zig");
 const events = @import("events.zig");
 const configuration = @import("configuration.zig");
@@ -2747,75 +2748,12 @@ pub const Manager = struct {
             .package_operation_start => {
                 const operation = event.*.package_operation;
 
-                const message = (switch (operation.operation) {
-                    rawLibalpm.ALPM_PACKAGE_INSTALL => blk: {
-                        const pkg = operation.newpkg orelse return;
-                        const name = libalpm.str(rawLibalpm.alpm_pkg_get_name(pkg)) orelse return;
-                        const version = libalpm.str(rawLibalpm.alpm_pkg_get_version(pkg)) orelse return;
-
-                        break :blk std.fmt.allocPrint(
-                            self.allocator,
-                            "Installing package: {s}-{s}",
-                            .{ name, version },
-                        );
-                    },
-
-                    rawLibalpm.ALPM_PACKAGE_UPGRADE => blk: {
-                        const oldpkg = operation.oldpkg orelse return;
-                        const newpkg = operation.newpkg orelse return;
-
-                        const name = libalpm.str(rawLibalpm.alpm_pkg_get_name(newpkg)) orelse return;
-                        const old_version = libalpm.str(rawLibalpm.alpm_pkg_get_version(oldpkg)) orelse return;
-                        const new_version = libalpm.str(rawLibalpm.alpm_pkg_get_version(newpkg)) orelse return;
-
-                        break :blk std.fmt.allocPrint(
-                            self.allocator,
-                            "Upgrading package: {s} {s} -> {s}",
-                            .{ name, old_version, new_version },
-                        );
-                    },
-
-                    rawLibalpm.ALPM_PACKAGE_REINSTALL => blk: {
-                        const pkg = operation.newpkg orelse return;
-                        const name = libalpm.str(rawLibalpm.alpm_pkg_get_name(pkg)) orelse return;
-                        const version = libalpm.str(rawLibalpm.alpm_pkg_get_version(pkg)) orelse return;
-
-                        break :blk std.fmt.allocPrint(
-                            self.allocator,
-                            "Reinstalling package: {s}-{s}",
-                            .{ name, version },
-                        );
-                    },
-
-                    rawLibalpm.ALPM_PACKAGE_DOWNGRADE => blk: {
-                        const oldpkg = operation.oldpkg orelse return;
-                        const newpkg = operation.newpkg orelse return;
-
-                        const name = libalpm.str(rawLibalpm.alpm_pkg_get_name(newpkg)) orelse return;
-                        const old_version = libalpm.str(rawLibalpm.alpm_pkg_get_version(oldpkg)) orelse return;
-                        const new_version = libalpm.str(rawLibalpm.alpm_pkg_get_version(newpkg)) orelse return;
-
-                        break :blk std.fmt.allocPrint(
-                            self.allocator,
-                            "Downgrading package: {s} {s} -> {s}",
-                            .{ name, old_version, new_version },
-                        );
-                    },
-
-                    rawLibalpm.ALPM_PACKAGE_REMOVE => blk: {
-                        const pkg = operation.oldpkg orelse return;
-                        const name = libalpm.str(rawLibalpm.alpm_pkg_get_name(pkg)) orelse return;
-                        const version = libalpm.str(rawLibalpm.alpm_pkg_get_version(pkg)) orelse return;
-
-                        break :blk std.fmt.allocPrint(
-                            self.allocator,
-                            "Removing package: {s}-{s}",
-                            .{ name, version },
-                        );
-                    },
-
-                    else => return,
-                }) catch return TransactionError.OutOfMemory;
+                const action = packageAction(operation.operation) orelse return;
+                const pkg = (if (action == .remove) operation.oldpkg else operation.newpkg) orelse return;
+                const name = libalpm.str(rawLibalpm.alpm_pkg_get_name(pkg)) orelse return;
+                const version = libalpm.str(rawLibalpm.alpm_pkg_get_version(pkg)) orelse return;
+                const old_version = if (operation.oldpkg) |old| libalpm.str(rawLibalpm.alpm_pkg_get_version(old)) else null;
+                const message = native_output.packageMessage(self.allocator, action, name, version, old_version) catch return TransactionError.OutOfMemory;
 
                 defer self.allocator.free(message);
 
@@ -2831,17 +2769,10 @@ pub const Manager = struct {
                 else
                     operation.newpkg) orelse return;
                 const name = libalpm.str(rawLibalpm.alpm_pkg_get_name(pkg)) orelse return;
-                const code: []const u8 = switch (operation.operation) {
-                    rawLibalpm.ALPM_PACKAGE_INSTALL => "alpm.package_installed",
-                    rawLibalpm.ALPM_PACKAGE_UPGRADE => "alpm.package_upgraded",
-                    rawLibalpm.ALPM_PACKAGE_DOWNGRADE => "alpm.package_downgraded",
-                    rawLibalpm.ALPM_PACKAGE_REINSTALL => "alpm.package_reinstalled",
-                    rawLibalpm.ALPM_PACKAGE_REMOVE => "alpm.package_removed",
-                    else => return,
-                };
+                const code = (packageAction(operation.operation) orelse return).completionCode();
                 self.dispatcher.raiseInformational(.{
                     .event_type = event_type,
-                    .message = "Package operation completed.",
+                    .message = native_output.information(.package_operation_done).?,
                     .package_name = name,
                     .code = code,
                 });
@@ -2852,12 +2783,7 @@ pub const Manager = struct {
                 self.active_hook = name;
                 const description = spanC(hook.desc);
                 var message_buffer: [512]u8 = undefined;
-                const message = if (description) |desc|
-                    std.fmt.bufPrint(&message_buffer, "({d}/{d}) {s}", .{ hook.position, hook.total, desc }) catch desc
-                else if (name) |hook_name|
-                    std.fmt.bufPrint(&message_buffer, "({d}/{d}) {s}", .{ hook.position, hook.total, hook_name }) catch hook_name
-                else
-                    std.fmt.bufPrint(&message_buffer, "({d}/{d}) Running hook...", .{ hook.position, hook.total }) catch "Running hook...";
+                const message = native_output.hookMessage(&message_buffer, name, description, hook.position, hook.total);
 
                 self.dispatcher.raiseHook(.{
                     .name = name,
@@ -2892,46 +2818,18 @@ pub const Manager = struct {
             else => self.handleInformationMessage(event_type),
         }
     }
-    fn handleInformationMessage(self: *Manager, event_type: libalpm.EventType) void {
-        const message = switch (event_type) {
-            .checkdeps_start => "Checking dependencies...",
-            .checkdeps_done => "Dependency check finished.",
-            .fileconflicts_start => "Checking for file conflicts...",
-            .fileconflicts_done => "File conflict check finished.",
-            .resolvedeps_start => "Resolving dependencies...",
-            .resolvedeps_done => "Dependency resolution finished.",
-            .interconflicts_start => "Checking for package conflicts...",
-            .interconflicts_done => "Package conflict check finished.",
-            .transaction_start => "Starting transaction...",
-            .transaction_done => "Transaction completed.",
-            .package_operation_done => "Package operation completed.",
-            .integrity_start => "Checking package integrity...",
-            .integrity_done => "Package integrity check finished.",
-            .load_start => "Loading packages...",
-            .load_done => "Packages loaded.",
-            .db_retrieve_start => "Retrieving database...",
-            .db_retrieve_done => "Database retrieved.",
-            .db_retrieve_failed => "Could not download the selected repository database.",
-            .pkg_retrieve_start => "Retrieving package...",
-            .pkg_retrieve_done => "Package retrieved.",
-            .pkg_retrieve_failed => "Could not download the requested package.",
-            .diskspace_start => "Checking disk space...",
-            .diskspace_done => "Disk space check finished.",
-            .optdep_removal => "Removing optional dependencies...",
-            .database_missing => "The selected repository database is missing. Refresh the configured package databases and try again.",
-            .keyring_start => "Checking keyring...",
-            .keyring_done => "Keyring check finished.",
-            .key_download_start => "Downloading key...",
-            .key_download_done => "Key download finished.",
-            .hook_start => "Running hooks...",
-            .hook_done => "Finished running hooks.",
-            .hook_run_done => "Finished running hook.",
-            .scriptlet_info, .pacnew_created, .pacsave_created, .hook_run_start => return,
-            .failed_optional_dependency_operation => "Could not remove the selected optional dependency.",
-            .package_explicit => "Package marked as explicitly installed.",
-            .failed_add_local_package => "Could not add the selected local package archive to the transaction.",
-            else => return,
+    fn packageAction(value: rawLibalpm.alpm_package_operation_t) ?native_output.PackageAction {
+        return switch (value) {
+            rawLibalpm.ALPM_PACKAGE_INSTALL => .install,
+            rawLibalpm.ALPM_PACKAGE_UPGRADE => .upgrade,
+            rawLibalpm.ALPM_PACKAGE_DOWNGRADE => .downgrade,
+            rawLibalpm.ALPM_PACKAGE_REINSTALL => .reinstall,
+            rawLibalpm.ALPM_PACKAGE_REMOVE => .remove,
+            else => null,
         };
+    }
+    fn handleInformationMessage(self: *Manager, event_type: libalpm.EventType) void {
+        const message = native_output.information(event_type) orelse return;
 
         self.dispatcher.raiseInformational(.{
             .event_type = event_type,
