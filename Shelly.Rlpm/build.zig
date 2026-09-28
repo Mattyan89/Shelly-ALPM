@@ -101,6 +101,13 @@ pub fn build(b: *std.Build) void {
     }) });
     b.step("test-resolver", "Run M5 resolution, removal, system-upgrade and reference fixtures").dependOn(&b.addRunArtifact(resolver_tests).step);
 
+    const executor_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/executor.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    b.step("test-executor", "Run M10 disposable-root payload and database transactions").dependOn(&b.addRunArtifact(executor_tests).step);
     const hook_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/hooks.zig"),
         .target = target,
@@ -173,6 +180,30 @@ pub fn build(b: *std.Build) void {
         .path = .{ .cwd_relative = b.pathJoin(&.{ b.graph.zig_lib_directory.path.?, "compiler/test_runner.zig" }) },
         .mode = .simple,
     };
+    const executor_driver = b.addExecutable(.{ .name = "rlpm-executor-fixture", .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/executor_driver.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    const interop = b.addSystemCommand(&.{ "unshare", "--user", "--map-root-user", "--mount", "python3" });
+    interop.addFileArg(b.path("src/tests/reference/check_executor_interop.py"));
+    interop.addArg("--driver");
+    interop.addArtifactArg(executor_driver);
+    interop.stdio = .inherit;
+    interop.has_side_effects = true;
+    b.step("test-executor-interop", "Alternate RLPM and pinned native libalpm against private databases").dependOn(&interop.step);
+    const executor_integration = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/executor_integration.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }), .test_runner = terminal_runner });
+    const run_executor = b.addSystemCommand(&.{ "unshare", "--user", "--map-root-user", "--mount" });
+    run_executor.addArtifactArg(executor_integration);
+    run_executor.stdio = .inherit;
+    run_executor.has_side_effects = true;
+    b.step("test-executor-integration", "Run full executor processes and attributes in disposable roots").dependOn(&run_executor.step);
     const action_filter = b.addExecutable(.{ .name = "rlpm-action-filter-fixture", .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/action_filter.zig"),
         .target = target,

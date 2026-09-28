@@ -1,10 +1,10 @@
 # Transactions, locks and callbacks
 
-M0–M8 are accepted. M7 adds verified acquisition and DOWNLOADONLY commits through
-[the shared download layer](downloads.md). `transaction_lifecycle`, `downloads`, `filesystem_preflight` and `transaction_actions`
-are enabled; `transactions` remains false. Normal nonempty `commit()` still returns
-`CommitUnavailable`, retaining the prepared plan and lock. M8 provides [filesystem preflight](preflight.md); M9 provides [hook/scriptlet stages](actions.md); M10 supplies installed-state changes. DOWNLOADONLY can complete with zero packages
-committed to the installed database.
+M0–M9 are accepted. M10 enables normal commit, payload changes and durable local
+records. `transaction_lifecycle`, `downloads`, `filesystem_preflight`,
+`transaction_actions` and `transactions` are enabled. See [execution.md](execution.md)
+for execution order, partial-progress reports, recovery and validation.
+DOWNLOADONLY with additions completes without installed-state changes.
 
 ```zig
 var owner = try rlpm.Owner.init(io, allocator, configuration, repositories);
@@ -17,7 +17,7 @@ try transaction.prepare();
 const reviewed = transaction.plan().?; // borrowed until another prepare/release
 try reviewed.check();
 // Inspect additions, removals, answers, sizes and issues here.
-// Nonempty commit is unavailable until the execution milestones land.
+try transaction.commit();
 ```
 
 Owner owns a stable heap allocation for the transaction. Never move an Owner
@@ -104,10 +104,9 @@ Native prepare events follow actual work: dependency resolution, inter-package
 conflict checks, removal dependency checks, and optional-dependency removal.
 `NODEPS`/`NOCONFLICTS` suppress the corresponding phases. Failed native phases do
 not receive a synthetic `done` event. The separate `lifecycle` extension reports
-state, cause, and completed-package count. That count is zero throughout M6.
-Typed retrieval, integrity, load, keyring, disk-space, package-operation, backup,
-scriptlet and hook payloads are available for their M7–M10 producers. Actual
-commit audit logging/syslog likewise remains with the executor.
+state, cause, completed-package count and warning count. M7–M10 produce retrieval,
+integrity, load, keyring, disk-space, package-operation, backup, scriptlet and hook
+events. M10 writes configured audit logs and syslog records.
 
 All seven questions have conservative defaults. Only answer fields are copied
 back; changing the tag or choosing an invalid provider fails with `InvalidAnswer`.
@@ -120,8 +119,8 @@ Callbacks run synchronously and borrow payloads. Reentry fails with
 `CallbackReentry`. `Owner.requestCancellation` is the only cross-thread operation;
 it sets an atomic flag. Preparation checks it during hashing/solving, before and
 after questions/events, and before the commit boundary. Release remains available
-after cancellation. Download cancellation is connected in M7; M8 preflight and M9 action cancellation are implemented; payload mutation interruption
-remains M10; M6 makes no rollback or partial-commit claim.
+after cancellation. Downloads, preflight, actions and payload mutations check cancellation. M10
+retains partial work and completed/remaining package IDs; no full rollback is assumed.
 
 PackageManager exports the opt-in `RlpmOperationAdapter`; the default backend
 selection is unchanged. Attach it at a stable address before initialization and
@@ -157,7 +156,7 @@ establish full backend equivalence.
 
 M9 adds transaction-owned action stages and `actions()` outcomes. An internal
 `startActions()` entry requires committing state, the Owner busy guard and the
-transaction lock. It is reserved for the executor and does not enable normal
+transaction lock. It is reserved for the executor, which now supplies normal
 commit. Hooks, scriptlets and ldconfig retain process setup/exit/signal and cleanup
 failures, with cancellation terminating the child group. See [actions.md](actions.md)
 for stage order, independent flags and CachyOS network semantics.

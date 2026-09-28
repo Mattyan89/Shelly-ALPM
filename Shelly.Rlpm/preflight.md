@@ -1,9 +1,8 @@
 # Filesystem and package preflight
 
 M8 adds `Transaction.preflight()`, `manifest()` and `revalidatePreflight()`.
-`filesystem_preflight` is enabled in capabilities; `transactions` remains false.
-M8 is accepted. M9 adds [hook and scriptlet stages](actions.md). Normal
-nonempty commit still returns `CommitUnavailable` until the M10 executor exists.
+`filesystem_preflight` and `transactions` are enabled. M8 and M9 are accepted;
+M10 consumes this manifest in [normal commit](execution.md).
 
 ```zig
 const tx = try owner.initializeTransaction(io, .{});
@@ -125,10 +124,8 @@ and skipped, matching the native unknown-capacity policy.
 
 `check_space` applies the native cushion, the smaller of roughly five percent of
 capacity and 20 MiB. RLPM deliberately estimates more conservatively than libalpm's
-payload-only peak: it includes staging, directory/link allocation and a bounded
-record-size estimate (8 KiB plus archive metadata and inventory strings per new
-record). M10's final serializer must replace that estimate with its exact staged
-record size. This can reject a near-full filesystem that libalpm accepts. Access
+payload-only peak: it includes staging, directory/link allocation, actual serialized desc/files lengths, block-rounded
+archive members and publication staging/journal directories. This can reject a near-full filesystem that libalpm accepts. Access
 failures are also reported earlier than native extraction. Stricter archive and
 mtree consistency checks are intentional safety differences from permissive
 metadata loading, which remains unchanged.
@@ -148,8 +145,7 @@ immediately before commit. Normal tests project manifest decisions into expected
 contents and inventory without running an RLPM executor or loading libalpm.
 
 The real GPG suite adds remote-policy retention and rejection of a changed
-detached signature during revalidation. Space boundary/read-only checks use
-controlled capacity values; actual mount/remount and privileged extraction are
-not claimed as integration-tested. The existing root-only download sandbox
-fixture remains compile-checked only in this environment. Full installed-state
-equivalence remains an M10/M11 acceptance gate.
+detached signature during revalidation. M10 adds actual payload extraction, metadata attributes and ENOSPC on a private
+tmpfs; M8 retains its controlled space/read-only boundary checks. The existing root-only download sandbox
+fixture remains compile-checked only in this environment. See [execution.md](execution.md) for the M10 executor evidence; full backend
+equivalence remains an M11 acceptance gate.

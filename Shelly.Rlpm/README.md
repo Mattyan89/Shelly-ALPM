@@ -3,7 +3,7 @@
 RLPM is the native Zig package backend under development. The
 [completion plan](../docs/rlpm-libalpm-completion-plan.md) targets libalpm's
 functional behavior **including CachyOS extensions**, following the existing
-Owner/Database/Package design. M0–M8 are accepted; M9 is implemented and awaiting acceptance before M10. RLPM is not yet a replacement for libalpm.
+Owner/Database/Package design. M0–M9 are accepted; M10 is implemented and awaiting acceptance before M11. Production backend integration remains M11.
 
 M1 exports an owning `Owner` with copied options, ordered repository registration,
 read-only local queries, stable database identity, package cache generations,
@@ -32,14 +32,13 @@ provider questions, future-state checks and dependency ordering. The
 M6 adds owned transactions, exclusive locks, frozen preparation, typed lifecycle
 events and PackageManager deferred-question/cancellation support. The
 [transaction guide](transactions.md) covers the state machine and lock contract.
-Normal nonempty commit remains unavailable until M10 supplies file/database execution.
-Installed-repository provenance writes remain required.
+M10 enables normal commit and installed-repository provenance writes.
 
 M7 adds the shared PackageManager transport, verified cache acquisition, repository
 refresh and DOWNLOADONLY transactions. See [downloads.md](downloads.md) for APIs,
 publication/recovery, privilege controls, reference differences and validation.
 The root-only sandbox fixture is compile-checked; its execution still requires
-privileges unavailable in the local session. Normal installation remains M10.
+privileges unavailable in the local session.
 
 M8 adds full-archive verification and an owned filesystem preflight manifest,
 including file conflicts, backup/pattern decisions, root-relative inspection and
@@ -50,6 +49,11 @@ M9 adds native Zig hook discovery/matching, chrooted hook/scriptlet execution,
 linker-cache maintenance and CachyOS network controls. Outcomes retain nonfatal
 failures; cancellation terminates action process groups. See [actions.md](actions.md)
 for the executor contract, worker deployment, reference comparisons and limits.
+
+M10 connects these stages to confined payload extraction, backup handling and
+journaled local-record publication. It adds persisted reasons, audit records,
+cache rebuilding and retained partial-failure reports. See [execution.md](execution.md)
+for behavior, recovery, native comparisons and acceptance boundaries.
 
 ## Build and tests
 
@@ -68,6 +72,9 @@ module dependency. From this directory:
 | `zig build test-verification` | M4 policy/status, checksums, reference cases, imports and sealed-file tests |
 | `zig build test-resolver` | M5 plans, flags, questions, removal/upgrade behavior and 314 reference scenarios |
 | `zig build test-transaction` | M6 lifecycle, locks/process contention, archive ownership, cancellation and 16 reference scenarios |
+| `zig build test-executor` | M10 payload, persistence, failure and 26 complete native state/event cases |
+| `zig build test-executor-integration` | Full commits, 19 native process traces, attributes and ENOSPC in namespaces |
+| `zig build test-executor-interop` | Both-way disposable-database interoperability with the pinned native binary |
 | `zig build test-hooks` | M9 hermetic parser, precedence, matching and ownership fixtures |
 | `zig build test-actions` | M9 real disposable-root actions under user namespaces, including 19 pinned oracle cases |
 | `zig build check-actions` | Compile the action integration without running it |
@@ -83,8 +90,8 @@ module dependency. From this directory:
 
 All test modules honor `-Doptimize=ReleaseSafe` and the other standard optimize
 modes. CI runs `test` in Debug and ReleaseSafe and `test-signature` in Debug.
-Normal builds/tests do not link, load or call libalpm. Python is only required
-for optional reference recording.
+Normal builds/tests do not link, load or call libalpm. Python is required for
+optional reference recording and the explicit pinned-binary interoperability test.
 
 `test` uses temporary package/database fixtures; it neither reads the host
 package database nor launches GPG. It requires libarchive, SQLite and libcurl for the worker build. GPG integration
@@ -106,7 +113,7 @@ local storage/version 9 by default; explicit `.read_only` mode never writes.
 Descriptions/files/groups load lazily. Registered sync databases need not exist;
 queries load their tar/SQLite archives under their effective signature policy.
 Signature policy enforcement, downloads, `filesystem_preflight` and `transaction_lifecycle` are enabled
-in capability reporting; package-executing transactions remain disabled. Metadata-only `Package.loadArchive` is explicitly
+in capability reporting; M10 also enables package-executing transactions. Metadata-only `Package.loadArchive` is explicitly
 unverified; `Owner.loadPackage` performs policy checks and retains the verified
 bytes. Sealed snapshots require RAM/swap proportional to archive size.
 
@@ -115,7 +122,7 @@ bytes. Sealed snapshots require RAM/swap proportional to archive size.
   [Reference documentation](src/tests/reference/README.md) explains attribution,
   corpus provenance and optional capture on disposable roots.
 - The [ledger](src/tests/compatibility-ledger.tsv) tracks 493 public symbols and
-  25 behavioral contracts. There are 109 missing, 376 partial and 33
+  25 behavioral contracts. There are 92 missing, 393 partial and 33
   representation-only rows. No row claims verified full compatibility, and
   every CachyOS extension remains required.
 - [Owner reference fixtures](src/tests/fixtures/owner-reference.json) capture
@@ -218,5 +225,14 @@ needs user acceptance before implementation proceeds to the next.
 M9 validation on 2026-09-28: `test` passes **174 tests** (49 library, 121 public API,
 4 ledger) and `test-actions` passes **18 real-process tests**, including **19 pinned
 CachyOS oracle cases**, in Debug and ReleaseSafe. PackageManager's downloader and
-RLPM adapter targets pass **65 tests** in each mode. M9 awaits acceptance before
-M10; normal package commit remains unavailable. See [actions.md](actions.md).
+RLPM adapter targets pass **65 tests** in each mode. M9 is accepted; M10 now supplies normal package commit. See [actions.md](actions.md).
+
+M10 validation adds the complete package cycle and both directions of native
+interoperability, with matching serialized records and attributes. The new
+executor suites run in Debug and ReleaseSafe; [execution.md](execution.md)
+records tested scope and intentional failure/interruption differences.
+
+M10 validation on 2026-09-28: **188 tests** (49 library, 135 public API, 4 ledger),
+**18 action tests**, **6 executor integration tests**, and both-way pinned native
+interoperability pass in Debug and ReleaseSafe. PackageManager downloader/adapter
+checks pass **65 tests** per mode; the real GPG suite passes **15 tests** in Debug.

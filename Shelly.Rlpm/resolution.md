@@ -165,8 +165,7 @@ and manifest are unchanged. The optional recorder checks the exact library hash,
 uses private roots and `NOLOCK`, and never commits or downloads. Regular builds
 and tests neither link nor load libalpm.
 
-Full backend equivalence still requires M7–M11: transfer,
-filesystem conflict checks, hooks/scriptlets, installation/database persistence,
-integration and broader interoperability/performance gates. Capability reporting
-therefore exposes `resolution_plans = true` while `transactions = false` and
-`downloads = false` remain accurate.
+M7–M10 now provide transfer, filesystem preflight, hooks/scriptlets and installed
+state persistence. `resolution_plans`, `downloads` and `transactions` are enabled.
+Full backend equivalence still requires M11 integration and the complete
+interoperability/performance acceptance gates. See [execution.md](execution.md).

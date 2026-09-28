@@ -11,6 +11,9 @@ pub const c = @cImport({
 });
 pub const Format = enum { tar, mtree };
 handle: *c.struct_archive,
+/// Borrowed native header, valid until next(). The executor clones it before
+/// replacing archive-controlled paths with confined staging paths.
+current_entry: ?*c.struct_archive_entry = null,
 file_size: ?u64 = null,
 
 fn init(format: Format) !ArchiveReader {
@@ -47,6 +50,7 @@ pub fn next(self: *ArchiveReader) !?PackageFile {
     const status = c.archive_read_next_header(self.handle, &entry);
     if (status == c.ARCHIVE_EOF) return null;
     if (status != c.ARCHIVE_OK) return failure(self.handle);
+    self.current_entry = entry;
     const name = c.archive_entry_pathname(entry);
     if (name == null) return error.ArchiveFailed;
     const size = c.archive_entry_size(entry);

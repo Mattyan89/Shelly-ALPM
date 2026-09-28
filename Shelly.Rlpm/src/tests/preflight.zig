@@ -87,7 +87,7 @@ test "M8 full sealed stream creates payload metadata database and link manifests
     try std.testing.expectEqual(4, manifest.database_changes.items[0].files.len);
     try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "root/usr/data", .{}));
     try tx.revalidatePreflight();
-    try std.testing.expectError(error.CommitUnavailable, tx.commit());
+    try std.testing.expectEqual(.prepared, tx.state); // Read-only preflight boundary.
 }
 
 test "M8 ordered patterns match native slash dot negation escaping and directory behavior" {

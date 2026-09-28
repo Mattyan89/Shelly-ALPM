@@ -242,7 +242,7 @@ jobs:
       contents: read
     container:
       image: archlinux:latest
-      # M9 creates a nested user/network namespace and disposable chroot.
+      # M9/M10 use nested namespaces, disposable chroots and private tmpfs mounts.
       options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined
     strategy:
       matrix:
@@ -257,7 +257,7 @@ jobs:
         run: |
           zig version
           zig build -Doptimize=${{ matrix.optimize }}
-          zig build test test-actions test-download check-download-sandbox -Doptimize=${{ matrix.optimize }} --summary all
+          zig build test test-actions test-executor-integration test-download check-download-sandbox -Doptimize=${{ matrix.optimize }} --summary all
       - name: Verify shared transfer and queue regressions
         working-directory: Shelly.Download
         run: zig build test check-sandbox -Doptimize=${{ matrix.optimize }} --summary all

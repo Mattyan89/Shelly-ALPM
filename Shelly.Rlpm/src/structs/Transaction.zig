@@ -9,7 +9,8 @@ const Resolver = @import("Resolver.zig");
 const Plan = @import("TransactionPlan.zig");
 const Snapshot = @import("DatabaseSnapshot.zig");
 pub const State = enum { initialized, preparing, prepared, committing, completed, failed, interrupted, released };
-pub const Result = struct { state: State, cause: ?anyerror = null, packages_committed: usize = 0 };
+pub const Executor = @import("Executor.zig");
+pub const Result = struct { state: State, cause: ?anyerror = null, packages_committed: usize = 0, warnings: usize = 0 };
 const Target = union(enum) { text: []const u8, reference: Ref, archive: *Package };
 
 owner: *Owner,
@@ -26,6 +27,7 @@ owned_plan: ?Plan = null,
 downloaded_files: ?[]@import("Downloads.zig").File = null,
 owned_manifest: ?@import("ExecutionManifest.zig") = null,
 owned_actions: ?@import("TransactionActions.zig") = null,
+execution: Executor.Report = .{},
 snapshot: [32]u8,
 lock: ?@import("DatabaseLock.zig") = null,
 
@@ -34,7 +36,7 @@ pub fn actions(self: *const Transaction) ?*const @import("TransactionActions.zig
     return if (self.owned_actions) |*value| value else null;
 }
 /// Internal executor entry, requires committing state and the Owner busy guard.
-/// Normal commit remains gated until M10 supplies payload/database operations.
+/// Used by the ordered mutation executor.
 pub fn startActions(self: *Transaction) !*@import("TransactionActions.zig") {
     if (self.owned_actions != null) return error.InvalidActionState;
     self.owned_actions = try @import("TransactionActions.zig").init(self);
@@ -42,7 +44,11 @@ pub fn startActions(self: *Transaction) !*@import("TransactionActions.zig") {
     return &self.owned_actions.?;
 }
 pub fn result(self: *const Transaction) Result {
-    return .{ .state = self.state, .cause = self.cause };
+    var warnings: usize = self.execution.cleanup_failures + (if (self.manifest()) |m| m.warnings.items.len else 0);
+    if (self.actions()) |value| for (value.outcomes.items) |item| {
+        if (item.cause != null or item.warning) warnings += 1;
+    };
+    return .{ .state = self.state, .cause = self.cause, .packages_committed = self.execution.completed.items.len, .warnings = warnings };
 }
 pub fn plan(self: *const Transaction) ?*const Plan {
     return if (self.owned_plan) |*value| value else null;
@@ -189,11 +195,15 @@ pub fn commit(self: *Transaction) !void {
     if (self.lock == null) return self.failed(error.LockNotHeld);
     self.checkSnapshot() catch |err| return self.failed(err);
     const reviewed = &self.owned_plan.?;
-    // M7–M10 supply acquisition, preflight, hooks, and the mutation executor.
-    // Preserve the review/lock on this recoverable capability error.
-    if (!self.flags.download_only and (reviewed.additions.len != 0 or reviewed.removals.len != 0)) return self.owner.transactionFailure(error.CommitUnavailable);
-    self.transition(.committing, null);
-    if (self.flags.download_only) self.downloadInternal() catch |err| return self.failed(err);
+    if (self.flags.download_only and reviewed.additions.len != 0) {
+        self.transition(.committing, null);
+        self.downloadInternal() catch |err| return self.failed(err);
+    } else if (reviewed.additions.len + reviewed.removals.len != 0) {
+        if (self.owner.configuration.local_database_mode == .read_only) return self.owner.transactionFailure(error.ReadOnlyDatabase);
+        self.preflightInternal() catch |err| return self.failed(err);
+        self.transition(.committing, null);
+        Executor.run(self) catch |err| return self.failed(err);
+    } else self.transition(.committing, null);
     self.owner.checkCancelled() catch |err| return self.failed(err);
     self.transition(.completed, null);
 }
@@ -212,6 +222,7 @@ fn checkSnapshot(self: *Transaction) !void {
     if (!std.mem.eql(u8, &self.snapshot, &try Snapshot.capture(self.owner, self.io))) return error.StaleDatabaseState;
 }
 fn failed(self: *Transaction, err: anyerror) anyerror {
+    if (self.owned_actions) |*value| value.fail();
     if (self.owned_manifest) |*value| {
         if (value.failure == null) value.failure = .{ .cause = err };
         value.complete = false;
@@ -260,11 +271,18 @@ fn downloadInternal(self: *Transaction) !void {
     var requests: std.ArrayList(Downloads.Request) = .empty;
     defer requests.deinit(self.owner.allocator);
     try self.downloadRequests(&requests);
-    self.owner.transactionEvent(.{ .phase = .{ .phase = .package_retrieve, .boundary = .start, .total_packages = requests.items.len } });
-    errdefer self.owner.transactionEvent(.{ .phase = .{ .phase = .package_retrieve, .boundary = .failed } });
+    if (requests.items.len != 0) self.owner.transactionEvent(.{ .phase = .{ .phase = .package_retrieve, .boundary = .start, .total_packages = requests.items.len } });
+    errdefer if (requests.items.len != 0) self.owner.transactionEvent(.{ .phase = .{ .phase = .package_retrieve, .boundary = .failed } });
     self.downloaded_files = try Downloads.acquire(self.owner, self.io, requests.items);
     try self.checkSnapshot();
-    self.owner.transactionEvent(.{ .phase = .{ .phase = .package_retrieve, .boundary = .done } });
+    if (requests.items.len != 0) self.owner.transactionEvent(.{ .phase = .{ .phase = .package_retrieve, .boundary = .done } });
+    // Acquisition has already applied effective trust and integrity policy to
+    // sealed bytes. Publish the accepted batch at the native phase boundaries.
+    if (self.plan().?.additions.len != 0) inline for (.{ @import("Callbacks.zig").Phase.keyring, .integrity }) |phase| {
+        self.owner.transactionEvent(.{ .phase = .{ .phase = phase, .boundary = .start } });
+        try self.owner.checkCancelled();
+        self.owner.transactionEvent(.{ .phase = .{ .phase = phase, .boundary = .done } });
+    };
 }
 
 fn downloadRequests(self: *Transaction, requests: *std.ArrayList(@import("Downloads.zig").Request)) !void {

@@ -31,7 +31,7 @@ try tx.commit(); // acquisition/verification only; zero installed packages chang
 
 `Transaction.download()` explicitly acquires a prepared plan without committing.
 The transaction owns its `downloaded_files` and sealed descriptors until release.
-Normal nonempty commits still return `CommitUnavailable`; M8–M10 supply preflight,
+Normal commits consume acquisition, preflight,
 hooks and installation. The backend selector remains M11 work. CachyOS tar/SQLite
 repositories, architecture handling, provenance and sandbox switches are retained.
 

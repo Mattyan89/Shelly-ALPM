@@ -1,5 +1,5 @@
-//! Executor stages owned by Transaction. M10 must bracket each payload/local
-//! record change with beforePackage/afterPackage, then call finish only after
+//! Executor stages owned by Transaction. The executor brackets each payload/local
+//! record change with beforePackage/afterPackage, then calls finish only after
 //! all mutations succeed. This is not an alternative public commit method.
 const Actions = @This();
 const std = @import("std");
@@ -25,6 +25,7 @@ tx: *Transaction,
 arena: std.heap.ArenaAllocator,
 state: State = .initialized,
 next: usize = 0,
+started: bool = false,
 effects: []const Hooks.Change = &.{},
 outcomes: std.ArrayList(Outcome) = .empty,
 
@@ -73,6 +74,8 @@ pub fn begin(self: *Actions) !void {
     errdefer self.state = .failed;
     try self.hooks(.pre_transaction);
     try self.tx.owner.checkCancelled();
+    self.started = true;
+    @import("Audit.zig").log(self.tx, "transaction started", .{});
     self.tx.owner.transactionEvent(.{ .phase = .{ .phase = .transaction, .boundary = .start } });
     try self.tx.owner.checkCancelled();
     self.state = .ready;
@@ -111,7 +114,7 @@ fn hooks(self: *Actions, when: Hooks.When) !void {
 }
 fn runHook(self: *Actions, selected: Hooks.Match) !Process.Result {
     const owner = self.tx.owner;
-    // Consult the live local cache at invocation time. M10 must publish its new
+    // Consult the live local cache at invocation time. The executor publishes new
     // local state before post hooks. AssumeInstalled does not satisfy Depends.
     const local = &owner.local.?;
     try local.loadDescriptions(self.tx.io);
@@ -199,6 +202,7 @@ pub fn finish(self: *Actions) !void {
     try self.tx.owner.checkCancelled();
     self.tx.owner.transactionEvent(.{ .phase = .{ .phase = .transaction, .boundary = .done } });
     try self.tx.owner.checkCancelled();
+    @import("Audit.zig").log(self.tx, "transaction completed", .{});
     try self.hooks(.post_transaction);
     try self.tx.owner.checkCancelled();
     self.state = .complete;

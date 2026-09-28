@@ -56,9 +56,9 @@ pub const Capabilities = struct {
     transaction_lifecycle: bool = true,
     downloads: bool = true,
     filesystem_preflight: bool = true,
-    /// Executor stages are available; normal commit still requires M10.
+    /// Hook/scriptlet execution and installed-state mutation are operational.
     transaction_actions: bool = true,
-    transactions: bool = false,
+    transactions: bool = true,
     localization: bool = false,
 };
 pub fn capabilities() Capabilities {

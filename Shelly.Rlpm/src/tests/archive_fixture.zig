@@ -9,9 +9,15 @@ const allocator = std.testing.allocator;
 pub const Entry = struct {
     path: []const u8,
     contents: []const u8 = "",
-    kind: enum { file, directory, symlink, hardlink } = .file,
+    kind: enum { file, directory, symlink, hardlink, fifo, character, block } = .file,
     target: ?[]const u8 = null,
     declared_size: ?usize = null,
+    mode: ?u32 = null,
+    mtime: i64 = 0,
+    xattr: ?[]const u8 = null,
+    capabilities: bool = false,
+    sparse: bool = false,
+    acl: bool = false,
 };
 pub const Compression = enum { none, zstd, gzip, xz, bzip2 };
 temporary: std.testing.TmpDir,
@@ -34,7 +40,10 @@ pub fn init(entries: []const Entry, compression: Compression) !Fixture {
         .bzip2 => c.archive_write_add_filter_bzip2(writer),
     };
     try std.testing.expectEqual(c.ARCHIVE_OK, filter);
-    try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_set_format_ustar(writer));
+    const extended = for (entries) |item| {
+        if (item.xattr != null or item.capabilities or item.sparse or item.acl) break true;
+    } else false;
+    try std.testing.expectEqual(c.ARCHIVE_OK, if (extended) c.archive_write_set_format_pax(writer) else c.archive_write_set_format_ustar(writer));
     try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_open_filename(writer, path.ptr));
     for (entries) |item| {
         const entry = c.archive_entry_new() orelse return error.OutOfMemory;
@@ -44,16 +53,33 @@ pub fn init(entries: []const Entry, compression: Compression) !Fixture {
         const target = if (item.target) |value| try allocator.dupeSentinel(u8, value, 0) else null;
         defer if (target) |value| allocator.free(value);
         c.archive_entry_set_pathname(entry, name.ptr);
-        c.archive_entry_set_perm(entry, if (item.kind == .directory) 0o755 else 0o644);
+        c.archive_entry_set_perm(entry, item.mode orelse (if (item.kind == .directory) @as(u32, 0o755) else 0o644));
+        c.archive_entry_set_mtime(entry, item.mtime, 0);
+        if (item.xattr) |value| c.archive_entry_xattr_add_entry(entry, "user.rlpm", value.ptr, value.len);
+        if (item.capabilities) {
+            const caps = [_]u8{ 1, 0, 0, 2, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }; // CAP_NET_BIND_SERVICE effective+permitted
+            c.archive_entry_xattr_add_entry(entry, "security.capability", &caps, caps.len);
+        }
+        if (item.acl) {
+            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 7, c.ARCHIVE_ENTRY_ACL_USER_OBJ, -1, null);
+            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 5, c.ARCHIVE_ENTRY_ACL_GROUP_OBJ, -1, null);
+            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 0, c.ARCHIVE_ENTRY_ACL_OTHER, -1, null);
+            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 5, c.ARCHIVE_ENTRY_ACL_MASK, -1, null);
+            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 4, c.ARCHIVE_ENTRY_ACL_USER, 42, "fixture");
+        }
         c.archive_entry_set_filetype(entry, switch (item.kind) {
             .file => 0o100000,
             .directory => 0o040000,
             .symlink => 0o120000,
             .hardlink => 0,
+            .fifo => 0o010000,
+            .character => 0o020000,
+            .block => 0o060000,
         });
         if (item.kind == .symlink) c.archive_entry_set_symlink(entry, target.?.ptr);
         if (item.kind == .hardlink) c.archive_entry_set_hardlink(entry, target.?.ptr);
         c.archive_entry_set_size(entry, @intCast(item.declared_size orelse item.contents.len));
+        if (item.sparse) c.archive_entry_sparse_add_entry(entry, @intCast(item.contents.len - 4), 4);
         try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_header(writer, entry));
         if (item.contents.len != 0) try std.testing.expectEqual(@as(isize, @intCast(item.contents.len)), c.archive_write_data(writer, item.contents.ptr, item.contents.len));
         try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_finish_entry(writer));

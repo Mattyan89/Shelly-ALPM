@@ -74,6 +74,9 @@ const Builder = struct {
     current_package: ?Plan.Id = null,
     current_path: ?[]const u8 = null,
     fn phase(self: *Builder, value: @import("Callbacks.zig").Phase, boundary: @import("Callbacks.zig").Boundary) void {
+        // Pure removal has no native package-loading/file-conflict phases.
+        if (self.plan.additions.len == 0) return;
+        if (value == .disk_space and self.tx.flags.database_only) return;
         self.tx.owner.transactionEvent(.{ .phase = .{ .phase = value, .boundary = boundary } });
     }
     fn run(self: *Builder) !void {
@@ -566,6 +569,7 @@ const Builder = struct {
         self.current_path = null;
     }
     fn databaseChanges(self: *Builder) !void {
+        for (self.m.locals.items) |installed| _ = try @import("LocalWriter.zig").recordName(self.a, &installed.package);
         for (self.plan.removals) |id| try self.m.database_changes.append(self.a, .{ .package = id, .old = id, .remove = true, .files = &.{}, .backups = &.{}, .reason = null, .installed_database = null });
         for (self.plan.additions, self.m.archives.items) |addition, archive| {
             const files = try self.a.alloc(File, archive.payload.len);
@@ -574,7 +578,7 @@ const Builder = struct {
             const backups = try self.a.alloc(@import("BackupFile.zig"), archive.package.backups.len);
             for (backups, archive.package.backups) |*backup, original| {
                 const entry = archive.find(original.name).?;
-                backup.* = .{ .name = original.name, .hash = if (try self.matches(.no_extract, entry.file.name)) null else entry.new_hash };
+                backup.* = .{ .name = original.name, .hash = if (self.tx.flags.database_only or try self.matches(.no_extract, entry.file.name)) null else entry.new_hash };
                 if (entry.file.kind == .symlink) for (self.m.entries.items) |effect| {
                     if (effect.package == archive.id and effect.archive_index != null and std.mem.eql(u8, effect.path, original.name)) backup.hash = effect.new_hash;
                 };
@@ -666,9 +670,25 @@ const Builder = struct {
             const bucket = try self.spaceBucket("local/record", true, cap);
             if (cap.read_only) return error.ReadOnlyFilesystem;
             for (self.m.archives.items) |archive| {
-                var size: u64 = 8192;
-                for (archive.metadata) |entry| size = try std.math.add(u64, size, entry.file.size orelse 0);
-                for (archive.payload) |entry| size = try std.math.add(u64, size, entry.file.name.len + 40);
+                var package = archive.package;
+                for (self.m.database_changes.items) |change| if (change.package == archive.id) {
+                    package.files = change.files;
+                    package.backups = change.backups;
+                    package.install_reason = change.reason;
+                    package.installed_database = change.installed_database;
+                };
+                package.install_date = @intCast(std.Io.Clock.real.now(self.tx.io).toSeconds());
+                const writer = @import("LocalWriter.zig");
+                _ = try writer.recordName(self.a, &package);
+                const desc = try writer.description(self.a, &package);
+                const files = try writer.files(self.a, &package);
+                // Actual serialized members, separately rounded blocks, plus
+                // record/staging directories and the rollback journal.
+                var size: u64 = 4 * cap.block_size;
+                size = try std.math.add(u64, size, (blocks(desc.len, cap.block_size) + blocks(files.len, cap.block_size)) * cap.block_size);
+                for (archive.metadata) |entry| if (!std.mem.eql(u8, entry.path, ".PKGINFO")) {
+                    size = try std.math.add(u64, size, blocks(entry.file.size orelse 0, cap.block_size) * cap.block_size);
+                };
                 bucket.delta += blocks(size, cap.block_size);
                 bucket.peak = @max(bucket.peak, @as(u64, @intCast(@max(0, bucket.delta))));
             }

@@ -283,3 +283,25 @@ manifest/assets are unchanged. Source review additionally checked
 `src/common/ini.c` and `util-common.c` from the exact downstream tarball identified
 by `manifest.json` (download SHA-256 verified), since they were not included in the
 original reduced source bundle. See [actions.md](../../../actions.md).
+
+M10 adds [record_executor.py](record_executor.py) and [executor.json](executor.json).
+The 26 guarded private-root commits capture complete native phase/package/backup
+ordering, inventories, contents, DBONLY/DOWNLOADONLY and suffix rotation. Regenerate:
+
+```sh
+unshare --user --map-root-user --mount \
+  python3 src/tests/reference/record_executor.py --library /usr/lib/libalpm.so.16.0.1
+zig build test-executor
+zig build test-executor-integration
+zig build test-executor-interop
+```
+
+The last target runs [check_executor_interop.py](check_executor_interop.py) with a
+test-only Zig driver. It alternates RLPM and the pinned binary in both directions,
+comparing local records (normalizing install time), modes/owners/times/xattrs,
+hardlinks, backup preservation and native removal after an RLPM downgrade.
+It never uses a host database or runs hooks/scripts. The driver requires an
+explicit generated fixture marker under `/tmp/rlpm-m10-interop-*`. Ordinary
+builds/tests do not depend on libalpm; the pinned-binary test is an explicit gate.
+M10 also replays all 19 M9 traces through full commits in the namespace suite.
+See [execution.md](../../../execution.md) for scope and failure differences.

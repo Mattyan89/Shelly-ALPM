@@ -111,15 +111,7 @@ pub fn remember(self: *Manifest, path: []const u8, follow: bool) !?Root.State {
 /// current free space. This is also required after pre-transaction hooks in M10.
 pub fn revalidate(self: *const Manifest, root_path: []const u8, db_path: []const u8, check_space: bool) !void {
     try self.check();
-    var current_root = try Root.init(root_path);
-    defer current_root.deinit();
-    var current_db = try Root.init(db_path);
-    defer current_db.deinit();
-    for ([_]struct { old: Root, new: Root }{ .{ .old = self.root, .new = current_root }, .{ .old = self.database, .new = current_db } }) |pair| {
-        const old = try Root.state(pair.old.fd);
-        const new = try Root.state(pair.new.fd);
-        if (old.device != new.device or old.inode != new.inode or old.mount_id != new.mount_id) return error.StaleFilesystemState;
-    }
+    try self.revalidateRoots(root_path, db_path);
     for (self.guards.items) |guard| if (!std.meta.eql(guard.before, try self.root.inspect(guard.path, guard.follow))) return error.StaleFilesystemState;
     for (self.entries.items) |entry| {
         if (entry.action == .no_extract or entry.action == .shared_directory or (entry.action == .preserve and !entry.refresh_existing_pacnew)) continue;
@@ -154,4 +146,17 @@ pub fn checkCapacity(cap: Root.Capacity, blocks: u64) !void {
     if (cap.block_size == 0) return error.CapacityUnavailable;
     const cushion = @min(cap.total / 20 + 1, 20 * 1024 * 1024 / cap.block_size + 1);
     if (@as(u128, blocks) + cushion > cap.available) return error.DiskSpaceInsufficient;
+}
+
+/// Recheck root identities at mutation boundaries; hook changes to contents are allowed.
+pub fn revalidateRoots(self: *const Manifest, root_path: []const u8, db_path: []const u8) !void {
+    var current_root = try Root.init(root_path);
+    defer current_root.deinit();
+    var current_db = try Root.init(db_path);
+    defer current_db.deinit();
+    for ([_]struct { old: Root, new: Root }{ .{ .old = self.root, .new = current_root }, .{ .old = self.database, .new = current_db } }) |pair| {
+        const old = try Root.state(pair.old.fd);
+        const new = try Root.state(pair.new.fd);
+        if (old.device != new.device or old.inode != new.inode or old.mount_id != new.mount_id) return error.StaleFilesystemState;
+    }
 }

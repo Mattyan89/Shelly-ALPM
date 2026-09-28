@@ -45,7 +45,7 @@ test "public Owner retains two repositories and releases their configuration" {
     try std.testing.expectEqualStrings("cachyos", owner.syncDatabases()[0].name);
     try owner.unregisterSyncDatabases();
     try std.testing.expectEqual(0, owner.syncDatabases().len);
-    try std.testing.expect(!rlpm.capabilities().transactions);
+    try std.testing.expect(rlpm.capabilities().transactions);
     var physical = try rlpm.PhysicalArchitectures.init(std.testing.allocator);
     defer physical.deinit();
     try std.testing.expect(physical.names.len >= 1);
@@ -71,3 +71,5 @@ test {
     _ = @import("preflight.zig");
     _ = @import("hooks.zig");
 }
+
+test { _ = @import("executor.zig"); }

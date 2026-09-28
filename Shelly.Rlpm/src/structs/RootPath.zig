@@ -10,6 +10,8 @@ pub const c = @cImport({
     @cDefine("_FORTIFY_SOURCE", "0");
     @cDefine("_GNU_SOURCE", "1");
     @cInclude("fcntl.h");
+    @cInclude("stdio.h");
+    @cInclude("sys/file.h");
     @cInclude("unistd.h");
     @cInclude("sys/stat.h");
     @cInclude("sys/statvfs.h");

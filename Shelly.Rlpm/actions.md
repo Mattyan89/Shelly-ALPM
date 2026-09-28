@@ -1,9 +1,8 @@
 # Hooks and scriptlets
 
-M0–M8 are accepted. M9 implements hook/scriptlet execution stages and awaits
-acceptance before M10. `transaction_actions` is enabled in capabilities;
-`transactions` remains false. Normal nonempty `Transaction.commit()` still returns
-`CommitUnavailable` before running actions or modifying installed state.
+M0–M9 are accepted. M10 consumes these stages in normal commit; both
+`transaction_actions` and `transactions` are enabled. See [execution.md](execution.md)
+for payload/database publication and the full-commit validation.
 
 ## Ownership and executor contract
 
@@ -19,14 +18,15 @@ state and outcomes, including nonfatal exit/signal/setup/cleanup failures.
 `startActions()` is an internal executor entry: it requires the committing state,
 active Owner busy guard, owned lock, and completed preflight. Applications must
 not change transaction fields to call it. M9's integration fixtures use an
-explicit miniature executor; production mutation remains M10 work.
+explicit miniature executor; M10 also replays their 19 native traces through real commits.
 
-M10 must follow this sequence:
+The M10 executor follows this sequence:
 
 1. Revalidate prepared state, archives, root/DB identity and the manifest, then
    enter committing with the Owner operation guard held.
 2. `startActions()` discovers and runs pre-transaction hooks. Abort on failure.
-   Revalidate filesystem observations after hooks, before writing payloads.
+   Recheck root/DB identity and database state; recompute backup decisions from
+   the filesystem after hooks and scripts.
 3. In plan order, process explicit removals, then additions. Call
    `beforePackage(id)` before each package mutation and `afterPackage(id)` after.
    For removal, post_remove runs before deleting the old local record. For
@@ -129,6 +129,5 @@ checks private root, DB and hook paths immediately before every native commit.
 It installs no host hooks, service managers or real ldconfig into the fixture.
 See [reference capture instructions](src/tests/reference/README.md).
 
-These tests cover M9's stages. Complete file/database execution, interruption
-recovery, transaction audit logging and final backend equivalence remain later
-milestones. The coverage ledger therefore retains partial status.
+These tests cover M9 stages. M10 adds full execution, record recovery and audit
+logging. The ledger retains partial status until the complete M11 acceptance gate.

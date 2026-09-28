@@ -114,7 +114,7 @@ test "M9 inventory matching includes absent removals NoExtract and original pacn
         try std.testing.expectEqual(expected, change.operation);
     }
     try std.testing.expectError(error.InvalidTransactionState, tx.startActions());
-    try std.testing.expectError(error.CommitUnavailable, tx.commit());
+    try std.testing.expectEqual(.prepared, tx.state); // Read-only preflight boundary.
 }
 
 test "M9 scriptlet function discovery follows comments and native line chunks" {

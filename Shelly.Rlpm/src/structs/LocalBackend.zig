@@ -54,6 +54,9 @@ pub fn populate(self: LocalBackend, io: std.Io, db: *Database) !void {
     if (db.status.presence == .missing) return;
     var dir = try std.Io.Dir.cwd().openDir(io, db.path, .{ .iterate = true });
     defer dir.close(io);
+    var guard = try @import("Publication.zig").DirectoryLock.acquire(db.path, false, false);
+    defer guard.deinit();
+    try @import("LocalWriter.zig").ensureReadable(io, db.allocator, db.path);
     const allocator = db.cache_arena.allocator();
     var entries = dir.iterate();
     while (try entries.next(io)) |entry| {
@@ -81,6 +84,9 @@ pub fn populate(self: LocalBackend, io: std.Io, db: *Database) !void {
 
 /// Work on a candidate package and arena; Database publishes them together.
 pub fn loadMetadata(io: std.Io, arena: *std.heap.ArenaAllocator, package: *Package, request: Metadata) !void {
+    var guard = try @import("Publication.zig").DirectoryLock.acquire(std.fs.path.dirname(package.metadata_directory.?).?, false, false);
+    defer guard.deinit();
+    try @import("LocalWriter.zig").ensureReadable(io, arena.allocator(), std.fs.path.dirname(package.metadata_directory.?).?);
     const allocator = arena.allocator();
     var dir = try std.Io.Dir.cwd().openDir(io, package.metadata_directory orelse return error.InvalidPath, .{});
     defer dir.close(io);

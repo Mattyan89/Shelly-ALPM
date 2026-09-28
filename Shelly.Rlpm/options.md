@@ -66,27 +66,27 @@ these rows partial until the consuming milestones' fixtures pass.
 
 | Configuration field | Implemented now | Remaining consumer |
 | --- | --- | --- |
-| `root`, `database_path` | Independent canonical directory paths; held descriptors and M8 confinement | M10 executor |
+| `root`, `database_path` | Independent canonical paths, held descriptors and confined M10 mutations | — |
 | `local_database_mode` | Default creation/validation or explicit read-only local opening | — |
 | `database_extension` | Sync registration paths and replacement; rejects NUL/path separators | — |
 | `cache_directories` | Ordered cache search, current-policy verification and writable selection | — |
-| `hook_directories` | M9 discovery, overrides, parsing, matching and execution stages | M10 transaction integration |
+| `hook_directories` | Discovery, overrides, parsing, matching and M10 transaction execution | — |
 | `gpg_directory` | Explicit home for verification and consented key operations; null uses system pacman keyring | — |
 | `key_acquisition` | Owned single-key source paths, WKD/keyserver controls; import requires callback consent and reverification | Live server interoperability |
-| `log_file`, `use_syslog` | Owned setting | M10 execution audit logging/syslog |
+| `log_file`, `use_syslog` | M10 timestamped ALPM audit file and syslog forwarding; failures retained | — |
 | `architectures` | Owned list and M5 initial-target validation, including CachyOS architectures | M11 frontend auto mapping |
 | `ignore_packages`, `ignore_groups` | Owned lists, glob matching, candidate questions and upgrade filtering | — |
 | `assume_installed` | Owned unversioned/exact provisions, permissive raw versions, descriptions and M5 dependency checks | — |
-| `no_upgrade`, `no_extract`, `overwrite_files` | Ordered glob/negation matching and M8 manifest decisions | M10 file effects |
-| `check_space` | Per-filesystem peak and native cushion; conservative staging estimate | M10 exact serialized DB sizes; privileged mount validation |
+| `no_upgrade`, `no_extract`, `overwrite_files` | Ordered glob/negation matching, manifest decisions and backup/payload effects | — |
+| `check_space` | Per-filesystem peak, native cushion, serialized DB sizes and staging; actual ENOSPC tested | Broader mount matrix |
 | `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Enforced inheritance, presence, crypto validity and trust; sealed snapshots and M8 full-stream/current-policy checks | — |
 | `disable_download_timeout`, `parallel_downloads` | Shared bounded queue and cancellable setup/header/body deadlines | — |
 | `action_worker` | Optional installed native Zig action worker path; default is the matching build artifact | M11 deployment wiring |
 | `download_worker` | Optional installed helper path; default is the matching build artifact | M11 deployment wiring |
 | `sandbox_user` | Account lookup and child credential changes when native applicability requires it | Root-only integration must run in a privileged environment |
 | `sandbox.disable_filesystem`, `sandbox.disable_syscalls` | Independent Landlock and syscall filter controls in the child | Privileged integration |
-| `sandbox.disable_network` | M9 hook/scriptlet isolation, per-hook permission and best-effort ldconfig; global `setDisabled` updates all three switches | M10 transaction integration |
-| `callbacks` | Typed callbacks, owned deferred questions, transaction ordering and guarded dispatch | M10 package mutation producers and audit logging |
+| `sandbox.disable_network` | M9 hook/scriptlet isolation, per-hook permission and best-effort ldconfig; global `setDisabled` updates all three switches; consumed during commit | — |
+| `callbacks` | Typed callbacks, owned deferred questions, guarded phase/package/backup producers | — |
 | Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned lists, queries, resolver usage/priority, enforced inherited/explicit policy | — |
 
 `setOptions` constructs a complete replacement before publishing it. Failed

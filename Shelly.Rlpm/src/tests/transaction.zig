@@ -58,7 +58,6 @@ test "transaction locks at init, freezes configuration, and releases uncommitted
     try std.testing.expectEqual(1, tx.plan().?.removals.len);
     try std.testing.expectError(error.InvalidTransactionState, tx.remove("demo"));
     try std.testing.expectError(error.InvalidTransactionState, tx.prepare());
-    try std.testing.expectError(error.CommitUnavailable, tx.commit());
     try std.testing.expectEqual(.prepared, tx.state);
     try std.testing.expectEqual(0, tx.result().packages_committed);
     try owner.releaseTransaction();

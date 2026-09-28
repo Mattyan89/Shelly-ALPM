@@ -913,3 +913,79 @@ pub fn fetchPackageUrls(self: *Owner, io: std.Io, urls: []const []const u8) !@im
     };
     return .{ .allocator = self.allocator, .files = try Downloads.acquire(self, io, requests) };
 }
+
+/// Persist a local install reason atomically under db.lck. Invalidates local
+/// PackageRefs after publication; archive and repository packages are rejected.
+pub fn setInstallReason(self: *Owner, io: std.Io, reference: PackageRef, reason: Package.InstallReason) !void {
+    try self.begin(.transaction);
+    defer self.busy = false;
+    errdefer |err| self.last_diagnostic = Diagnostic.init(.transaction, err, null);
+    if (reason == .unknown) return error.InvalidOption;
+    if (self.configuration.local_database_mode == .read_only) return error.ReadOnlyDatabase;
+    const borrowed = try self.transactionPackage(reference);
+    if (borrowed.origin != .local) return error.UnsupportedPackageOrigin;
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const name = try a.dupe(u8, borrowed.name);
+    const version = try a.dupe(u8, borrowed.version.raw);
+    var lock = try @import("DatabaseLock.zig").acquire(self.allocator, self.lock_file);
+    var lock_held = true;
+    defer if (lock_held) lock.release(self.allocator) catch |err| {
+        self.last_diagnostic = Diagnostic.init(.transaction, err, null);
+    };
+    const local = &self.local.?;
+    try local.reloadDatabase(io, self.configuration.gpg_directory);
+    const id = local.packages.by_name.get(name) orelse return error.StalePackageReference;
+    try local.loadMetadata(io, id, .{});
+    var candidate = local.packages.packages.items[@intFromEnum(id)];
+    if (!std.mem.eql(u8, candidate.version.raw, version)) return error.StalePackageReference;
+    if (candidate.install_reason == reason) {
+        lock_held = false;
+        try lock.release(self.allocator);
+        return;
+    }
+    candidate.install_reason = reason;
+    const Ops = @import("RootOperations.zig");
+    const Writer = @import("LocalWriter.zig");
+    var held_database = try @import("RootPath.zig").init(self.configuration.database_path);
+    defer held_database.deinit();
+    var guard = try @import("Publication.zig").DirectoryLock.acquire(local.path, true, false);
+    defer guard.deinit();
+    const record = try Writer.recordName(a, &candidate);
+    const path = try std.fmt.allocPrint(a, "local/{s}/desc", .{record});
+    var stage = try Ops.Stage.init(&held_database, io, path);
+    var stage_held = true;
+    defer if (stage_held) stage.deinit() catch |err| {
+        self.last_diagnostic = Diagnostic.init(.transaction, err, null);
+    };
+    try Ops.write(stage.fd, "entry", try Writer.description(a, &candidate));
+    try lock.validate();
+    // Invalidate even when rename succeeds but its following fsync fails.
+    defer local.invalidateCache() catch {};
+    try stage.publish();
+    stage_held = false;
+    try stage.deinit();
+    lock_held = false;
+    try lock.release(self.allocator);
+}
+
+/// Recover an interrupted local-record publication before opening an Owner.
+/// Never removes a foreign db.lck; callers resolve stale native locks explicitly.
+pub fn recoverLocalDatabase(io: std.Io, allocator: std.mem.Allocator, database_path: []const u8) !void {
+    const path = try std.fs.path.join(allocator, &.{ database_path, "db.lck" });
+    defer allocator.free(path);
+    var lock = try @import("DatabaseLock.zig").acquire(allocator, path);
+    var lock_held = true;
+    defer if (lock_held) lock.release(allocator) catch {};
+    const local = try std.fs.path.join(allocator, &.{ database_path, "local" });
+    defer allocator.free(local);
+    var guard = try @import("Publication.zig").DirectoryLock.acquire(local, true, false);
+    defer guard.deinit();
+    var held_database = try @import("RootPath.zig").init(database_path);
+    defer held_database.deinit();
+    try lock.validate();
+    try @import("LocalWriter.zig").recoverLocked(io, allocator, &held_database);
+    lock_held = false;
+    try lock.release(allocator);
+}
