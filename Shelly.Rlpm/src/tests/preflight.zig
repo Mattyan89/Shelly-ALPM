@@ -232,6 +232,53 @@ test "M8 directory transitions reject unowned descendants and allow owned tree r
     try tx.preflight();
 }
 
+test "M8 missing backup members retain unhashed metadata without inventing payloads" {
+    for ([_]bool{ false, true }) |database_only| {
+        var f = try Fixture.init();
+        defer f.deinit();
+        try f.write("etc/missing", "unowned configuration");
+        var archive = try Archive.init(&.{
+            .{ .path = ".PKGINFO", .contents = info ++ "backup = etc/missing\nbackup = etc/present\n" },
+            .{ .path = ".MTREE", .contents = "#mtree\n./etc/present type=file\n" },
+            .{ .path = "etc/present", .contents = "configuration" },
+        }, .zstd);
+        defer archive.deinit();
+        var owner = try f.owner(a);
+        defer owner.deinit() catch unreachable;
+        const tx = try owner.initializeTransaction(io, .{ .database_only = database_only });
+        defer owner.releaseTransaction() catch unreachable;
+        try add(tx, archive.path);
+        try tx.prepare();
+        try tx.preflight();
+        const manifest = tx.manifest().?;
+        const change = manifest.database_changes.items[0];
+        try std.testing.expectEqual(1, change.files.len);
+        try std.testing.expectEqual(2, change.backups.len);
+        try std.testing.expectEqualStrings("etc/missing", change.backups[0].name);
+        try std.testing.expect(change.backups[0].hash == null);
+        try std.testing.expectEqual(database_only, change.backups[1].hash == null);
+        try std.testing.expectError(error.MissingEffect, effect(manifest, "etc/missing", true));
+        const untouched = try f.tmp.dir.readFileAlloc(io, "root/etc/missing", a, .limited(100));
+        defer a.free(untouched);
+        try std.testing.expectEqualStrings("unowned configuration", untouched);
+    }
+}
+
+test "M8 absent backup paths still reject traversal" {
+    var f = try Fixture.init();
+    defer f.deinit();
+    var archive = try Archive.init(&.{.{ .path = ".PKGINFO", .contents = info ++ "backup = ../outside\n" }}, .none);
+    defer archive.deinit();
+    var owner = try f.owner(a);
+    defer owner.deinit() catch unreachable;
+    const tx = try owner.initializeTransaction(io, .{});
+    defer owner.releaseTransaction() catch unreachable;
+    try add(tx, archive.path);
+    try tx.prepare();
+    try std.testing.expectError(error.UnsafeArchivePath, tx.preflight());
+    try std.testing.expectEqualStrings("../outside", tx.manifest().?.failure.?.path.?);
+}
+
 test "M8 archive traversal hardlink escape duplicate entries and lying mtree are rejected" {
     const cases = [_]struct { entry: Archive.Entry, expected: anyerror }{
         .{ .entry = .{ .path = "../escape", .contents = "bad" }, .expected = error.UnsafeArchivePath },

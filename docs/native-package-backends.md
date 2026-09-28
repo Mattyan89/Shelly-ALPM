@@ -77,7 +77,10 @@ sandbox controls. `auto` expands using CachyOS runtime CPU/OS capabilities;
 mirror `$arch` uses the first configured architecture. The system hook directory
 precedes configured hook directories. `root_hooks_only` restricts bootstrap hooks
 to the guest. RLPM update previews copy local metadata into a separate database
-and reject transactions and aliased preview roots.
+and reject transactions and aliased preview roots. On the first RLPM update check,
+a legacy libalpm cache link to the configured local database is replaced with a
+private metadata copy. Other database links are rejected; manual cache removal
+is unnecessary when switching from libalpm.
 
 ## Verification and acceptance
 

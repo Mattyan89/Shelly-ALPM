@@ -97,19 +97,32 @@ pub fn preparePreview(io: std.Io, allocator: std.mem.Allocator, c: *Config, dest
     defer src.close(io);
     var source_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const source = source_buffer[0..try src.realPath(io, &source_buffer)];
-    try std.Io.Dir.cwd().createDirPath(io, destination);
+    std.Io.Dir.cwd().createDirPath(io, destination) catch |err| switch (err) {
+        error.NotDir => return error.InvalidPreviewRoot,
+        else => return err,
+    };
     var parent = try std.Io.Dir.cwd().openDir(io, destination, .{});
     defer parent.close(io);
     var parent_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const target = try std.fs.path.join(a, &.{ parent_buffer[0..try parent.realPath(io, &parent_buffer)], "local" });
-    // Compare canonical paths before clearing a prior snapshot. Reject aliases,
-    // overlapping roots and symlinks even when the configured database is linked.
+    // Compare canonical paths before clearing a prior snapshot. The cache's
+    // parent must never alias or overlap the live local database.
     if (containsPath(source, target) or containsPath(target, source)) return error.InvalidPreviewRoot;
     const stat = parent.statFile(io, "local", .{ .follow_symlinks = false }) catch |err| switch (err) {
         error.FileNotFound => null,
         else => return err,
     };
-    if (stat) |value| if (value.kind != .directory) return error.InvalidPreviewRoot;
+    if (stat) |value| {
+        if (value.kind == .sym_link) {
+            // libalpm's update preview uses a link to the live local database.
+            // Unlink that known legacy entry before making our private copy;
+            // never traverse it when deleting the previous snapshot.
+            var link_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+            const linked = link_buffer[0 .. parent.realPathFile(io, "local", &link_buffer) catch return error.InvalidPreviewRoot];
+            if (!std.mem.eql(u8, source, linked)) return error.InvalidPreviewRoot;
+            try parent.deleteFile(io, "local");
+        } else if (value.kind != .directory) return error.InvalidPreviewRoot;
+    }
     try parent.deleteTree(io, "local");
     try parent.createDirPath(io, "local");
     var dst = try parent.openDir(io, "local", .{});

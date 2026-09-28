@@ -754,7 +754,7 @@ fn sendAndReceiveHeadWithTimeout(
         while (select.cancel()) |_| {}
         if (interrupt_on_cleanup) req.markConnectionClosing();
     }
-    select.concurrent(.timeout, waitForRequestSetupTimeout, .{ io, timeout }) catch {
+    if (timeout != .none) select.concurrent(.timeout, waitForRequestSetupTimeout, .{ io, timeout }) catch {
         interrupt_on_cleanup = true;
         return error.Unexpected;
     };
@@ -815,7 +815,7 @@ fn readBodyWithTimeout(
         while (select.cancel()) |_| {}
         if (interrupt_on_cleanup) req.markConnectionClosing();
     }
-    select.concurrent(.timeout, waitForRequestSetupTimeout, .{ self.io, timeout }) catch {
+    if (timeout != .none) select.concurrent(.timeout, waitForRequestSetupTimeout, .{ self.io, timeout }) catch {
         interrupt_on_cleanup = true;
         return error.Unexpected;
     };
@@ -856,7 +856,9 @@ fn requestWithSetupTimeout(
     select.concurrent(.request, beginRequest, .{ client, method, uri, options }) catch
         return error.Unexpected;
     defer while (select.cancel()) |remaining| closeRequestSetupRace(remaining);
-    select.concurrent(.timeout, waitForRequestSetupTimeout, .{ io, timeout }) catch
+    // Timeout.none.sleep returns immediately. A disabled deadline must have
+    // no timer branch, even when cancellation still requires a race.
+    if (timeout != .none) select.concurrent(.timeout, waitForRequestSetupTimeout, .{ io, timeout }) catch
         return error.Unexpected;
 
     if (cancellation) |core| select.concurrent(.cancelled, waitForCancellation, .{core}) catch return error.Unexpected;
@@ -1228,6 +1230,7 @@ const TestServerMode = enum {
     raw,
     stall_headers,
     stall_body,
+    delayed_response,
     not_found,
     x_gzip_ignoring_identity,
     reuse_with_not_modified,
@@ -1313,6 +1316,17 @@ const TestHttpServer = struct {
                 );
                 try writer.flush();
                 try self.io.sleep(std.Io.Duration.fromSeconds(10), .awake);
+            },
+            .delayed_response => {
+                var read_buffer: [2048]u8 = undefined;
+                var stream_reader = stream.reader(self.io, &read_buffer);
+                try consumeTestRequest(&stream_reader.interface);
+                try self.io.sleep(.fromMilliseconds(50), .awake);
+                try writer.writeAll("HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\n");
+                try writer.flush();
+                try self.io.sleep(.fromMilliseconds(50), .awake);
+                try writer.writeAll("hello");
+                try writer.flush();
             },
             .not_found => {
                 var read_buffer: [2048]u8 = undefined;
@@ -1895,9 +1909,53 @@ test "redirects preserve bytes and disk-full injection preserves the previous de
     try std.testing.expectEqualStrings("old", bytes);
 }
 
-test "cancellation interrupts stalled headers and bodies even with timeouts disabled" {
-    const io = std.testing.io;
+test "disabled timeouts allow cancellable downloads with owned and shared clients" {
     const a = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init(a, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+    for ([_]bool{ false, true }) |shared| {
+        var temporary = std.testing.tmpDir(.{});
+        defer temporary.cleanup();
+        const destination = try testDestinationPath(a, io, &temporary);
+        defer a.free(destination);
+        var server = try TestHttpServer.init(io, .delayed_response);
+        defer server.deinit();
+        var serving = try io.concurrent(TestHttpServer.serve, .{&server});
+        defer _ = serving.cancel(io) catch {};
+        const url = try server.url(a);
+        defer a.free(url);
+        var session = DownloadSession.init(a, io, 0, .prefer_ipv4);
+        defer session.deinit();
+        const config: DownloadConfiguration = .{
+            .timeout_in_seconds = 0,
+            .response_header_timeout_in_seconds = 0,
+            .response_body_timeout_in_seconds = 0,
+            .max_retries = 0,
+        };
+        var core = if (shared) session.downloader(config) else CoreDownloader.init(a, io, config);
+        defer core.deinit();
+        core.quiet = true;
+        core.cancellation = struct {
+            fn cancelled(_: ?*anyopaque) bool {
+                return false;
+            }
+        }.cancelled;
+        const result = core.downloadToFile(url, destination, true);
+        if (result == .failure) return result.failure;
+        try std.testing.expect(result == .succes);
+        try serving.await(io);
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(io, destination, a, .limited(100));
+        defer a.free(bytes);
+        try std.testing.expectEqualStrings("hello", bytes);
+    }
+}
+
+test "cancellation interrupts stalled headers and bodies even with timeouts disabled" {
+    const a = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init(a, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
     for ([_]TestServerMode{ .stall_headers, .stall_body }) |mode| {
         var temporary = std.testing.tmpDir(.{});
         defer temporary.cleanup();

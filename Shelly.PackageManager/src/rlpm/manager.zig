@@ -125,10 +125,30 @@ pub const Manager = struct {
         var adapter: Adapter = undefined;
         try adapter.init(&self.owner, &operation);
         defer adapter.deinit() catch unreachable;
-        var result = try self.owner.refreshDatabases(self.io(), force);
+        var result = self.owner.refreshDatabases(self.io(), force) catch |err| {
+            if (err == error.Cancelled or err == error.OutOfMemory) return err;
+            try self.reportSyncFailure(&operation, self.config.database_path, err);
+            return error.SyncDbFailed;
+        };
         defer result.deinit();
-        try result.check();
+        var failed = false;
+        for (result.databases) |database| if (database.cause) |err| {
+            if (err == error.Cancelled or err == error.OutOfMemory) return err;
+            const name = (try self.owner.database(database.reference)).name;
+            try self.reportSyncFailure(&operation, name, err);
+            failed = true;
+        };
+        if (failed) return error.SyncDbFailed;
         status = .success;
+    }
+    fn reportSyncFailure(self: *Manager, operation: *op.Operation, subject: []const u8, err: anyerror) !void {
+        const diagnostics = @import("diagnostics");
+        const message = try std.fmt.allocPrint(self.allocator, "Could not refresh package database {f}. {s}\n\nTechnical details: {s}", .{ diagnostics.safe(subject), diagnostics.cause(err), @errorName(err) });
+        defer self.allocator.free(message);
+        operation.reportError(err, message, "rlpm", null, false);
+        self.dispatcher.raiseError(.{ .message = message });
+        if (self.operation_context == null and self.dispatcher.errorEvents.items.len == 0)
+            std.log.err("{s}", .{message});
     }
     pub fn sync_for_update_check(self: *Manager, force: bool) !void {
         try self.sync(force);

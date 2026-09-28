@@ -126,6 +126,29 @@ fn question(data: ?*anyopaque, borrowed: *rlpm.Callbacks.Question) !void {
     }
     try rlpm.OwnedQuestion.applyAnswer(borrowed, q.*);
 }
+fn reportFailure(self: *Adapter, err: anyerror) void {
+    var operation = self.operation.*;
+    const issue = if (self.owner.transaction()) |tx| blk: {
+        const manifest = tx.manifest() orelse break :blk null;
+        const failure = manifest.failure orelse break :blk null;
+        if (failure.package) |id| if (tx.plan()) |plan| {
+            operation.envelope.subject = plan.package(id).name;
+        };
+        break :blk failure;
+    } else null;
+    const diagnostics = @import("diagnostics");
+    const allocator = operation.context.allocator;
+    const message = diagnostics.format(allocator, err, .{
+        .operation = diagnostics.operationDescription(operation.envelope.kind),
+        .subject = operation.envelope.subject,
+        .path = if (issue) |failure| failure.path else null,
+    }) catch {
+        operation.reportError(err, @errorName(err), "rlpm", null, false);
+        return;
+    };
+    defer allocator.free(message);
+    operation.reportError(err, message, "rlpm", null, false);
+}
 fn event(data: ?*anyopaque, value: rlpm.Callbacks.Event) void {
     const self = from(data);
     switch (value) {
@@ -133,7 +156,7 @@ fn event(data: ?*anyopaque, value: rlpm.Callbacks.Event) void {
             .completed => self.operation.finish(.success),
             .interrupted => self.operation.finish(.cancelled),
             .failed => {
-                if (result.cause) |err| self.operation.reportError(err, @errorName(err), "rlpm", null, false);
+                if (result.cause) |err| self.reportFailure(err);
                 self.operation.finish(.failed);
             },
             .released => self.operation.finish(if (result.cause != null and result.cause.? != error.Cancelled) .failed else .cancelled),
@@ -330,4 +353,62 @@ test "lifecycle completion reports failures and abandonment once" {
         try std.testing.expectEqual(scenario + 1, capture.completions);
         try std.testing.expectEqual(if (scenario == 0) op.CompletionStatus.failed else .cancelled, capture.status.?);
     }
+}
+
+test "archive inventory failures report the package and mismatched path" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const root = try temporary.dir.realPathFileAlloc(io, ".", a);
+    defer a.free(root);
+    const path = try std.fs.path.join(a, &.{ root, "fixture.pkg.tar" });
+    defer a.free(path);
+    {
+        var file = try temporary.dir.createFile(io, "fixture.pkg.tar", .{});
+        defer file.close(io);
+        var buffer: [4096]u8 = undefined;
+        var writer = file.writer(io, &buffer);
+        var tar: std.tar.Writer = .{ .underlying_writer = &writer.interface };
+        try tar.writeFileBytes(".PKGINFO", "pkgname = archive-fixture\npkgver = 1-1\narch = any\n", .{ .mode = 0o644 });
+        try tar.writeFileBytes(".MTREE", "#mtree\n./missing type=file\n", .{ .mode = 0o644 });
+        try tar.writeFileBytes("present", "payload", .{ .mode = 0o644 });
+        try tar.finishPedantically();
+        try writer.interface.flush();
+    }
+    var owner = try rlpm.Owner.init(io, a, .{ .root = root, .database_path = root }, &.{});
+    defer owner.deinit() catch unreachable;
+    var context = op.OperationContext.init(a, io);
+    defer context.deinit();
+    const Capture = struct {
+        failures: usize = 0,
+        package: bool = false,
+        path: bool = false,
+        explanation: bool = false,
+        fn event(data: ?*anyopaque, value: op.Event) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            if (value == .failure and value.failure.err == error.ArchiveInventoryMismatch) {
+                self.failures += 1;
+                self.package = std.mem.eql(u8, value.failure.envelope.subject orelse "", "archive-fixture");
+                self.path = std.mem.indexOf(u8, value.failure.message, "Path: missing") != null;
+                self.explanation = std.mem.indexOf(u8, value.failure.message, "file list does not match") != null;
+            }
+        }
+    };
+    var capture: Capture = .{};
+    _ = try context.subscribe(.{ .function = Capture.event, .data = &capture });
+    var operation = context.begin(.{ .backend = .alpm, .kind = .update, .subject = "rlpm" });
+    defer operation.finish(.failed);
+    var adapter: Adapter = undefined;
+    try adapter.init(&owner, &operation);
+    defer adapter.deinit() catch unreachable;
+    const tx = try owner.initializeTransaction(io, .{});
+    defer owner.releaseTransaction() catch unreachable;
+    var package: ?rlpm.Package = try owner.loadPackage(io, path, .local_file, .{});
+    defer if (package) |*value| value.deinit();
+    try tx.takeArchive(&package);
+    try tx.prepare();
+    try std.testing.expectError(error.ArchiveInventoryMismatch, tx.preflight());
+    try std.testing.expectEqual(1, capture.failures);
+    try std.testing.expect(capture.package and capture.path and capture.explanation);
 }

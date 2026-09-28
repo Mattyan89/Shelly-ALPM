@@ -13,6 +13,8 @@ pub const InitError = error{
     ConfigParseFailed,
     BackendUnavailable,
     InvalidBackend,
+    InvalidPreviewRoot,
+    InvalidLocalDatabaseEntry,
 };
 pub const TransactionError = error{
     NoHandle,

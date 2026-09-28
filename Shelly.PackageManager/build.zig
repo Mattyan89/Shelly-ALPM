@@ -58,6 +58,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "operation_context", .module = operation_context_mod },
             .{ .name = "Shelly_Rlpm", .module = rlpm_dependency.module("Shelly_Rlpm") },
+            .{ .name = "diagnostics", .module = diagnostics },
         },
     });
     const rlpm_adapter_tests = b.addRunArtifact(b.addTest(.{ .root_module = rlpm_adapter }));

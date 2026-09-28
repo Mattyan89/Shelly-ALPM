@@ -49,6 +49,8 @@ pub const Manager = struct {
                 const native = Rlpm.init(allocator, environ, options) catch |err| return switch (err) {
                     error.OutOfMemory => error.InitFailed,
                     error.ConfigParseFailed => error.ConfigParseFailed,
+                    error.InvalidPreviewRoot => error.InvalidPreviewRoot,
+                    error.InvalidLocalDatabaseEntry => error.InvalidLocalDatabaseEntry,
                     else => error.InitFailed,
                 };
                 self.* = .{ .engine = .{ .rlpm = native }, .allocator = allocator, .config = &native.config, .dispatcher = &native.dispatcher };

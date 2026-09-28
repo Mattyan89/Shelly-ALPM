@@ -85,6 +85,42 @@ test "native backend archive install query reason and removal in private roots" 
     }
 }
 
+test "native backend missing backup members match libalpm and preserve unrelated files" {
+    for ([_]pm.alpm.Backend{ .libalpm, .rlpm }) |backend| {
+        if (!backend.available()) continue;
+        var fixture = try Fixture.init(backend);
+        defer fixture.deinit();
+        {
+            var file = try fixture.temp.dir.createFile(t.io, "fixture.pkg.tar", .{});
+            defer file.close(t.io);
+            var out: [4096]u8 = undefined;
+            var writer = file.writer(t.io, &out);
+            var tar: std.tar.Writer = .{ .underlying_writer = &writer.interface };
+            try tar.writeFileBytes(".PKGINFO", "pkgname = backend-fixture\npkgver = 1-1\narch = any\nbackup = etc/missing\nbackup = etc/present\n", .{ .mode = 0o644 });
+            try tar.writeFileBytes("etc/present", "configuration", .{ .mode = 0o644 });
+            try tar.finishPedantically();
+            try writer.interface.flush();
+        }
+        try fixture.temp.dir.createDirPath(t.io, "root/etc");
+        try fixture.temp.dir.writeFile(t.io, .{ .sub_path = "root/etc/missing", .data = "unowned configuration" });
+        const manager = try fixture.manager();
+        defer manager.deinit();
+        // Reinstallation must also leave the unrelated file alone.
+        for (0..2) |_| {
+            try manager.install_local_packages(&.{fixture.archive}, .{ .nohooks = true, .noscriptlet = true });
+            const record = try fixture.temp.dir.readFileAlloc(t.io, "db/local/backend-fixture-1-1/files", t.allocator, .limited(4096));
+            defer t.allocator.free(record);
+            try t.expect(std.mem.indexOf(u8, record, "etc/missing\t(null)\n") != null);
+            try t.expect(std.mem.indexOf(u8, record, "%FILES%\netc/present\n") != null);
+        }
+        var targets = [_][:0]const u8{"backend-fixture"};
+        try manager.remove_packages_with_confirmation(&targets, .{ .nohooks = true, .noscriptlet = true }, true, .already_approved);
+        const untouched = try fixture.temp.dir.readFileAlloc(t.io, "root/etc/missing", t.allocator, .limited(100));
+        defer t.allocator.free(untouched);
+        try t.expectEqualStrings("unowned configuration", untouched);
+    }
+}
+
 test "native backend switching reopens compatible state and respects the shared lock" {
     if (!pm.alpm.libalpm_enabled) return;
     for ([_]pm.alpm.Backend{ .libalpm, .rlpm }) |first| {
@@ -238,11 +274,16 @@ test "native backend RLPM preview copies metadata and rejects database aliases a
         try manager.install_local_packages(&.{fixture.archive}, .{ .nohooks = true, .noscriptlet = true });
     }
     const preview = try std.fs.path.join(fixture.arena.allocator(), &.{ fixture.options.database_path.?, "../preview" });
+    // The libalpm frontend leaves this link in its reusable update-check cache.
+    // Switching to RLPM must replace the link without traversing/deleting it.
+    try fixture.temp.dir.createDirPath(t.io, "preview");
+    try fixture.temp.dir.symLink(t.io, "../db/local", "preview/local", .{ .is_directory = true });
     fixture.options.temp_root_path = preview;
     {
         const manager = try fixture.manager();
         defer manager.deinit();
         try t.expect(manager.is_package_installed("backend-fixture"));
+        try t.expectEqual(std.Io.File.Kind.directory, (try fixture.temp.dir.statFile(t.io, "preview/local", .{ .follow_symlinks = false })).kind);
         try t.expectError(error.CommitFailed, manager.install_local_packages(&.{fixture.archive}, .{}));
     }
     // Reopening also replaces an old snapshot safely.
@@ -253,14 +294,64 @@ test "native backend RLPM preview copies metadata and rejects database aliases a
     }
     try fixture.temp.dir.symLink(t.io, "db", "db-alias", .{ .is_directory = true });
     fixture.options.temp_root_path = try std.fs.path.join(fixture.arena.allocator(), &.{ fixture.options.database_path.?, "../db-alias" });
-    if (fixture.manager()) |manager| {
-        manager.deinit();
-        return error.ExpectedPreviewAliasRejection;
-    } else |_| {}
+    try t.expectError(error.InvalidPreviewRoot, fixture.manager());
+    // A link to a different directory is not the legacy libalpm cache entry.
+    // Keep it and its target intact, and preserve the specific error.
+    try fixture.temp.dir.createDirPath(t.io, "unrelated");
+    try fixture.temp.dir.writeFile(t.io, .{ .sub_path = "unrelated/keep", .data = "keep" });
+    try fixture.temp.dir.createDirPath(t.io, "other-preview");
+    try fixture.temp.dir.symLink(t.io, "../unrelated", "other-preview/local", .{ .is_directory = true });
+    fixture.options.temp_root_path = try std.fs.path.join(fixture.arena.allocator(), &.{ fixture.options.database_path.?, "../other-preview" });
+    try t.expectError(error.InvalidPreviewRoot, fixture.manager());
+    try t.expectEqual(std.Io.File.Kind.sym_link, (try fixture.temp.dir.statFile(t.io, "other-preview/local", .{ .follow_symlinks = false })).kind);
+    try fixture.temp.dir.access(t.io, "unrelated/keep", .{});
     fixture.options.temp_root_path = null;
     const manager = try fixture.manager();
     defer manager.deinit();
     try t.expect(manager.is_package_installed("backend-fixture"));
+}
+
+test "native backend RLPM sync reports repository causes through both event interfaces" {
+    var fixture = try Fixture.init(.rlpm);
+    defer fixture.deinit();
+    try fixture.temp.dir.writeFile(t.io, .{ .sub_path = "pacman.conf", .data = "[options]\nArchitecture = auto\nSigLevel = Never\n[unavailable]\nSigLevel = Never\n" });
+    const manager = try fixture.manager();
+    defer manager.deinit();
+    var context = pm.OperationContext.init(t.allocator, t.io);
+    defer context.deinit();
+    const Capture = struct {
+        cause: ?anyerror = null,
+        repository_reported: bool = false,
+        legacy_reported: bool = false,
+        completion: ?pm.operation.CompletionStatus = null,
+        fn event(data: ?*anyopaque, value: pm.operation.Event) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            switch (value) {
+                .failure => |failure| {
+                    self.cause = failure.err;
+                    self.repository_reported = std.mem.indexOf(u8, failure.message, "unavailable") != null and
+                        std.mem.indexOf(u8, failure.message, "NoServers") != null;
+                },
+                .completed => |completion| self.completion = completion.status,
+                else => {},
+            }
+        }
+        fn legacy(data: ?*anyopaque, value: pm.alpm.events.ErrorArgs) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            self.legacy_reported = std.mem.indexOf(u8, value.message, "unavailable") != null and
+                std.mem.indexOf(u8, value.message, "NoServers") != null;
+        }
+    };
+    var capture: Capture = .{};
+    _ = try context.subscribe(.{ .function = Capture.event, .data = &capture });
+    _ = try manager.dispatcher.addErrorHandler(.{ .function = Capture.legacy, .data = &capture });
+    manager.setOperationContext(&context);
+    defer manager.setOperationContext(null);
+    try t.expectError(error.SyncDbFailed, manager.sync_for_update_check(true));
+    try t.expectEqual(error.NoServers, capture.cause.?);
+    try t.expect(capture.repository_reported and capture.legacy_reported);
+    try t.expectEqual(pm.operation.CompletionStatus.failed, capture.completion.?);
+    try t.expectError(error.FileNotFound, fixture.temp.dir.statFile(t.io, "db/db.lck", .{}));
 }
 
 test "native backend configuration maps extended options and rejects invalid parallelism" {

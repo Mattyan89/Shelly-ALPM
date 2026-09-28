@@ -236,15 +236,20 @@ const Builder = struct {
         }
         // The mtree must describe the actual stream. Reject disagreement instead
         // of letting conflict checks and extraction see different payloads.
+        self.current_path = if (archive.package.files_source == .mtree) ".MTREE" else archive.package.archive_path;
         if (archive.package.files.len != payload.items.len) return error.ArchiveInventoryMismatch;
         for (archive.package.files) |file| {
+            self.current_path = file.name;
             const path = std.mem.trimEnd(u8, try Root.normalize(file.name), "/");
             const entry = payload.items[archive.by_path.get(path) orelse return error.ArchiveInventoryMismatch];
             if (std.mem.endsWith(u8, file.name, "/") != (entry.file.kind == .directory)) return error.ArchiveInventoryMismatch;
         }
+        // PKGINFO may retain backup declarations for files no longer shipped
+        // (for example java.policy in JDK 27). libalpm keeps those records
+        // without a hash; they are not assertions about the archive inventory.
         for (archive.package.backups) |backup| {
+            self.current_path = backup.name;
             _ = try Root.normalize(backup.name);
-            if (!archive.by_path.contains(backup.name)) return error.ArchiveInventoryMismatch;
         }
         // Downstream phases consume the scanned stream's metadata, never a
         // size/mode/scriptlet assertion that only appeared in .MTREE.
@@ -577,8 +582,9 @@ const Builder = struct {
             std.mem.sort(File, files, {}, fileLess);
             const backups = try self.a.alloc(@import("BackupFile.zig"), archive.package.backups.len);
             for (backups, archive.package.backups) |*backup, original| {
-                const entry = archive.find(original.name).?;
-                backup.* = .{ .name = original.name, .hash = if (self.tx.flags.database_only or try self.matches(.no_extract, entry.file.name)) null else entry.new_hash };
+                backup.* = .{ .name = original.name, .hash = null };
+                const entry = archive.find(original.name) orelse continue;
+                if (!self.tx.flags.database_only and !try self.matches(.no_extract, entry.file.name)) backup.hash = entry.new_hash;
                 if (entry.file.kind == .symlink) for (self.m.entries.items) |effect| {
                     if (effect.package == archive.id and effect.archive_index != null and std.mem.eql(u8, effect.path, original.name)) backup.hash = effect.new_hash;
                 };
