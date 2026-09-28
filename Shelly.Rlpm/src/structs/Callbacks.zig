@@ -13,6 +13,7 @@ pub const Phase = enum {
     conflicts,
     resolve_dependencies,
     inter_conflicts,
+    file_conflicts,
     transaction,
     integrity,
     load_packages,

@@ -24,6 +24,7 @@ system_upgrade: bool = false,
 allow_downgrade: bool = false,
 owned_plan: ?Plan = null,
 downloaded_files: ?[]@import("Downloads.zig").File = null,
+owned_manifest: ?@import("ExecutionManifest.zig") = null,
 snapshot: [32]u8,
 lock: ?@import("DatabaseLock.zig") = null,
 
@@ -32,6 +33,41 @@ pub fn result(self: *const Transaction) Result {
 }
 pub fn plan(self: *const Transaction) ?*const Plan {
     return if (self.owned_plan) |*value| value else null;
+}
+pub fn manifest(self: *const Transaction) ?*const @import("ExecutionManifest.zig") {
+    return if (self.owned_manifest) |*value| value else null;
+}
+/// Downloads if needed, then constructs a read-only filesystem execution plan.
+/// Failed preflight retains structured diagnostics until transaction release.
+pub fn preflight(self: *Transaction) !void {
+    try self.begin(.prepared);
+    defer self.owner.busy = false;
+    if (self.flags.download_only) return self.owner.transactionFailure(error.InvalidTransactionState);
+    self.preflightInternal() catch |err| return self.failed(err);
+}
+fn preflightInternal(self: *Transaction) !void {
+    try self.checkSnapshot();
+    if (self.owned_manifest != null) return self.revalidateInternal();
+    try self.downloadInternal();
+    self.owned_manifest = try @import("ExecutionManifest.zig").init(self.owner.allocator, self.owner.configuration.root, self.owner.configuration.database_path);
+    try @import("Preflight.zig").populate(self, &self.owned_manifest.?);
+    try self.checkSnapshot();
+    try self.owned_manifest.?.revalidate(self.owner.configuration.root, self.owner.configuration.database_path, self.owner.configuration.check_space);
+    try self.owner.checkCancelled();
+}
+/// Execution and post-hook code must call this before consuming the manifest.
+/// Each actual mutation must additionally use confined descriptor operations.
+pub fn revalidatePreflight(self: *Transaction) !void {
+    try self.begin(.prepared);
+    defer self.owner.busy = false;
+    self.revalidateInternal() catch |err| return self.failed(err);
+}
+fn revalidateInternal(self: *Transaction) !void {
+    try self.checkSnapshot();
+    const value = if (self.owned_manifest) |*value| value else return error.IncompletePreflight;
+    try @import("Preflight.zig").reverify(self, value);
+    try value.revalidate(self.owner.configuration.root, self.owner.configuration.database_path, self.owner.configuration.check_space);
+    try self.owner.checkCancelled();
 }
 
 fn begin(self: *Transaction, expected: State) !void {
@@ -163,6 +199,10 @@ fn checkSnapshot(self: *Transaction) !void {
     if (!std.mem.eql(u8, &self.snapshot, &try Snapshot.capture(self.owner, self.io))) return error.StaleDatabaseState;
 }
 fn failed(self: *Transaction, err: anyerror) anyerror {
+    if (self.owned_manifest) |*value| {
+        if (value.failure == null) value.failure = .{ .cause = err };
+        value.complete = false;
+    }
     self.transition(if (err == error.Cancelled) .interrupted else .failed, err);
     return self.owner.transactionFailure(err);
 }
@@ -180,6 +220,7 @@ pub fn destroy(self: *Transaction) !void {
     defer self.storage.deinit();
     defer self.targets.deinit(allocator);
     defer self.removals.deinit(allocator);
+    if (self.owned_manifest) |*value| value.deinit();
     if (self.downloaded_files) |files| {
         for (files) |*file| file.deinit();
         allocator.free(files);

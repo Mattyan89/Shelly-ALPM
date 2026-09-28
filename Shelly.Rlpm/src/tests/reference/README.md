@@ -241,3 +241,21 @@ nonempty commits independently require DOWNLOADONLY and an empty removal list.
 Six outcomes are replayed by `src/tests/download.zig`; rejected-file cache retention
 is an explicitly documented staging difference. These additions do not change
 any original frozen asset.
+
+M8 adds [record_preflight.py](record_preflight.py) and
+[preflight.json](preflight.json):
+
+```sh
+python3 src/tests/reference/record_preflight.py \
+  --library /usr/lib/libalpm.so.16.0.1
+```
+
+The 15 cases use the pinned library hash and disposable private roots. The
+recorder commits inert generated `conf` payloads to observe private native
+preflight/backup routines. Hooks/scriptlets are disabled and root, DB path and
+flags are independently checked immediately before commit. No host package
+database, downloads, hooks or scriptlets are used. Normal tests replay conflicts,
+backup/pattern decisions and resulting inventory through the RLPM manifest;
+they do not run an RLPM executor or load libalpm. The original frozen assets and
+manifest remain unchanged. See [preflight.md](../../../preflight.md) for safety
+differences and remaining executor/privileged-mount validation.

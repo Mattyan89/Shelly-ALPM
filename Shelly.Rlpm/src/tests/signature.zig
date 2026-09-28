@@ -557,6 +557,48 @@ test "M7 signed downloads acquire unknown keys only with consent and revalidate 
     try std.testing.expectEqualStrings(SignatureFixture.contents, pinned);
 }
 
+test "M8 preflight retains remote signature policy and revalidates before execution" {
+    var fixture = try SignatureFixture.init();
+    defer fixture.deinit() catch unreachable;
+    const io = std.testing.io;
+    const a = std.testing.allocator;
+    var archive = try @import("archive_fixture.zig").init(&.{
+        .{ .path = ".PKGINFO", .contents = "pkgname = demo\npkgver = 1-1\narch = any\n" },
+        .{ .path = "payload", .contents = "signed payload" },
+    }, .none);
+    defer archive.deinit();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(io, archive.path, a, .limited(65536));
+    defer a.free(bytes);
+    try fixture.temporary.dir.writeFile(io, .{ .sub_path = "demo.pkg.tar", .data = bytes });
+    try fixture.sign("demo.pkg.tar", SignatureFixture.identity, &.{});
+    const path = try fixture.dataPath("demo.pkg.tar");
+    defer a.free(path);
+    try fixture.temporary.dir.createDirPath(io, "installed-root");
+    const root = try fixture.dataPath("installed-root");
+    defer a.free(root);
+    var owner = try rlpm.Owner.init(io, a, .{
+        .root = root,
+        .database_path = fixture.path,
+        .gpg_directory = fixture.signer_home,
+        .local_file_signature_policy = .{ .package = .disabled },
+        .remote_file_signature_policy = .{ .package = .required },
+    }, &.{});
+    defer owner.deinit() catch unreachable;
+    const tx = try owner.initializeTransaction(io, .{});
+    defer owner.releaseTransaction() catch unreachable;
+    var package: ?rlpm.Package = try owner.loadPackage(io, path, .remote_file, .{});
+    defer if (package) |*pkg| pkg.deinit();
+    try tx.takeArchive(&package);
+    try tx.prepare();
+    try tx.preflight();
+    try std.testing.expect(tx.manifest().?.archives.items[0].package.validation.pgp);
+    try tx.revalidatePreflight();
+    try fixture.temporary.dir.writeFile(io, .{ .sub_path = "demo.pkg.tar.sig", .data = "corrupted detached signature" });
+    try std.testing.expectError(error.InvalidSignature, tx.revalidatePreflight());
+    try std.testing.expectEqual(.failed, tx.result().state);
+    try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "installed-root/payload", .{}));
+}
+
 test "M7 signed refresh publishes a matched pair and preserves it after bad signatures" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;

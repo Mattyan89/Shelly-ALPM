@@ -34,6 +34,8 @@ pub const Resolver = @import("structs/Resolver.zig");
 pub const TransactionPlan = @import("structs/TransactionPlan.zig");
 pub const TransactionFlags = @import("structs/TransactionFlags.zig");
 pub const Transaction = @import("structs/Transaction.zig");
+pub const ExecutionManifest = @import("structs/ExecutionManifest.zig");
+pub const PathPatterns = @import("structs/PathPatterns.zig");
 pub const OwnedQuestion = @import("structs/OwnedQuestion.zig");
 pub const version = "0.0.0";
 
@@ -49,6 +51,7 @@ pub const Capabilities = struct {
     resolution_plans: bool = true,
     transaction_lifecycle: bool = true,
     downloads: bool = true,
+    filesystem_preflight: bool = true,
     transactions: bool = false,
     localization: bool = false,
 };

@@ -412,15 +412,39 @@ fn loadPackageInternal(self: *Owner, io: std.Io, path: []const u8, source: Packa
     errdefer loaded.deinit();
     if (expected) |package_info| {
         if (!std.mem.eql(u8, loaded.name, package_info.name) or !std.mem.eql(u8, loaded.version.raw, package_info.version.raw)) return error.PackageIdentityMismatch;
+        // A repository-authenticated archive can later be transferred into a
+        // transaction. Preserve the verification inputs and CachyOS provenance
+        // so preflight can repeat checks without requiring a detached sidecar
+        // when this repository supplied an embedded signature.
+        const owned = loaded.archive_arena.?.allocator();
+        inline for (.{ "md5_sum", "sha256_sum", "base64_signature", "repository_filename" }) |field| {
+            @field(loaded, field) = if (@field(package_info, field)) |value| try owned.dupe(u8, value) else null;
+        }
+        loaded.installed_database = try owned.dupe(u8, package_info.database_name);
     }
     loaded.archive_path = try loaded.archive_arena.?.allocator().dupe(u8, path);
     loaded.validation = validation;
+    loaded.archive_signature_policy = policy;
+    loaded.archive_source = switch (source) {
+        .local_file => .local_file,
+        .remote_file => .remote_file,
+        .repository => .repository,
+    };
+    loaded.archive_repository = if (source == .repository) source.repository.database else null;
     try self.checkCancelled();
     loaded.verified_archive = snapshot;
     return loaded;
 }
 pub fn verificationContext(self: *Owner) Verification.Context {
     return .{ .gpg_directory = self.configuration.gpg_directory, .acquisition = self.configuration.key_acquisition, .question_context = self, .question = importQuestion, .check_cancelled = verificationCancellation };
+}
+pub fn matchNoExtract(self: *const Owner, path: []const u8) !@import("PathPatterns.zig").Match {
+    try self.checkIdle();
+    return @import("PathPatterns.zig").match(self.allocator, self.configuration.no_extract, path);
+}
+pub fn matchNoUpgrade(self: *const Owner, path: []const u8) !@import("PathPatterns.zig").Match {
+    try self.checkIdle();
+    return @import("PathPatterns.zig").match(self.allocator, self.configuration.no_upgrade, path);
 }
 fn importQuestion(context: ?*anyopaque, question: *Callbacks.Question) !void {
     const self: *Owner = @ptrCast(@alignCast(context.?));

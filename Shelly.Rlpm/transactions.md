@@ -1,9 +1,9 @@
 # Transactions, locks and callbacks
 
-M6 is accepted. M7 adds verified acquisition and DOWNLOADONLY commits through
-[the shared download layer](downloads.md). `transaction_lifecycle` and `downloads`
+M0–M7 are accepted. M7 adds verified acquisition and DOWNLOADONLY commits through
+[the shared download layer](downloads.md). `transaction_lifecycle`, `downloads` and `filesystem_preflight`
 are enabled; `transactions` remains false. Normal nonempty `commit()` still returns
-`CommitUnavailable`, retaining the prepared plan and lock. M8–M10 supply preflight,
+`CommitUnavailable`, retaining the prepared plan and lock. M8 provides [filesystem preflight](preflight.md); M9–M10 supply
 hooks and installed-state changes. DOWNLOADONLY can complete with zero packages
 committed to the installed database.
 
@@ -33,7 +33,7 @@ active pointer: do not retry cleanup using the old pointer.
 | --- | --- |
 | `initialized` | `addTarget`, `addPackage`, `takeArchive`, `remove`, `systemUpgrade`, `prepare`, release |
 | `preparing` | Synchronous callbacks; atomic cancellation only |
-| `prepared` | Read the plan, `downloadSize`, `download`, `commit`, release |
+| `prepared` | Read the plan/manifest, `downloadSize`, `download`, `preflight`, `revalidatePreflight`, `commit`, release |
 | `committing` | Synchronous callbacks; atomic cancellation only |
 | `completed`, `failed`, `interrupted` | Read retained outcome/diagnostics, release |
 | `released` | Final lifecycle notification; pointer expires after callback |
@@ -64,7 +64,7 @@ before calling `alpm_trans_prepare`; question timing follows that distinction.
 with an arena, nulls the caller's optional only on success, and preserves caller
 ownership on every rejection or allocation failure. Accepted archives, including
 skipped ones, remain transaction-owned until release. A prepared plan independently
-retains sealed descriptors. Metadata-only archives gain no verification claim.
+retains sealed descriptors. Metadata-only archives gain no verification claim until successful preflight.
 
 ## Lock and snapshot contract
 

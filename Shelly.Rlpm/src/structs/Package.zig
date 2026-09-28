@@ -82,6 +82,10 @@ archive_arena: ?std.heap.ArenaAllocator = null,
 /// Owned only by verified archive packages. Member/payload readers reopen this
 /// sealed file, while archive_path retains the caller's original pathname.
 verified_archive: ?@import("ImmutableFile.zig") = null,
+/// Preserve the source's effective policy for transaction preflight rechecks.
+archive_signature_policy: ?@import("SignaturePolicy.zig") = null,
+archive_source: enum { local_file, remote_file, repository } = .local_file,
+archive_repository: ?@import("DatabaseRef.zig") = null,
 
 /// Compatibility entry point for metadata loading. This does not verify payloads
 /// or signatures. The owned result must be released exactly once with deinit.

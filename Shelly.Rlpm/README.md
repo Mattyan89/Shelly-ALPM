@@ -3,7 +3,7 @@
 RLPM is the native Zig package backend under development. The
 [completion plan](../docs/rlpm-libalpm-completion-plan.md) targets libalpm's
 functional behavior **including CachyOS extensions**, following the existing
-Owner/Database/Package design. M0–M6 are accepted; M7 is implemented and awaiting acceptance before M8. RLPM is not yet a replacement for libalpm.
+Owner/Database/Package design. M0–M7 are accepted; M8 is implemented and awaiting acceptance before M9. RLPM is not yet a replacement for libalpm.
 
 M1 exports an owning `Owner` with copied options, ordered repository registration,
 read-only local queries, stable database identity, package cache generations,
@@ -32,7 +32,7 @@ provider questions, future-state checks and dependency ordering. The
 M6 adds owned transactions, exclusive locks, frozen preparation, typed lifecycle
 events and PackageManager deferred-question/cancellation support. The
 [transaction guide](transactions.md) covers the state machine and lock contract.
-Normal nonempty commit remains unavailable until M8–M10 supply execution.
+Normal nonempty commit remains unavailable until M9–M10 supply execution.
 Provenance writes and hook/scriptlet network isolation remain required
 later milestones.
 
@@ -40,11 +40,16 @@ M7 adds the shared PackageManager transport, verified cache acquisition, reposit
 refresh and DOWNLOADONLY transactions. See [downloads.md](downloads.md) for APIs,
 publication/recovery, privilege controls, reference differences and validation.
 The root-only sandbox fixture is compile-checked; its execution still requires
-privileges unavailable in the local session. Normal installation remains M8–M10.
+privileges unavailable in the local session. Normal installation remains M9–M10.
+
+M8 adds full-archive verification and an owned filesystem preflight manifest,
+including file conflicts, backup/pattern decisions, root-relative inspection and
+space/access checks. See [preflight.md](preflight.md) for the API, executor
+contract, pinned reference evidence and compatibility boundaries.
 
 ## Build and tests
 
-Use Linux with `/proc` and memfd sealing, Zig 0.16.0, libc, libarchive, SQLite and libcurl development headers/libraries
+Use Linux with `openat2`, `/proc` and memfd sealing, Zig 0.16.0, libc, libarchive, SQLite and libcurl development headers/libraries
 (SQLite must support `sqlite3_deserialize`). `Shelly.Key` is a local
 module dependency. From this directory:
 
@@ -59,13 +64,14 @@ module dependency. From this directory:
 | `zig build test-verification` | M4 policy/status, checksums, reference cases, imports and sealed-file tests |
 | `zig build test-resolver` | M5 plans, flags, questions, removal/upgrade behavior and 314 reference scenarios |
 | `zig build test-transaction` | M6 lifecycle, locks/process contention, archive ownership, cancellation and 16 reference scenarios |
+| `zig build test-preflight` | M8 private-root conflicts, backups, links, current policies, space and 15 pinned oracle cases |
 | `zig build test-download` | M7 cache, refresh, URL batches, DOWNLOADONLY and six pinned oracle cases |
 | `zig build check-download-sandbox` | Compile privileged sandbox fixture; run explicitly as root with `test-download-sandbox` |
 | `zig build test-metadata` | M2 relation, archive, metadata and independent reference fixtures |
 | `zig build test-compatibility` | Frozen reference integrity, complete API inventory and evidence schema |
 | `zig build test-version` | Existing fixed version expectations and ownership tests |
 | `zig build test-package` | Package archive/metadata tests, including imported unit tests |
-| `zig build test-signature` | Fourteen real GPG regression, trust, key and publication cases |
+| `zig build test-signature` | Fifteen real GPG regression, trust, key and publication cases |
 | `zig build test-host-readonly` | Opt-in smoke reads of `/var/lib/pacman/local` and `sync` |
 
 All test modules honor `-Doptimize=ReleaseSafe` and the other standard optimize
@@ -92,7 +98,7 @@ Root and database directories must already exist. Initialization creates missing
 local storage/version 9 by default; explicit `.read_only` mode never writes.
 Descriptions/files/groups load lazily. Registered sync databases need not exist;
 queries load their tar/SQLite archives under their effective signature policy.
-Signature policy enforcement, downloads and `transaction_lifecycle` are enabled
+Signature policy enforcement, downloads, `filesystem_preflight` and `transaction_lifecycle` are enabled
 in capability reporting; package-executing transactions remain disabled. Metadata-only `Package.loadArchive` is explicitly
 unverified; `Owner.loadPackage` performs policy checks and retains the verified
 bytes. Sealed snapshots require RAM/swap proportional to archive size.
@@ -102,7 +108,7 @@ bytes. Sealed snapshots require RAM/swap proportional to archive size.
   [Reference documentation](src/tests/reference/README.md) explains attribution,
   corpus provenance and optional capture on disposable roots.
 - The [ledger](src/tests/compatibility-ledger.tsv) tracks 493 public symbols and
-  25 behavioral contracts. There are 135 missing, 350 partial and 33
+  25 behavioral contracts. There are 127 missing, 358 partial and 33
   representation-only rows. No row claims verified full compatibility, and
   every CachyOS extension remains required.
 - [Owner reference fixtures](src/tests/fixtures/owner-reference.json) capture
@@ -129,7 +135,16 @@ bytes. Sealed snapshots require RAM/swap proportional to archive size.
   digest/issuer expectations. Normal tests replay these offline without libalpm
   or GPG. The original frozen corpus remains unchanged.
 
-M7 validation on 2026-09-28: `test` passes **148 tests** in Debug and ReleaseSafe
+M8 validation on 2026-09-28: `test` passes **167 tests** in Debug and ReleaseSafe
+(49 library, 114 external consumer, four ledger checks). The **19** focused
+preflight tests overlap that suite and replay **15** pinned native outcomes.
+PackageManager downloader/adapter regressions pass **65 tests** in both modes.
+All **15 real GPG tests** pass, including M8 policy retention and reverification.
+M8 is awaiting acceptance; M9 has not started. See [preflight.md](preflight.md)
+for stricter archive checks, conservative space estimates and the unexecuted
+privileged mount/extraction validation boundary. CI has not run remotely.
+
+Historical M7 validation on 2026-09-28: `test` passes **148 tests** in Debug and ReleaseSafe
 (49 library, 95 external consumer, four ledger checks). `test-download` reruns
 13 focused cases already included in that suite, including six pinned oracle
 cases. PackageManager's downloader and RLPM adapter targets pass **65 tests**
@@ -139,7 +154,7 @@ compiles in both modes but was not executed because sudo requires a password.
 The native Zig sandbox additionally passes its unprivileged child-process test
 in both modes, exercising all four filesystem/syscall switch combinations.
 See [downloads.md](downloads.md) for the API, deployment requirements and limits.
-M7 awaits acceptance; M8 has not started. CI is configured but has not run remotely.
+M7 is accepted. CI is configured but has not run remotely.
 
 Historical M5 validation on 2026-09-28: `test` passed **117 tests** in Debug and ReleaseSafe
 (47 library, 66 external consumer, four ledger checks). The 12 focused resolver

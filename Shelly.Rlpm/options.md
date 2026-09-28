@@ -66,7 +66,7 @@ these rows partial until the consuming milestones' fixtures pass.
 
 | Configuration field | Implemented now | Remaining consumer |
 | --- | --- | --- |
-| `root`, `database_path` | Independent canonical directory paths; immutable after initialization | M8–M10 execution |
+| `root`, `database_path` | Independent canonical directory paths; held descriptors and M8 confinement | M10 executor |
 | `local_database_mode` | Default creation/validation or explicit read-only local opening | — |
 | `database_extension` | Sync registration paths and replacement; rejects NUL/path separators | — |
 | `cache_directories` | Ordered cache search, current-policy verification and writable selection | — |
@@ -77,15 +77,15 @@ these rows partial until the consuming milestones' fixtures pass.
 | `architectures` | Owned list and M5 initial-target validation, including CachyOS architectures | M11 frontend auto mapping |
 | `ignore_packages`, `ignore_groups` | Owned lists, glob matching, candidate questions and upgrade filtering | — |
 | `assume_installed` | Owned unversioned/exact provisions, permissive raw versions, descriptions and M5 dependency checks | — |
-| `no_upgrade`, `no_extract`, `overwrite_files` | Owned patterns, including negation spelling | M8 matching/preflight; M10 file effects |
-| `check_space` | Boolean setting | M8 filesystem capacity checks |
-| `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Enforced inheritance, presence, crypto validity and trust; sealed package/database snapshots | M8 package preflight |
+| `no_upgrade`, `no_extract`, `overwrite_files` | Ordered glob/negation matching and M8 manifest decisions | M10 file effects |
+| `check_space` | Per-filesystem peak and native cushion; conservative staging estimate | M10 exact serialized DB sizes; privileged mount validation |
+| `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Enforced inheritance, presence, crypto validity and trust; sealed snapshots and M8 full-stream/current-policy checks | — |
 | `disable_download_timeout`, `parallel_downloads` | Shared bounded queue and cancellable setup/header/body deadlines | — |
 | `download_worker` | Optional installed helper path; default is the matching build artifact | M11 deployment wiring |
 | `sandbox_user` | Account lookup and child credential changes when native applicability requires it | Root-only integration must run in a privileged environment |
 | `sandbox.disable_filesystem`, `sandbox.disable_syscalls` | Independent Landlock and syscall filter controls in the child | Privileged integration |
 | `sandbox.disable_network` | CachyOS setting; global `setDisabled` updates all three switches | M9 hook/scriptlet/ldconfig behavior |
-| `callbacks` | Typed callbacks, owned deferred questions, transaction ordering and guarded dispatch | M8–M10 execution producers and audit logging |
+| `callbacks` | Typed callbacks, owned deferred questions, transaction ordering and guarded dispatch | M9–M10 execution producers and audit logging |
 | Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned lists, queries, resolver usage/priority, enforced inherited/explicit policy | — |
 
 `setOptions` constructs a complete replacement before publishing it. Failed
@@ -158,3 +158,7 @@ operations (such as list-helper temporary allocation) are returned directly.
 Transaction initialization freezes configuration and invalidates cached package
 references. Release the active transaction before reconfiguration, explicit cache
 reload/invalidation, or Owner teardown. See the [transaction guide](transactions.md).
+
+M8 also exposes `matchNoExtract` and `matchNoUpgrade` with native tri-state
+results. See [preflight.md](preflight.md) for pattern precedence, filesystem
+inspection, backup decisions, execution-manifest lifetimes and capacity limits.

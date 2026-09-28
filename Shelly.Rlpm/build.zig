@@ -88,6 +88,13 @@ pub fn build(b: *std.Build) void {
     }) });
     b.step("test-resolver", "Run M5 resolution, removal, system-upgrade and reference fixtures").dependOn(&b.addRunArtifact(resolver_tests).step);
 
+    const preflight_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/preflight.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    b.step("test-preflight", "Run M8 private-root archive, conflict, backup and space fixtures").dependOn(&b.addRunArtifact(preflight_tests).step);
     const sandbox_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/download_sandbox.zig"),
         .target = target,

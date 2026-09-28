@@ -23,6 +23,7 @@ pub const Category = enum {
     database,
     integrity,
     resolution,
+    file_conflict,
     stale_reference,
     busy,
     cancelled,
@@ -36,6 +37,9 @@ database: ?DatabaseRef = null,
 
 pub fn init(operation: Operation, cause: anyerror, database: ?DatabaseRef) Diagnostic {
     return .{ .operation = operation, .cause = cause, .database = database, .category = switch (cause) {
+        error.FileConflicts => .file_conflict,
+        error.StaleFilesystemState => .stale_reference,
+        error.PackageMetadataMismatch, error.UnsafeArchivePath, error.UnsafeHardlink, error.UnsafeSymlink, error.ArchiveInventoryMismatch, error.DuplicateArchivePath => .integrity,
         error.OutOfMemory => .memory,
         error.TargetNotFound, error.PackageIgnored, error.DuplicateTarget, error.InvalidArchitecture, error.UnsatisfiedDependencies, error.ConflictingDependencies, error.DuplicateFilename => .resolution,
         error.InvalidTransactionFlags, error.InvalidSnapshot => .invalid_argument,
