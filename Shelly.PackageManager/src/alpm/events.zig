@@ -416,6 +416,13 @@ pub const Dispatcher = struct {
         self.dispatch(ErrorArgs, &self.errorEvents, args);
     }
 
+    /// Deliver an error already published by the native operation adapter
+    /// without publishing a second operation failure with a generic code.
+    pub fn notifyErrorHandlers(self: *Dispatcher, args: ErrorArgs) void {
+        _ = self.error_generation.fetchAdd(1, .monotonic);
+        self.dispatch(ErrorArgs, &self.errorEvents, args);
+    }
+
     pub fn raiseInformational(self: *Dispatcher, args: InformationalArgs) void {
         if (self.operation) |operation| operation.packageStatus(.information, args.message, args.code orelse "alpm.information", @intFromEnum(args.event_type), args.package_name);
         self.dispatch(InformationalArgs, &self.informational, args);

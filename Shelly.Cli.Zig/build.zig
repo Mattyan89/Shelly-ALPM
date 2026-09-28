@@ -140,6 +140,7 @@ pub fn build(b: *std.Build) void {
         .name = "isolated-build-test",
         .root_module = isolated_test_module,
         .filters = &.{
+            "shellystrap",
             "isolated pkgver",
             "reviewed input paths cannot escape the staged source root",
             "isolated command failures preserve the stage and native exit code",

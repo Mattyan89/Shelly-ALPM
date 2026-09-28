@@ -54,6 +54,51 @@ test "native backend explicit unavailable selection fails before opening configu
     try t.expectError(error.BackendUnavailable, pm.Manager.init(t.allocator, t.environ, .{ .backend = .libalpm, .config_path = "/nonexistent/config" }));
 }
 
+test "native backend rejects a transitive build root requirement before download or payload writes" {
+    var fixture = try Fixture.init(.rlpm);
+    defer fixture.deinit();
+    fixture.options.rlpm_only_root = true;
+    try addRepository(&fixture);
+    {
+        var file = try fixture.temp.dir.createFile(t.io, "db/sync/testing.db", .{});
+        defer file.close(t.io);
+        var buffer: [4096]u8 = undefined;
+        var writer = file.writer(t.io, &buffer);
+        var tar: std.tar.Writer = .{ .underlying_writer = &writer.interface };
+        for ([_][2][]const u8{ .{ "recipe", "tool" }, .{ "tool", "pacman" }, .{ "pacman", "" } }) |entry| {
+            const path = try std.fmt.allocPrint(t.allocator, "{s}-1-1/desc", .{entry[0]});
+            defer t.allocator.free(path);
+            const desc = try std.fmt.allocPrint(t.allocator, "%NAME%\n{s}\n\n%VERSION%\n1-1\n\n%ARCH%\nany\n\n%FILENAME%\n{s}.pkg.tar\n\n%CSIZE%\n1\n\n%DEPENDS%\n{s}\n\n", .{ entry[0], entry[0], entry[1] });
+            defer t.allocator.free(desc);
+            try tar.writeFileBytes(path, desc, .{ .mode = 0o644 });
+        }
+        try tar.finishPedantically();
+        try writer.interface.flush();
+    }
+    const manager = try fixture.manager();
+    defer manager.deinit();
+    const Capture = struct {
+        chain_seen: bool = false,
+        fn receive(data: ?*anyopaque, value: pm.Manager.events.ErrorArgs) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            self.chain_seen = self.chain_seen or std.mem.indexOf(u8, value.message, "recipe -> tool -> pacman") != null;
+        }
+    };
+    var capture: Capture = .{};
+    _ = try manager.dispatcher.addErrorHandler(.{ .function = Capture.receive, .data = &capture });
+    var targets = [_][:0]const u8{"recipe"};
+    try t.expectError(error.UnsupportedBuildRootDependency, manager.install_packages(&targets, .{}));
+    try t.expect(capture.chain_seen);
+    const installed = try manager.get_installed_packages();
+    defer pm.Manager.OwnedPackage.deinitSlice(t.allocator, installed);
+    try t.expectEqual(@as(usize, 0), installed.len);
+    try t.expectError(error.FileNotFound, fixture.temp.dir.statFile(t.io, "db/db.lck", .{}));
+    var cache = try fixture.temp.dir.openDir(t.io, "cache", .{ .iterate = true });
+    defer cache.close(t.io);
+    var entries = cache.iterate();
+    try t.expectEqual(null, try entries.next(t.io));
+}
+
 test "native backend archive install query reason and removal in private roots" {
     for ([_]pm.Manager.Backend{ .libalpm, .rlpm }) |backend| {
         if (!backend.available()) continue;
@@ -427,5 +472,54 @@ test "native backend auto architecture and default hook paths survive refresh" {
             try t.expectEqualStrings(system, std.mem.trimEnd(u8, hooks[0], "/"));
             try t.expect(hooks.len >= 2);
         }
+    }
+}
+
+test "native backend forwards original transaction failures to bootstrap handlers without duplicating operation errors" {
+    for ([_]bool{ false, true }) |with_context| {
+        var fixture = try Fixture.init(.rlpm);
+        defer fixture.deinit();
+        {
+            var file = try fixture.temp.dir.createFile(t.io, "fixture.pkg.tar", .{});
+            defer file.close(t.io);
+            var buffer: [4096]u8 = undefined;
+            var writer = file.writer(t.io, &buffer);
+            var tar: std.tar.Writer = .{ .underlying_writer = &writer.interface };
+            try tar.writeFileBytes(".PKGINFO", "pkgname = bootstrap-fixture\npkgver = 1-1\narch = any\n", .{ .mode = 0o644 });
+            try tar.writeFileBytes(".MTREE", "#mtree\n./missing type=file\n", .{ .mode = 0o644 });
+            try tar.writeFileBytes("present", "payload", .{ .mode = 0o644 });
+            try tar.finishPedantically();
+            try writer.interface.flush();
+        }
+        var context = pm.OperationContext.init(t.allocator, t.io);
+        defer context.deinit();
+        if (with_context) fixture.options.operation_context = &context;
+        const manager = try fixture.manager();
+        defer manager.deinit();
+        const Capture = struct {
+            messages: usize = 0,
+            original: bool = false,
+            package: bool = false,
+            path: bool = false,
+            failures: usize = 0,
+            fn errorMessage(data: ?*anyopaque, value: pm.Manager.events.ErrorArgs) void {
+                const self: *@This() = @ptrCast(@alignCast(data.?));
+                self.messages += 1;
+                self.original = std.mem.indexOf(u8, value.message, "ArchiveInventoryMismatch") != null;
+                self.package = std.mem.indexOf(u8, value.message, "bootstrap-fixture") != null;
+                self.path = std.mem.indexOf(u8, value.message, "Path: missing") != null;
+            }
+            fn event(data: ?*anyopaque, value: pm.OperationEvent) void {
+                const self: *@This() = @ptrCast(@alignCast(data.?));
+                if (value == .failure) self.failures += 1;
+            }
+        };
+        var capture: Capture = .{};
+        _ = try manager.dispatcher.addErrorHandler(.{ .function = Capture.errorMessage, .data = &capture });
+        _ = try context.subscribe(.{ .function = Capture.event, .data = &capture });
+        try t.expectError(error.CommitFailed, manager.install_local_packages(&.{fixture.archive}, .{}));
+        try t.expectEqual(@as(usize, 1), capture.messages);
+        try t.expect(capture.original and capture.package and capture.path);
+        try t.expectEqual(@as(usize, if (with_context) 1 else 0), capture.failures);
     }
 }

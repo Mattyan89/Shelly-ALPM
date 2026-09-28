@@ -17,13 +17,30 @@ required, and the command fails closed when systemd cannot provide it.
 
 Provisioning reads hooks only from the guest's `/usr/share/libalpm/hooks` and
 `/etc/pacman.d/hooks`, replacing host defaults and configured `HookDir` entries.
-libalpm discovers newly installed hooks after the initial transaction and runs
+Both native backends discover newly installed hooks after the initial transaction and run
 their matching post-transaction actions inside the root. This initializes tools
 such as TeX Live, including its filename databases, formats, and font maps.
-Package setup errors stop provisioning even when libalpm considers the package
+Package setup errors stop provisioning even when the backend considers the package
 transaction committed. Hook names and output are streamed into the operation
 log before root cleanup. The baseline finalizers remain as idempotent checks
 for required linker, account, directory, and certificate setup.
+
+Binaries compiled with `-Dlibalpm=false` provision an explicit userspace and
+build-tool set instead of `base` and `base-devel`. They copy the host trust
+database without installing `archlinux-keyring`, whose dependency on pacman
+would defeat this profile. RLPM resolves normal repository dependencies and
+rejects any resolved pacman/libalpm requirement before installation, reporting
+the chain from the requested package. Dependency validation stays enabled.
+
+This profile stages the installed CLI and its two sibling workers, checks their
+runtime libraries before provisioning and inside the guest, and rejects missing
+libraries or libalpm linkage. Keep the workers beside the CLI when deploying it.
+The guest receives a local-database-only package configuration after provisioning;
+the host's repository configuration and signature policy govern provisioning.
+Configuration and local database permissions allow the unprivileged guest to
+query installed packages even under a restrictive provisioning umask.
+With libalpm compiled in, both runtime backend selections retain the existing
+bootstrap targets and executable staging.
 
 The container does not bind the host checkout, home directory, package
 database, configuration directories, or runtime sockets. Its merged
@@ -199,8 +216,11 @@ Bootstrap configuration and diagnostic tests run without elevation:
 The hook test uses an unprivileged user/mount/PID namespace and a temporary
 package root. It installs hooks in the same transaction as their executable,
 checks their execution order, excludes host hooks, and detects post-transaction
-failures even when libalpm reports a successful commit. User namespaces must be
+failures even when the backend reports a successful commit. User namespaces must be
 enabled on the test system.
+
+The hook fixture runs against every compiled backend and checks the failing hook
+name in the shared error events. Add `-Dlibalpm=false` to test the RLPM-only build.
 
 To test the documentation toolchain in a real nspawn build, run from a normal
 user session with sudo authentication available:
@@ -221,6 +241,10 @@ and GID. Standard purge targets must be absent when stripping is disabled.
 Set `SHELLY_BIN` to test an already-built CLI. The script authenticates sudo
 interactively when run from a terminal; unattended runs require an existing
 sudo credential and exit `77` (skipped) if authentication is unavailable.
+Set `SHELLY_LIBALPM=false` when the smoke or documentation script builds its own
+CLI to exercise the RLPM-only variant. The smoke fixture detects the staged
+binary's variant and additionally checks helper permissions, library resolution,
+the absence of pacman/libalpm, and repository dependencies in `.BUILDINFO`.
 
 Cancellation across the elevation boundary has a rootless integration fixture
 that uses a deterministic fake elevator:

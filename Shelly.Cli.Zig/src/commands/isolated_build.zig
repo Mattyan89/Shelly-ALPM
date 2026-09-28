@@ -6,13 +6,14 @@
 
 const std = @import("std");
 const PackageManager = @import("PackageManager");
+const build_root = PackageManager.Manager.bootstrap.build_root;
 
 pub const build_uid = "1000";
 pub const build_user = "shelly-build";
 pub const guest_source = "/build/source";
 pub const guest_artifacts = "/build/artifacts";
 
-/// Package identity retained from libalpm validation. Filenames are kept
+/// Package identity retained from native backend validation. Filenames are kept
 /// separately from package names because archive naming is not an API.
 pub const ValidatedArtifact = struct {
     package_name: []u8,
@@ -128,7 +129,7 @@ pub const Root = struct {
         self.* = undefined;
     }
 
-    /// Bootstraps a clean Arch root through Shelly's own libalpm backend. The
+    /// Bootstraps a clean Arch root through Shelly's selected native backend. The
     /// helper process is isolated in a private mount/PID namespace so package
     /// scriptlets receive the standard virtual filesystems without introducing
     /// mounts into the coordinator's namespace.
@@ -139,6 +140,7 @@ pub const Root = struct {
         extra_packages: []const []const u8,
         operation: *const PackageManager.Operation,
     ) !void {
+        try self.validateRuntimeAt(environ, operation, executable);
         const argv = try shellystrapArguments(
             self.allocator,
             executable,
@@ -252,6 +254,19 @@ pub const Root = struct {
         defer self.allocator.free(destination);
         try std.Io.Dir.copyFile(.cwd(), executable, .cwd(), destination, self.io, .{});
         try std.Io.Dir.cwd().setFilePermissions(self.io, destination, .fromMode(0o755), .{});
+        if (comptime build_root.rlpm_only) {
+            const directory = std.fs.path.dirname(executable) orelse return error.InvalidExecutablePath;
+            for (build_root.helpers) |name| {
+                const source = try std.fs.path.join(self.allocator, &.{ directory, name });
+                defer self.allocator.free(source);
+                const relative = try std.fs.path.join(self.allocator, &.{ "usr/local/libexec/shelly", name });
+                defer self.allocator.free(relative);
+                const target = try self.rootJoin(relative);
+                defer self.allocator.free(target);
+                try std.Io.Dir.copyFile(.cwd(), source, .cwd(), target, self.io, .{});
+                try std.Io.Dir.cwd().setFilePermissions(self.io, target, .fromMode(0o755), .{});
+            }
+        }
     }
 
     pub fn stageSourcePgpKeys(self: *Root, contents: []const u8) !void {
@@ -263,6 +278,61 @@ pub const Root = struct {
         try file.writeStreamingAll(self.io, contents);
         // Public keys are read by the unprivileged guest, outside the reviewed source tree.
         try file.setPermissions(self.io, .fromMode(0o644));
+    }
+
+    /// Check the complete dynamic dependency closure inside the guest before
+    /// starting the build. Packaged helper paths must resolve there as well.
+    pub fn validateRuntime(self: *Root, environ: std.process.Environ, operation: *const PackageManager.Operation) !void {
+        try self.validateRuntimeAt(environ, operation, null);
+    }
+
+    // Inspect host executables before provisioning, then repeat against guest
+    // libraries after staging. Helpers must exist alongside the installed CLI.
+    fn validateRuntimeAt(self: *Root, environ: std.process.Environ, operation: *const PackageManager.Operation, host_executable: ?[]const u8) !void {
+        if (comptime !build_root.rlpm_only) return;
+        const Capture = struct {
+            operation: *const PackageManager.Operation,
+            missing: bool = false,
+            forbidden: bool = false,
+            static: bool = false,
+            fn line(data: ?*anyopaque, _: PackageManager.process_runner.StreamKind, value: []const u8) void {
+                const capture: *@This() = @ptrCast(@alignCast(data.?));
+                capture.static = capture.static or std.mem.indexOf(u8, value, "not a dynamic executable") != null or std.mem.indexOf(u8, value, "statically linked") != null;
+                const missing = std.mem.indexOf(u8, value, "not found") != null;
+                const forbidden = std.mem.indexOf(u8, value, "libalpm.so") != null;
+                capture.missing = capture.missing or missing;
+                capture.forbidden = capture.forbidden or forbidden;
+                if (missing or forbidden) capture.operation.status(.warning, value, "build.isolation.runtime", null);
+            }
+        };
+        for ([_][]const u8{"shelly"} ++ build_root.helpers) |name| {
+            const path = if (host_executable) |executable|
+                if (std.mem.eql(u8, name, "shelly"))
+                    try self.allocator.dupe(u8, executable)
+                else
+                    try std.fs.path.join(self.allocator, &.{ std.fs.path.dirname(executable) orelse return error.InvalidExecutablePath, name })
+            else
+                try std.fs.path.join(self.allocator, &.{ "/usr/local/libexec/shelly", name });
+            defer self.allocator.free(path);
+            var capture: Capture = .{ .operation = operation };
+            const argv: []const []const u8 = if (host_executable != null)
+                &.{ "/usr/bin/env", "LC_ALL=C", "/usr/bin/ldd", path }
+            else
+                &.{ "/usr/bin/chroot", self.root_path, "/usr/bin/env", "LC_ALL=C", "/usr/bin/ldd", path };
+            const status = try PackageManager.process_runner.runStreamingWithEnvironmentOperation(
+                self.allocator,
+                self.io,
+                environ,
+                argv,
+                null,
+                null,
+                .{ .function = Capture.line, .data = &capture },
+                operation,
+            );
+            try operation.checkCancelled();
+            if (capture.forbidden) return error.UnsupportedBuildRootDependency;
+            if (capture.missing or (status != 0 and !capture.static)) return error.MissingBuildRuntime;
+        }
     }
 
     pub fn writeBuildConfiguration(self: *Root, contents: []const u8) !void {
@@ -524,6 +594,7 @@ pub fn shellystrapArguments(
         "--fork",
         "--pid",
         "--mount",
+        "--mount-proc",
         "--propagation",
         "private",
         "--kill-child=KILL",
@@ -539,12 +610,16 @@ pub fn shellystrapArguments(
         "--gpgdir",
         "/etc/pacman.d/gnupg",
         "--",
-        "base",
-        "base-devel",
-        "git",
-        "ca-certificates",
     });
-    try argv.appendSlice(allocator, extra_packages);
+    const packages_start = argv.items.len;
+    try argv.appendSlice(allocator, build_root.packages);
+    // Reviewed recipe dependencies can already be part of the bootstrap
+    // profile. Submit each exact target once; retain repository qualifiers and
+    // version constraints for the backend to validate.
+    for (extra_packages) |package| {
+        if (!containsArgument(argv.items[packages_start..], package))
+            try argv.append(allocator, package);
+    }
     return argv.toOwnedSlice(allocator);
 }
 
@@ -614,26 +689,63 @@ pub fn isPackageArtifact(name: []const u8) bool {
 
 test "shellystrap invocation uses a private cancellable namespace and native helper" {
     const root_path = "/var/lib/shelly/build-roots/v1/operations/0123456789abcdef0123456789abcdef/root";
+    const original = PackageManager.Manager.defaultBackend();
+    defer PackageManager.Manager.setDefaultBackend(original) catch unreachable;
+    for ([_]PackageManager.Manager.Backend{ .libalpm, .rlpm }) |backend| {
+        if (!backend.available()) {
+            try std.testing.expectError(error.BackendUnavailable, PackageManager.Manager.setDefaultBackend(backend));
+            continue;
+        }
+        try PackageManager.Manager.setDefaultBackend(backend);
+        const argv = try shellystrapArguments(
+            std.testing.allocator,
+            "/usr/bin/shelly",
+            root_path,
+            &.{ "cmake", "ninja" },
+        );
+        defer std.testing.allocator.free(argv);
+
+        try std.testing.expectEqualStrings("/usr/bin/unshare", argv[0]);
+        try std.testing.expect(containsArgument(argv, "--mount"));
+        try std.testing.expect(containsArgument(argv, "--pid"));
+        try std.testing.expect(containsArgument(argv, "--mount-proc"));
+        try std.testing.expect(containsArgument(argv, @tagName(backend)));
+        try std.testing.expect(containsArgument(argv, "private"));
+        try std.testing.expect(containsArgument(argv, "--kill-child=KILL"));
+        try std.testing.expect(containsArgument(argv, "--forward-signals"));
+        try std.testing.expect(containsArgument(argv, PackageManager.Manager.bootstrap.wrapper_argument));
+        try std.testing.expect(containsArgument(argv, root_path));
+        try std.testing.expectEqual(PackageManager.Manager.libalpm_enabled, containsArgument(argv, "base-devel"));
+        if (comptime build_root.rlpm_only) {
+            try std.testing.expect(!containsArgument(argv, "base"));
+            try std.testing.expect(!containsArgument(argv, "pacman"));
+            try std.testing.expect(!containsArgument(argv, "archlinux-keyring"));
+            for ([_][]const u8{ "gcc", "systemd", "gnupg", "libarchive", "curl", "sqlite" }) |name|
+                try std.testing.expect(containsArgument(argv, name));
+        }
+        try std.testing.expect(containsArgument(argv, "cmake"));
+        try std.testing.expect(containsArgument(argv, "ninja"));
+        try std.testing.expect(!containsArgument(argv, "/usr/bin/pacstrap"));
+    }
+}
+
+test "shellystrap merges overlapping recipe dependencies without dropping target constraints" {
     const argv = try shellystrapArguments(
         std.testing.allocator,
         "/usr/bin/shelly",
-        root_path,
-        &.{ "cmake", "ninja" },
+        "/var/lib/shelly/build-roots/v1/operations/fixture/root",
+        &.{ "git", "pkgconf", "gettext", "ca-certificates", "cmake", "cmake", "git>=2", "testing/git" },
     );
     defer std.testing.allocator.free(argv);
-
-    try std.testing.expectEqualStrings("/usr/bin/unshare", argv[0]);
-    try std.testing.expect(containsArgument(argv, "--mount"));
-    try std.testing.expect(containsArgument(argv, "--pid"));
-    try std.testing.expect(containsArgument(argv, "private"));
-    try std.testing.expect(containsArgument(argv, "--kill-child=KILL"));
-    try std.testing.expect(containsArgument(argv, "--forward-signals"));
-    try std.testing.expect(containsArgument(argv, PackageManager.Manager.bootstrap.wrapper_argument));
-    try std.testing.expect(containsArgument(argv, root_path));
-    try std.testing.expect(containsArgument(argv, "base-devel"));
-    try std.testing.expect(containsArgument(argv, "cmake"));
-    try std.testing.expect(containsArgument(argv, "ninja"));
-    try std.testing.expect(!containsArgument(argv, "/usr/bin/pacstrap"));
+    const packages = for (argv, 0..) |argument, index| {
+        if (std.mem.eql(u8, argument, "--")) break argv[index + 1 ..];
+    } else unreachable;
+    for (packages, 0..) |package, index|
+        try std.testing.expect(!containsArgument(packages[0..index], package));
+    for (build_root.packages) |package|
+        try std.testing.expect(containsArgument(packages, package));
+    for ([_][]const u8{ "git", "pkgconf", "gettext", "ca-certificates", "cmake", "git>=2", "testing/git" }) |package|
+        try std.testing.expect(containsArgument(packages, package));
 }
 
 test "nspawn invocation is unprivileged namespaced and contains no host binds" {
@@ -860,12 +972,19 @@ test "isolated guest traversal permissions survive restrictive umasks" {
     defer root.deinit();
     const executable_contents = "#!/bin/sh\nexit 0\n";
     try temporary.dir.writeFile(io, .{ .sub_path = "builder", .data = executable_contents });
+    for (build_root.helpers) |name|
+        try temporary.dir.writeFile(io, .{ .sub_path = name, .data = executable_contents });
     const executable_path = try temporary.dir.realPathFileAlloc(io, "builder", allocator);
     defer allocator.free(executable_path);
     try root.stageExecutable(executable_path);
     var guest = try std.Io.Dir.cwd().openDir(io, root.root_path, .{});
     defer guest.close(io);
     try expectStagedInput(guest, guest_executable_relative, executable_contents, 0o755);
+    if (comptime build_root.rlpm_only) for (build_root.helpers) |name| {
+        const path = try std.fs.path.join(allocator, &.{ "usr/local/libexec/shelly", name });
+        defer allocator.free(path);
+        try expectStagedInput(guest, path, executable_contents, 0o755);
+    };
     try root.writeReviewedInput("nested/reviewed.txt", "reviewed bytes\n", 0o660);
 
     for ([_][]const u8{ "", "build", "usr", "usr/local", "usr/local/libexec", "usr/local/libexec/shelly" }) |relative| {

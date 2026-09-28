@@ -38,6 +38,7 @@ pub const TransactionError = error{
     OrphanShootFailed,
     DirectoryReadFailed,
     Cancelled,
+    UnsupportedBuildRootDependency,
 };
 
 pub const QueryError = error{ DbNotFound, PkgNotFound, NoHandle, OutOfMemory, Cancelled };
@@ -160,6 +161,9 @@ pub const InitOptions = struct {
     /// Read only the target root's hooks, including hooks installed by the
     /// current transaction. Host HookDir entries must not reach provisioning.
     root_hooks_only: bool = false,
+    /// Reject pacman/libalpm requirements in a disposable RLPM-only build root.
+    /// Bootstrap sets this only when libalpm is compiled out.
+    rlpm_only_root: bool = false,
 };
 
 pub fn applyInitPathOverrides(

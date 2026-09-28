@@ -10,6 +10,10 @@ owner: *rlpm.Owner,
 operation: *op.Operation,
 previous: rlpm.Callbacks,
 cancellation_subscription: op.SubscriptionId,
+failure_handler: ?struct {
+    function: *const fn (?*anyopaque, []const u8) void,
+    data: ?*anyopaque,
+} = null,
 
 pub fn init(self: *Adapter, owner: *rlpm.Owner, operation: *op.Operation) !void {
     const subscription = try operation.context.subscribeCancellation(.{ .function = cancel, .data = owner });
@@ -144,10 +148,12 @@ fn reportFailure(self: *Adapter, err: anyerror) void {
         .path = if (issue) |failure| failure.path else null,
     }) catch {
         operation.reportError(err, @errorName(err), "rlpm", null, false);
+        if (self.failure_handler) |handler| handler.function(handler.data, @errorName(err));
         return;
     };
     defer allocator.free(message);
     operation.reportError(err, message, "rlpm", null, false);
+    if (self.failure_handler) |handler| handler.function(handler.data, message);
 }
 fn event(data: ?*anyopaque, value: rlpm.Callbacks.Event) void {
     const self = from(data);

@@ -322,7 +322,7 @@ pub fn build(b: *std.Build) void {
 
     const bootstrap_tests = b.addTest(.{
         .root_module = mod,
-        .filters = &.{ "bootstrap", "provisioning", "root finalizer" },
+        .filters = &.{ "bootstrap", "provisioning", "root finalizer", "build root policy" },
     });
     const bootstrap_step = b.step("bootstrap-test", "Test isolated root configuration and diagnostics");
     bootstrap_step.dependOn(&b.addRunArtifact(bootstrap_tests).step);
@@ -345,7 +345,7 @@ pub fn build(b: *std.Build) void {
     hook_test_module.addImport("PackageManager", mod);
     hook_test_module.addOptions("hook_fixture", hook_fixture);
     const hook_tests = b.addTest(.{ .root_module = hook_test_module });
-    const run_hook_tests = b.addSystemCommand(&.{ "unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork" });
+    const run_hook_tests = b.addSystemCommand(&.{ "unshare", "--user", "--map-root-user", "--mount", "--pid", "--mount-proc", "--fork" });
     run_hook_tests.addArtifactArg(hook_tests);
     run_hook_tests.has_side_effects = true;
     const hook_step = b.step("bootstrap-hook-test", "Test real guest hooks in a disposable user namespace (no host root)");

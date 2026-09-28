@@ -1711,6 +1711,7 @@ fn runIsolatedCoordinator(
     try root.stageReviewedInputs(context.environ, pkgbuild_content, review.reviewed_files, &operation);
 
     try root.stageExecutable(executable);
+    try root.validateRuntime(context.environ, &operation);
     if (source_keys.len != 0) try root.stageSourcePgpKeys(source_keys);
 
     const guest_configuration = try renderIsolatedConfiguration(

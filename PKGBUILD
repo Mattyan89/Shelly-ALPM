@@ -9,6 +9,15 @@ url="https://github.com/Seafoam-Labs/Shelly-ALPM"
 license=('GPL-3.0-only')
 makedepends=('libarchive' 'curl' 'sqlite' 'gnupg' 'git' 'pkgconf' 'gtk4' 'zig>=0.16' 'clang' 'gettext' 'flatpak' 'ripgrep' 'go-md2man')
 
+# Keep package metadata tied to the compiled native backend variant.
+_shelly_libalpm=${SHELLY_LIBALPM:-true}
+case $_shelly_libalpm in
+  true) _shelly_native_depends=('pacman'); _shelly_native_optdepends=() ;;
+  false) _shelly_native_depends=(); _shelly_native_optdepends=('pacman: package-owner lookup for pacfile merging') ;;
+  *) printf 'SHELLY_LIBALPM must be true or false\n' >&2; return 1 ;;
+esac
+makedepends+=('binutils' "${_shelly_native_depends[@]}")
+
 # Source tarball from GitHub release
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/Seafoam-Labs/Shelly-ALPM/archive/v${pkgver}.tar.gz"
         'shellybuild.conf'
@@ -42,7 +51,7 @@ build() {
     -Dcpu=baseline \
     -Doptimize=ReleaseSafe)
 
-  (cd Shelly.Cli.Zig && zig build -Dlibalpm="${SHELLY_LIBALPM:-true}" --verbose \
+  (cd Shelly.Cli.Zig && zig build -Dlibalpm="${_shelly_libalpm}" --verbose \
     --prefix "${srcdir}/${_source_dir}/out-cli" \
     --cache-dir "${srcdir}/zig-cache" \
     --global-cache-dir "${srcdir}/zig-global-cache" \
@@ -90,10 +99,10 @@ check() {
   (cd Shelly.Flatpak.Backend && zig build test abi-test integration-test \
     --cache-dir "${srcdir}/zig-cache" \
     --global-cache-dir "${srcdir}/zig-global-cache")
-  (cd Shelly.PackageManager && zig build -Dlibalpm="${SHELLY_LIBALPM:-true}" flatpak-test \
+  (cd Shelly.PackageManager && zig build -Dlibalpm="${_shelly_libalpm}" flatpak-test \
     --cache-dir "${srcdir}/zig-cache" \
     --global-cache-dir "${srcdir}/zig-global-cache")
-  (cd Shelly.Cli.Zig && zig build -Dlibalpm="${SHELLY_LIBALPM:-true}" test \
+  (cd Shelly.Cli.Zig && zig build -Dlibalpm="${_shelly_libalpm}" test \
     --cache-dir "${srcdir}/zig-cache" \
     --global-cache-dir "${srcdir}/zig-global-cache")
 }
@@ -104,7 +113,7 @@ package_shelly() {
   conflicts=('shelly-git' 'shelly-bin')
   backup=('etc/shellybuild.conf')
   depends=(
-      'pacman'
+      "${_shelly_native_depends[@]}"
       'gtk4'
       'glib2'
       'sudo'
@@ -123,6 +132,7 @@ package_shelly() {
       'json-glib'
   )
   optdepends=(
+      "${_shelly_native_optdepends[@]}"
       'fish: Fish shell completions'
       'zsh: Zsh shell completions'
       'libstarfish: dependency viewer for arch packages'
@@ -135,6 +145,13 @@ package_shelly() {
   install -Dm755 out-notifications/bin/shelly-notifications "$pkgdir/usr/bin/shelly-notifications"
   install -Dm755 out/bin/Shelly_Ui_Gtk "$pkgdir/usr/bin/shelly-ui"
   install -Dm755 out-cli/bin/shelly "$pkgdir/usr/bin/shelly"
+  local shelly_dynamic
+  shelly_dynamic=$(LC_ALL=C readelf -d "$pkgdir/usr/bin/shelly") || return 1
+  if [[ $_shelly_libalpm == true && $shelly_dynamic != *libalpm.so* ]] ||
+     [[ $_shelly_libalpm == false && $shelly_dynamic == *libalpm.so* ]]; then
+    printf 'Shelly binary does not match SHELLY_LIBALPM package metadata\n' >&2
+    return 1
+  fi
   for worker in shelly-rlpm-action-worker shelly-download-worker; do
     install -Dm755 "out-cli/bin/$worker" "$pkgdir/usr/bin/$worker"
   done

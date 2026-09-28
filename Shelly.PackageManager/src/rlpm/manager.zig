@@ -26,6 +26,7 @@ pub const Manager = struct {
     package_setup_failed: bool = false,
     detected_cachyos: bool = false,
     temporary: bool = false,
+    rlpm_only_root: bool = false,
     names: std.heap.ArenaAllocator,
     download_address_family_policy: downloader.AddressFamilyPolicy,
     parallel_download_count: u8,
@@ -44,6 +45,7 @@ pub const Manager = struct {
             .dispatcher = events.Dispatcher.init(allocator),
             .owner = undefined,
             .operation_context = options.operation_context,
+            .rlpm_only_root = options.rlpm_only_root,
             .names = .init(allocator),
             .download_address_family_policy = defaultDownloadAddressFamilyPolicy(),
             .parallel_download_count = defaultParallelDownloadCount(),
@@ -356,6 +358,14 @@ pub const Manager = struct {
     }
     const Mode = enum { install, archive, remove, upgrade };
     fn execute(self: *Manager, mode: Mode, targets: []const []const u8, flags: types.TransFlag, confirmation: contract.RemovalConfirmation) !void {
+        const error_generation = self.dispatcher.errorGeneration();
+        // Failures before a transaction exists also need their original cause
+        // delivered before the facade maps it to its compatibility error set.
+        errdefer |err| if (err != error.Cancelled and self.dispatcher.errorGeneration() == error_generation) {
+            const message = @import("diagnostics").format(self.allocator, err, .{ .operation = "the RLPM transaction" }) catch null;
+            defer if (message) |value| self.allocator.free(value);
+            self.dispatcher.raiseError(.{ .message = message orelse @errorName(err) });
+        };
         if (self.temporary) return error.CommitFailed;
         try self.checkCancelled();
         var fallback = op.OperationContext.init(self.allocator, self.io());
@@ -370,6 +380,7 @@ pub const Manager = struct {
         defer self.dispatcher.setOperation(null);
         var adapter: Adapter = undefined;
         try adapter.init(&self.owner, &operation);
+        adapter.failure_handler = .{ .function = forwardTransactionFailure, .data = self };
         defer adapter.deinit() catch unreachable;
         var native_flags = try rlpm.TransactionFlags.fromBits(@bitCast(flags));
         native_flags.no_hooks = native_flags.no_hooks or self.hooks_disabled;
@@ -397,6 +408,11 @@ pub const Manager = struct {
             operation.finish(.success);
             return;
         };
+        if (self.rlpm_only_root) if (try @import("build_root_policy.zig").rejection(self.allocator, plan)) |message| {
+            defer self.allocator.free(message);
+            self.dispatcher.raiseError(.{ .message = message });
+            return error.UnsupportedBuildRootDependency;
+        };
         if (mode == .remove) for (plan.removals) |id| {
             const name = plan.package(id).name;
             for (self.config.hold_packages.items) |held| if (std.mem.eql(u8, held, name)) {
@@ -405,7 +421,10 @@ pub const Manager = struct {
             };
         };
         if (self.operation_context != null and (mode != .remove or confirmation == .required)) try self.confirmPlan(&operation, plan, mode);
-        if (tx.state == .prepared) try tx.commit();
+        if (tx.state == .prepared) {
+            defer self.reportActionFailures(tx);
+            try tx.commit();
+        }
         self.package_setup_failed = tx.result().warnings != 0;
         // Empty/--needed plans have no commit lifecycle event. Finish before
         // releasing them so the adapter does not report a cancellation.
@@ -415,6 +434,18 @@ pub const Manager = struct {
         if (!flags.downloadonly) for (optional_names.items) |name| {
             const ref = try self.owner.queryPackage(self.io(), self.owner.localDatabase().?, name) orelse continue;
             try self.owner.setInstallReason(self.io(), ref, .dependency);
+        };
+    }
+    fn forwardTransactionFailure(data: ?*anyopaque, message: []const u8) void {
+        const self: *Manager = @ptrCast(@alignCast(data.?));
+        self.dispatcher.notifyErrorHandlers(.{ .message = message });
+    }
+    fn reportActionFailures(self: *Manager, tx: *const rlpm.Transaction) void {
+        const actions = tx.actions() orelse return;
+        for (actions.outcomes.items) |outcome| if (outcome.cause) |cause| {
+            var buffer: [2048]u8 = undefined;
+            const message = std.fmt.bufPrint(&buffer, "Package setup {s} failed: {s}: {s}", .{ @tagName(outcome.kind), outcome.name, @errorName(cause) }) catch outcome.name;
+            self.dispatcher.raiseError(.{ .message = message });
         };
     }
     fn targetReference(self: *Manager, text: []const u8) !?rlpm.PackageRef {

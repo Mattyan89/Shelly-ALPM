@@ -5,7 +5,7 @@ if [[ $(id -u) -eq 0 ]]; then
   printf 'skipping isolated smoke test: run from an authenticated normal-user session\n' >&2
   exit 77
 fi
-for command in sudo systemd-nspawn unshare jq pgrep; do
+for command in sudo systemd-nspawn unshare jq pgrep readelf; do
   if ! command -v "$command" >/dev/null; then
     printf 'skipping isolated smoke test: %s is unavailable\n' "$command" >&2
     exit 77
@@ -39,6 +39,7 @@ pkgrel=1
 arch=('any')
 license=('MIT')
 depends=('bash')
+makedepends=('cmake')
 options=('!strip')
 source=('reviewed.txt')
 build() {
@@ -64,6 +65,17 @@ build() {
   grep -q '^systemd-network:' /etc/passwd
   test -d /var/lib/private
   test -s /etc/ssl/certs/ca-certificates.crt
+  cmake --version
+  if [[ $shelly_rlpm_only == true ]]; then
+    ! command -v pacman
+    if compgen -G '/usr/lib/libalpm.so*'; then return 1; fi
+    for name in shelly shelly-rlpm-action-worker shelly-download-worker; do
+      local executable="/usr/local/libexec/shelly/$name" linked
+      test "$(stat -c '%u:%g:%a' "$executable")" = 0:0:755
+      linked=$(LC_ALL=C ldd "$executable")
+      [[ $linked != *libalpm* && $linked != *'not found'* ]]
+    done
+  fi
   # Keep the guest alive until the host supervisor checks its private boundary.
   for ((attempt = 0; attempt < 300; attempt++)); do
     if test -r /build/source/.host-boundary-checked; then
@@ -168,13 +180,17 @@ WRAPPER
 
 if [[ -z ${SHELLY_BIN:-} ]]; then
   env ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-/tmp/shelly-zig-global-cache}" \
-    zig build --build-file "$project_dir/build.zig"
+    zig build --build-file "$project_dir/build.zig" -Dlibalpm="${SHELLY_LIBALPM:-true}"
   shelly_bin="$project_dir/zig-out/bin/shelly"
 else
   shelly_bin=$SHELLY_BIN
 fi
 
 shelly_bin=$(realpath -- "$shelly_bin")
+shelly_dynamic=$(LC_ALL=C readelf -d "$shelly_bin")
+shelly_rlpm_only=true
+if [[ $shelly_dynamic == *libalpm.so* ]]; then shelly_rlpm_only=false; fi
+printf 'shelly_rlpm_only=%s\n' "$shelly_rlpm_only" >>"$fixture_dir/PKGBUILD"
 
 review_json=$("$shelly_bin" build --review-only --json "$fixture_dir/PKGBUILD")
 review_digest=$(jq -er '.reviewDigest | select(test("^[0-9a-f]{64}$"))' <<<"$review_json")
@@ -203,6 +219,12 @@ for mask in 0022 0007 0027 0077; do
   test "$(stat -c %u "$artifact")" = "$(id -u)"
   test "$(stat -c %g "$artifact")" = "$(id -g)"
   tar -xOf "$artifact" .PKGINFO >"$case_dir/pkginfo"
+  tar -xOf "$artifact" .BUILDINFO >"$case_dir/buildinfo"
+  grep -q '^installed = cmake-' "$case_dir/buildinfo"
+  if [[ $shelly_rlpm_only == true ]] && grep -Eq '^installed = (pacman|libalpm)-' "$case_dir/buildinfo"; then
+    printf 'RLPM-only guest installed pacman or libalpm\n' >&2
+    exit 1
+  fi
   grep -Fxq 'depend = shelly-isolated-runtime-only' "$case_dir/pkginfo"
   tar -tf "$artifact" >"$case_dir/archive-entries"
   grep -Fxq 'usr/share/shelly-isolated-smoke/marker' "$case_dir/archive-entries"

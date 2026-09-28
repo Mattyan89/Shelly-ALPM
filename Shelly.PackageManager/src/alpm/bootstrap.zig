@@ -1,13 +1,14 @@
 //! Native Arch root provisioning used by Shelly's isolated build coordinator.
 //!
 //! The public coordinator re-executes Shelly in a private mount/PID namespace.
-//! This module then gives libalpm explicit target-owned paths and performs the
+//! This module gives the selected backend explicit target-owned paths and performs the
 //! repository transaction without depending on the `pacstrap` shell script.
 
 const std = @import("std");
 const manager_module = @import("manager.zig");
 const events = @import("events.zig");
 const process_runner = @import("../aur/builder.zig");
+pub const build_root = @import("build_root.zig");
 
 pub const wrapper_argument = "__shellystrap";
 pub const marker_name = ".shelly-bootstrap-root";
@@ -244,10 +245,11 @@ fn bootstrapReporting(
         .log_file = log_path,
         .gpg_directory = target_gpg_path,
         .root_hooks_only = true,
+        .rlpm_only_root = build_root.rlpm_only,
     });
     defer manager.deinit();
 
-    // libalpm rescans the target hook directories after installation. This
+    // Both backends rescan target hook directories after installation. This
     // initializes newly installed tools (including TeX) without host hooks.
 
     var diagnostic_output: DiagnosticOutput = undefined;
@@ -293,7 +295,53 @@ fn bootstrapReporting(
     try requireFile(io, allocator, options.root_path, "etc/passwd");
     try requireDirectory(io, allocator, options.root_path, "var/tmp");
     try requireFile(io, allocator, options.root_path, "etc/ssl/certs/ca-certificates.crt");
+    if (comptime build_root.rlpm_only) {
+        var root = try std.Io.Dir.cwd().openDir(io, options.root_path, .{});
+        defer root.close(io);
+        try prepareGuestQueries(io, root);
+    }
     return .{ .installed_package_count = installed.len };
+}
+
+fn prepareGuestQueries(io: std.Io, root: std.Io.Dir) !void {
+    // Dependencies are provisioned by the coordinator. Guest metadata queries
+    // need only the local database, not host repository Include paths.
+    try root.writeFile(io, .{
+        .sub_path = "etc/pacman.conf",
+        .data = "[options]\nArchitecture = auto\nSigLevel = Required DatabaseOptional\nLocalFileSigLevel = Optional\n",
+    });
+    // Without the pacman package these paths retain the provisioning umask.
+    // The unprivileged builder needs them to query installed package metadata.
+    for ([_][]const u8{ "var/lib/pacman", "var/lib/pacman/local" }) |path|
+        try root.setFilePermissions(io, path, .fromMode(0o755), .{});
+    for ([_][]const u8{ "etc/pacman.conf", "var/lib/pacman/local/ALPM_DB_VERSION" }) |path|
+        try root.setFilePermissions(io, path, .fromMode(0o644), .{});
+}
+
+test "bootstrap guest package queries can read configuration and database under restrictive permissions" {
+    const t = std.testing;
+    var fixture = t.tmpDir(.{});
+    defer fixture.cleanup();
+    try fixture.dir.createDirPath(t.io, "etc");
+    try fixture.dir.createDirPath(t.io, "var/lib/pacman/local");
+    for ([_][]const u8{ "var/lib/pacman", "var/lib/pacman/local" }) |path|
+        try fixture.dir.setFilePermissions(t.io, path, .fromMode(0o700), .{});
+    try fixture.dir.writeFile(t.io, .{ .sub_path = "etc/pacman.conf", .data = "[host]\nInclude = /host-only/mirrorlist\n" });
+    try fixture.dir.writeFile(t.io, .{ .sub_path = "var/lib/pacman/local/ALPM_DB_VERSION", .data = "9\n" });
+    for ([_][]const u8{ "etc/pacman.conf", "var/lib/pacman/local/ALPM_DB_VERSION" }) |path|
+        try fixture.dir.setFilePermissions(t.io, path, .fromMode(0o600), .{});
+    try prepareGuestQueries(t.io, fixture.dir);
+    for ([_][]const u8{ "var/lib/pacman", "var/lib/pacman/local" }) |path|
+        try t.expectEqual(@as(u32, 0o755), (try fixture.dir.statFile(t.io, path, .{})).permissions.toMode() & 0o7777);
+    for ([_][]const u8{ "etc/pacman.conf", "var/lib/pacman/local/ALPM_DB_VERSION" }) |path|
+        try t.expectEqual(@as(u32, 0o644), (try fixture.dir.statFile(t.io, path, .{})).permissions.toMode() & 0o7777);
+    const config = try fixture.dir.readFileAlloc(t.io, "etc/pacman.conf", t.allocator, .limited(4096));
+    defer t.allocator.free(config);
+    try t.expect(std.mem.indexOf(u8, config, "Include") == null);
+    try t.expect(std.mem.indexOf(u8, config, "SigLevel = Required") != null);
+    const version = try fixture.dir.readFileAlloc(t.io, "var/lib/pacman/local/ALPM_DB_VERSION", t.allocator, .limited(32));
+    defer t.allocator.free(version);
+    try t.expectEqualStrings("9\n", version);
 }
 
 fn validateRoot(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8) !void {
@@ -492,7 +540,7 @@ test "bootstrap package targets reject option injection and line breaks" {
     try std.testing.expect(!validPackageTarget("bad\nname"));
 }
 
-test "internal bootstrap diagnostics write libalpm failures only to stderr" {
+test "internal bootstrap diagnostics write native backend failures only to stderr" {
     var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer output.deinit();
     var diagnostics: DiagnosticOutput = .{ .stderr = &output.writer };

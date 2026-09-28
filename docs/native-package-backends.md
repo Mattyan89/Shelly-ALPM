@@ -48,10 +48,15 @@ that relocate their executable must also deploy the workers there.
 
 Source PKGBUILDs accept `SHELLY_LIBALPM=false makepkg`; omitting it builds both.
 The shared build needs libarchive, SQLite, curl, Zig, and the existing project
-inputs. Default packages retain pacman/libalpm. RLPM-only Shelly binaries do not
-link libalpm, but the Arch recipes still retain pacman for external build tools,
-isolated-root provisioning tools, and distribution integration. GPG/keyrings
-remain needed for signature verification; disabling libalpm does not remove them.
+inputs. Default packages retain pacman/libalpm. RLPM-only source packages omit
+the pacman build and runtime dependency, and verify that the shipped CLI matches
+the requested variant. Prebuilt packages likewise declare the expected variant
+with `SHELLY_LIBALPM` and reject a mismatched release binary. Pacman is optional for package-owner lookup during pacfile merging.
+GPG and a populated host trust database remain necessary for signature verification.
+
+Only binaries compiled with `-Dlibalpm=false` use the explicit, pacman-free
+[isolated-build profile](isolated-builds.md). Selecting RLPM at runtime in a
+libalpm-enabled binary retains the existing bootstrap packages and staging.
 
 ## Library boundary
 
