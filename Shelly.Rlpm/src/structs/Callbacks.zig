@@ -26,8 +26,10 @@ pub const Boundary = enum { start, done, failed };
 pub const PackageOperation = enum { install, upgrade, reinstall, downgrade, remove };
 pub const HookWhen = enum { pre_transaction, post_transaction };
 pub const Event = union(enum) {
-    phase: struct { phase: Phase, boundary: Boundary },
-    package_operation: struct { operation: PackageOperation, boundary: Boundary, old: ?PackageRef, new: ?PackageRef },
+    /// Shelly lifecycle extension, independent of native work-phase events.
+    lifecycle: @import("Transaction.zig").Result,
+    phase: struct { phase: Phase, boundary: Boundary, total_packages: ?usize = null, total_bytes: ?u64 = null },
+    package_operation: struct { operation: PackageOperation, boundary: Boundary, old: ?PackageRef, new: ?PackageRef, views: []const PackageView = &.{} },
     database_missing: DatabaseRef,
     optional_dependency_removed: struct { package: PackageRef, dependency: PackageRelation },
     scriptlet_output: []const u8,
@@ -68,6 +70,8 @@ log_context: ?*anyopaque = null,
 event: ?*const fn (?*anyopaque, Event) void = null,
 event_context: ?*anyopaque = null,
 question: ?*const fn (?*anyopaque, *Question) void = null,
+/// Fallible adapter variant, preferred when set. Uses question_context.
+question_with_error: ?*const fn (?*anyopaque, *Question) anyerror!void = null,
 question_context: ?*anyopaque = null,
 progress: ?*const fn (?*anyopaque, Progress) void = null,
 progress_context: ?*anyopaque = null,

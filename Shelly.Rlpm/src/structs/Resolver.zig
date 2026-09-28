@@ -51,6 +51,7 @@ pub const Context = struct {
     user: ?*anyopaque = null,
     question: ?*const fn (?*anyopaque, *Callbacks.Question) anyerror!void = null,
     check_cancelled: ?*const fn (?*anyopaque) anyerror!void = null,
+    event: ?*const fn (?*anyopaque, Callbacks.Event) anyerror!void = null,
 };
 var archive_generation: std.atomic.Value(u64) = .init(1);
 
@@ -179,7 +180,8 @@ pub fn resolve(allocator: std.mem.Allocator, snapshot: Snapshot, options: Option
         try solver.reasons.put(a, id, .explicit);
     }
     if (plan.failure == null and request.system_upgrade) try solver.upgrade(request.allow_downgrade);
-    if (plan.failure == null) try solver.prepare();
+    plan.had_prepare_targets = solver.roots.items.len != 0 or solver.explicit_removals.items.len != 0;
+    if (plan.failure == null and plan.had_prepare_targets) try solver.prepare();
     try solver.finish();
     try solver.cancel();
     return plan;
@@ -484,6 +486,7 @@ const Solver = struct {
             if (self.plan.flags.no_dependencies) {
                 try self.additions.appendSlice(self.a, self.roots.items);
             } else {
+                try self.phase(.resolve_dependencies, .start);
                 while (true) {
                     self.additions.clearRetainingCapacity();
                     for (self.provider_decisions.items) |*decision| decision.used = false;
@@ -512,9 +515,14 @@ const Solver = struct {
                         if (std.mem.eql(u8, name, other)) try self.issue(.duplicate_filename, .{ .filename = .{ .first = previous, .second = id, .filename = name } });
                     };
                 }
+                if (self.plan.failure == null) try self.phase(.resolve_dependencies, .done);
             }
             if (self.plan.failure != null) return;
-            if (!self.plan.flags.no_conflicts) try self.conflicts();
+            if (!self.plan.flags.no_conflicts) {
+                try self.phase(.inter_conflicts, .start);
+                try self.conflicts();
+                if (self.plan.failure == null) try self.phase(.inter_conflicts, .done);
+            }
             if (self.plan.failure != null) return;
             try self.buildRemovals(self.additions.items);
             if (!self.plan.flags.no_dependencies) {
@@ -716,6 +724,7 @@ const Solver = struct {
         const flags = self.plan.flags;
         if (flags.recurse and !flags.cascade) try self.recursiveRemovals();
         if (!flags.no_dependencies) {
+            try self.phase(.dependencies, .start);
             while (true) {
                 try self.cancel();
                 self.issues.clearRetainingCapacity();
@@ -736,8 +745,20 @@ const Solver = struct {
         if (flags.cascade and flags.recurse) try self.recursiveRemovals();
         if (!flags.no_dependencies) for (self.local.items) |id| {
             if (has(self.removals.items, id)) continue;
-            for (self.pkg(id).optional_depends) |dep| if (self.satisfier(self.removals.items, dep) != null) try self.warn(.{ .optional_dependency_removed = .{ .package = id, .dependency = dep } });
+            for (self.pkg(id).optional_depends) |dep| if (self.satisfier(self.removals.items, dep) != null) {
+                try self.warn(.{ .optional_dependency_removed = .{ .package = id, .dependency = dep } });
+                try self.event(.{ .optional_dependency_removed = .{ .package = self.plan.candidates[@intFromEnum(id)].reference, .dependency = dep } });
+            };
         };
+        if (!flags.no_dependencies) try self.phase(.dependencies, .done);
+    }
+    fn event(self: *Solver, value: Callbacks.Event) !void {
+        try self.cancel();
+        if (self.context.event) |callback| try callback(self.context.user, value);
+        try self.cancel();
+    }
+    fn phase(self: *Solver, value: Callbacks.Phase, boundary: Callbacks.Boundary) !void {
+        try self.event(.{ .phase = .{ .phase = value, .boundary = boundary } });
     }
     fn order(self: *Solver, targets: []const Id, ignore: []const Id, reverse_order: bool) !List {
         var vertices: List = .empty;

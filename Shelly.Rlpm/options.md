@@ -73,7 +73,7 @@ these rows partial until the consuming milestones' fixtures pass.
 | `hook_directories` | Owned ordered list and root-relative library default | M9 discovery, overrides and execution |
 | `gpg_directory` | Explicit home for verification and consented key operations; null uses system pacman keyring | — |
 | `key_acquisition` | Owned single-key source paths, WKD/keyserver controls; import requires callback consent and reverification | Live server interoperability |
-| `log_file`, `use_syslog` | Owned setting | M6 operation logging/syslog |
+| `log_file`, `use_syslog` | Owned setting | M10 execution audit logging/syslog |
 | `architectures` | Owned list and M5 initial-target validation, including CachyOS architectures | M11 frontend auto mapping |
 | `ignore_packages`, `ignore_groups` | Owned lists, glob matching, candidate questions and upgrade filtering | — |
 | `assume_installed` | Owned unversioned/exact provisions, permissive raw versions, descriptions and M5 dependency checks | — |
@@ -84,7 +84,7 @@ these rows partial until the consuming milestones' fixtures pass.
 | `sandbox_user` | Owned name; no account lookup during read-only initialization | M7 account validation and privilege separation |
 | `sandbox.disable_filesystem`, `sandbox.disable_syscalls` | Independent settings | M7 download sandbox |
 | `sandbox.disable_network` | CachyOS setting; global `setDisabled` updates all three switches | M9 hook/scriptlet/ldconfig behavior |
-| `callbacks` | Typed callbacks and independent borrowed contexts; guarded event/question dispatch | M6 transaction ordering, logging/progress; M7 download/fetch integration |
+| `callbacks` | Typed callbacks, owned deferred questions, transaction ordering and guarded dispatch | M7–M10 execution producers, download/fetch and audit logging |
 | Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned lists, queries, resolver usage/priority, enforced inherited/explicit policy | M7 transfer |
 
 `setOptions` constructs a complete replacement before publishing it. Failed
@@ -153,3 +153,7 @@ category, cause and optional database reference, so error context cannot dangle
 after input strings or a registration are freed. `Diagnostic.format` provides a
 plain textual description. Query errors and errors before entering those
 operations (such as list-helper temporary allocation) are returned directly.
+
+Transaction initialization freezes configuration and invalidates cached package
+references. Release the active transaction before reconfiguration, explicit cache
+reload/invalidation, or Owner teardown. See the [transaction guide](transactions.md).

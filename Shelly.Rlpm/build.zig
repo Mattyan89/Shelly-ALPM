@@ -15,6 +15,7 @@ pub fn build(b: *std.Build) void {
     mod.linkSystemLibrary("archive", .{});
     mod.linkSystemLibrary("sqlite3", .{});
     mod.addCSourceFile(.{ .file = b.path("src/native/regex.c"), .flags = &.{"-std=c11"} });
+    mod.addCSourceFile(.{ .file = b.path("src/native/lock.c"), .flags = &.{"-std=c11"} });
 
     const exe = b.addExecutable(.{
         .name = "Shelly_Rlpm",
@@ -44,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
     const run_public = b.addRunArtifact(public_tests);
+    public_tests.root_module.addCSourceFile(.{ .file = b.path("src/tests/lock_process.c"), .flags = &.{"-std=c11"} });
     test_step.dependOn(&run_public.step);
     b.step("test-public-api", "Exercise the exported API from a separate importing module").dependOn(&run_public.step);
 
@@ -78,6 +80,15 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
     b.step("test-resolver", "Run M5 resolution, removal, system-upgrade and reference fixtures").dependOn(&b.addRunArtifact(resolver_tests).step);
+
+    const transaction_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/transaction.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    transaction_tests.root_module.addCSourceFile(.{ .file = b.path("src/tests/lock_process.c"), .flags = &.{"-std=c11"} });
+    b.step("test-transaction", "Run M6 private-root lifecycle, lock, ownership, cancellation and reference fixtures").dependOn(&b.addRunArtifact(transaction_tests).step);
 
     const ledger_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/compatibility.zig"),

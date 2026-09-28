@@ -33,7 +33,7 @@ ALPM_ERR_DISK_SPACE	constant	upstream	M6	Diagnostic.disk_space error category an
 ALPM_ERR_EXTERNAL_DOWNLOAD	constant	upstream	M6	Diagnostic.external_download error category and failure payload	missing	-	M6/ALPM_ERR_EXTERNAL_DOWNLOAD	downstream-alpm.h:323
 ALPM_ERR_FILE_CONFLICTS	constant	upstream	M6	Diagnostic.file_conflicts error category and failure payload	missing	-	M6/ALPM_ERR_FILE_CONFLICTS	downstream-alpm.h:309
 ALPM_ERR_GPGME	constant	upstream	M6	Diagnostic.gpgme error category and failure payload	missing	-	M6/ALPM_ERR_GPGME	downstream-alpm.h:325
-ALPM_ERR_HANDLE_LOCK	constant	upstream	M6	Diagnostic.handle_lock error category and failure payload	missing	-	M6/ALPM_ERR_HANDLE_LOCK	downstream-alpm.h:229
+ALPM_ERR_HANDLE_LOCK	constant	upstream	M6	DatabaseLocked / LockPermissionDenied / DatabaseLockFailed; contention never unlinks foreign lock	partial	transaction-m6-unit	M6/ALPM_ERR_HANDLE_LOCK	downstream-alpm.h:229
 ALPM_ERR_HANDLE_NOT_NULL	constant	upstream	M6	Diagnostic.handle_not_null error category and failure payload	missing	-	M6/ALPM_ERR_HANDLE_NOT_NULL	downstream-alpm.h:227
 ALPM_ERR_HANDLE_NULL	constant	upstream	M6	Diagnostic.handle_null error category and failure payload	missing	-	M6/ALPM_ERR_HANDLE_NULL	downstream-alpm.h:225
 ALPM_ERR_INVALID_REGEX	constant	upstream	M6	Diagnostic.invalid_regex error category and failure payload	missing	-	M6/ALPM_ERR_INVALID_REGEX	downstream-alpm.h:316
@@ -65,16 +65,16 @@ ALPM_ERR_TRANS_ABORT	constant	upstream	M6	Diagnostic.trans_abort error category 
 ALPM_ERR_TRANS_DUP_FILENAME	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_TRANS_DUP_FILENAME	downstream-alpm.h:264
 ALPM_ERR_TRANS_DUP_TARGET	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_TRANS_DUP_TARGET	downstream-alpm.h:262
 ALPM_ERR_TRANS_HOOK_FAILED	constant	upstream	M6	Diagnostic.trans_hook_failed error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_HOOK_FAILED	downstream-alpm.h:276
-ALPM_ERR_TRANS_NOT_INITIALIZED	constant	upstream	M6	Diagnostic.trans_not_initialized error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_NOT_INITIALIZED	downstream-alpm.h:266
-ALPM_ERR_TRANS_NOT_LOCKED	constant	upstream	M6	Diagnostic.trans_not_locked error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_NOT_LOCKED	downstream-alpm.h:274
-ALPM_ERR_TRANS_NOT_NULL	constant	upstream	M6	Diagnostic.trans_not_null error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_NOT_NULL	downstream-alpm.h:258
-ALPM_ERR_TRANS_NOT_PREPARED	constant	upstream	M6	Diagnostic.trans_not_prepared error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_NOT_PREPARED	downstream-alpm.h:268
-ALPM_ERR_TRANS_NULL	constant	upstream	M6	Diagnostic.trans_null error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_NULL	downstream-alpm.h:260
-ALPM_ERR_TRANS_TYPE	constant	upstream	M6	Diagnostic.trans_type error category and failure payload	missing	-	M6/ALPM_ERR_TRANS_TYPE	downstream-alpm.h:272
+ALPM_ERR_TRANS_NOT_INITIALIZED	constant	upstream	M6	InvalidTransactionState diagnostic	partial	transaction-m6-reference	M6/ALPM_ERR_TRANS_NOT_INITIALIZED	downstream-alpm.h:266
+ALPM_ERR_TRANS_NOT_LOCKED	constant	upstream	M6	TransactionNotLocked; explicit unlock separately yields LockNotHeld	partial	transaction-m6-reference	M6/ALPM_ERR_TRANS_NOT_LOCKED	downstream-alpm.h:274
+ALPM_ERR_TRANS_NOT_NULL	constant	upstream	M6	TransactionActive diagnostic	partial	transaction-m6-reference	M6/ALPM_ERR_TRANS_NOT_NULL	downstream-alpm.h:258
+ALPM_ERR_TRANS_NOT_PREPARED	constant	upstream	M6	InvalidTransactionState diagnostic	partial	transaction-m6-reference	M6/ALPM_ERR_TRANS_NOT_PREPARED	downstream-alpm.h:268
+ALPM_ERR_TRANS_NULL	constant	upstream	M6	TransactionNotInitialized; absent transaction represented by optional borrow	partial	transaction-m6-reference	M6/ALPM_ERR_TRANS_NULL	downstream-alpm.h:260
+ALPM_ERR_TRANS_TYPE	constant	upstream	M6	InvalidTransactionState on unsupported interrupt state	partial	transaction-m6-reference	M6/ALPM_ERR_TRANS_TYPE	downstream-alpm.h:272
 ALPM_ERR_UNSATISFIED_DEPS	constant	upstream	M6	TransactionPlan.failure / issues and check(): resolution diagnostics; transaction lifecycle remains M6	partial	resolver-m5-reference	M6/ALPM_ERR_UNSATISFIED_DEPS	downstream-alpm.h:305
 ALPM_ERR_WRONG_ARGS	constant	upstream	M6	Diagnostic.wrong_args error category and failure payload	missing	-	M6/ALPM_ERR_WRONG_ARGS	downstream-alpm.h:220
-ALPM_EVENT_CHECKDEPS_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_CHECKDEPS_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_CHECKDEPS_DONE	downstream-alpm.h:717
-ALPM_EVENT_CHECKDEPS_START	constant	upstream	M6	Callbacks.ALPM_EVENT_CHECKDEPS_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_CHECKDEPS_START	downstream-alpm.h:715
+ALPM_EVENT_CHECKDEPS_DONE	constant	upstream	M6	Callbacks.phase at actual prepare boundaries; flags and failures follow native event order	partial	transaction-m6-reference	M6/ALPM_EVENT_CHECKDEPS_DONE	downstream-alpm.h:717
+ALPM_EVENT_CHECKDEPS_START	constant	upstream	M6	Callbacks.phase at actual prepare boundaries; flags and failures follow native event order	partial	transaction-m6-reference	M6/ALPM_EVENT_CHECKDEPS_START	downstream-alpm.h:715
 ALPM_EVENT_DATABASE_MISSING	constant	upstream	M6	Callbacks.ALPM_EVENT_DATABASE_MISSING typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_DATABASE_MISSING	downstream-alpm.h:772
 ALPM_EVENT_DB_RETRIEVE_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_DB_RETRIEVE_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_DB_RETRIEVE_DONE	downstream-alpm.h:754
 ALPM_EVENT_DB_RETRIEVE_FAILED	constant	upstream	M6	Callbacks.ALPM_EVENT_DB_RETRIEVE_FAILED typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_DB_RETRIEVE_FAILED	downstream-alpm.h:756
@@ -89,15 +89,15 @@ ALPM_EVENT_HOOK_RUN_START	constant	upstream	M6	Callbacks.ALPM_EVENT_HOOK_RUN_STA
 ALPM_EVENT_HOOK_START	constant	upstream	M6	Callbacks.ALPM_EVENT_HOOK_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_HOOK_START	downstream-alpm.h:787
 ALPM_EVENT_INTEGRITY_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_INTEGRITY_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_INTEGRITY_DONE	downstream-alpm.h:743
 ALPM_EVENT_INTEGRITY_START	constant	upstream	M6	Callbacks.ALPM_EVENT_INTEGRITY_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_INTEGRITY_START	downstream-alpm.h:741
-ALPM_EVENT_INTERCONFLICTS_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_INTERCONFLICTS_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_INTERCONFLICTS_DONE	downstream-alpm.h:729
-ALPM_EVENT_INTERCONFLICTS_START	constant	upstream	M6	Callbacks.ALPM_EVENT_INTERCONFLICTS_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_INTERCONFLICTS_START	downstream-alpm.h:727
+ALPM_EVENT_INTERCONFLICTS_DONE	constant	upstream	M6	Callbacks.phase at actual prepare boundaries; flags and failures follow native event order	partial	transaction-m6-reference	M6/ALPM_EVENT_INTERCONFLICTS_DONE	downstream-alpm.h:729
+ALPM_EVENT_INTERCONFLICTS_START	constant	upstream	M6	Callbacks.phase at actual prepare boundaries; flags and failures follow native event order	partial	transaction-m6-reference	M6/ALPM_EVENT_INTERCONFLICTS_START	downstream-alpm.h:727
 ALPM_EVENT_KEYRING_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_KEYRING_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_KEYRING_DONE	downstream-alpm.h:776
 ALPM_EVENT_KEYRING_START	constant	upstream	M6	Callbacks.ALPM_EVENT_KEYRING_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_KEYRING_START	downstream-alpm.h:774
 ALPM_EVENT_KEY_DOWNLOAD_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_KEY_DOWNLOAD_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_KEY_DOWNLOAD_DONE	downstream-alpm.h:780
 ALPM_EVENT_KEY_DOWNLOAD_START	constant	upstream	M6	Callbacks.ALPM_EVENT_KEY_DOWNLOAD_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_KEY_DOWNLOAD_START	downstream-alpm.h:778
 ALPM_EVENT_LOAD_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_LOAD_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_LOAD_DONE	downstream-alpm.h:747
 ALPM_EVENT_LOAD_START	constant	upstream	M6	Callbacks.ALPM_EVENT_LOAD_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_LOAD_START	downstream-alpm.h:745
-ALPM_EVENT_OPTDEP_REMOVAL	constant	upstream	M6	Callbacks.ALPM_EVENT_OPTDEP_REMOVAL typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_OPTDEP_REMOVAL	downstream-alpm.h:769
+ALPM_EVENT_OPTDEP_REMOVAL	constant	upstream	M6	Callbacks.optional_dependency_removed during removal preparation; borrowed relation and package identity	partial	transaction-m6-unit	M6/ALPM_EVENT_OPTDEP_REMOVAL	downstream-alpm.h:769
 ALPM_EVENT_PACKAGE_OPERATION_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_PACKAGE_OPERATION_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_PACKAGE_OPERATION_DONE	downstream-alpm.h:739
 ALPM_EVENT_PACKAGE_OPERATION_START	constant	upstream	M6	Callbacks.ALPM_EVENT_PACKAGE_OPERATION_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_PACKAGE_OPERATION_START	downstream-alpm.h:736
 ALPM_EVENT_PACNEW_CREATED	constant	upstream	M6	Callbacks.ALPM_EVENT_PACNEW_CREATED typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_PACNEW_CREATED	downstream-alpm.h:782
@@ -105,8 +105,8 @@ ALPM_EVENT_PACSAVE_CREATED	constant	upstream	M6	Callbacks.ALPM_EVENT_PACSAVE_CRE
 ALPM_EVENT_PKG_RETRIEVE_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_PKG_RETRIEVE_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_PKG_RETRIEVE_DONE	downstream-alpm.h:760
 ALPM_EVENT_PKG_RETRIEVE_FAILED	constant	upstream	M6	Callbacks.ALPM_EVENT_PKG_RETRIEVE_FAILED typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_PKG_RETRIEVE_FAILED	downstream-alpm.h:762
 ALPM_EVENT_PKG_RETRIEVE_START	constant	upstream	M6	Callbacks.ALPM_EVENT_PKG_RETRIEVE_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_PKG_RETRIEVE_START	downstream-alpm.h:758
-ALPM_EVENT_RESOLVEDEPS_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_RESOLVEDEPS_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_RESOLVEDEPS_DONE	downstream-alpm.h:725
-ALPM_EVENT_RESOLVEDEPS_START	constant	upstream	M6	Callbacks.ALPM_EVENT_RESOLVEDEPS_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_RESOLVEDEPS_START	downstream-alpm.h:723
+ALPM_EVENT_RESOLVEDEPS_DONE	constant	upstream	M6	Callbacks.phase at actual prepare boundaries; flags and failures follow native event order	partial	transaction-m6-reference	M6/ALPM_EVENT_RESOLVEDEPS_DONE	downstream-alpm.h:725
+ALPM_EVENT_RESOLVEDEPS_START	constant	upstream	M6	Callbacks.phase at actual prepare boundaries; flags and failures follow native event order	partial	transaction-m6-reference	M6/ALPM_EVENT_RESOLVEDEPS_START	downstream-alpm.h:723
 ALPM_EVENT_SCRIPTLET_INFO	constant	upstream	M6	Callbacks.ALPM_EVENT_SCRIPTLET_INFO typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_SCRIPTLET_INFO	downstream-alpm.h:750
 ALPM_EVENT_TRANSACTION_DONE	constant	upstream	M6	Callbacks.ALPM_EVENT_TRANSACTION_DONE typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_TRANSACTION_DONE	downstream-alpm.h:733
 ALPM_EVENT_TRANSACTION_START	constant	upstream	M6	Callbacks.ALPM_EVENT_TRANSACTION_START typed payload and meaningful event order	missing	-	M6/ALPM_EVENT_TRANSACTION_START	downstream-alpm.h:731
@@ -144,13 +144,13 @@ ALPM_PROGRESS_LOAD_START	constant	upstream	M6	Callbacks.ALPM_PROGRESS_LOAD_START
 ALPM_PROGRESS_REINSTALL_START	constant	upstream	M6	Callbacks.ALPM_PROGRESS_REINSTALL_START typed payload and meaningful event order	missing	-	M6/ALPM_PROGRESS_REINSTALL_START	downstream-alpm.h:1125
 ALPM_PROGRESS_REMOVE_START	constant	upstream	M6	Callbacks.ALPM_PROGRESS_REMOVE_START typed payload and meaningful event order	missing	-	M6/ALPM_PROGRESS_REMOVE_START	downstream-alpm.h:1127
 ALPM_PROGRESS_UPGRADE_START	constant	upstream	M6	Callbacks.ALPM_PROGRESS_UPGRADE_START typed payload and meaningful event order	missing	-	M6/ALPM_PROGRESS_UPGRADE_START	downstream-alpm.h:1121
-ALPM_QUESTION_CONFLICT_PKG	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_CONFLICT_PKG typed payload and answer effect	missing	-	M6/ALPM_QUESTION_CONFLICT_PKG	downstream-alpm.h:981
-ALPM_QUESTION_CORRUPTED_PKG	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_CORRUPTED_PKG typed payload and answer effect	missing	-	M6/ALPM_QUESTION_CORRUPTED_PKG	downstream-alpm.h:983
-ALPM_QUESTION_IMPORT_KEY	constant	upstream	M6	Callbacks.Question.import_key: deny default, reentry/cancellation guard, explicit import and reverification	partial	verification-m4-integration	M6/ALPM_QUESTION_IMPORT_KEY	downstream-alpm.h:989
-ALPM_QUESTION_INSTALL_IGNOREPKG	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_INSTALL_IGNOREPKG typed payload and answer effect	missing	-	M6/ALPM_QUESTION_INSTALL_IGNOREPKG	downstream-alpm.h:977
-ALPM_QUESTION_REMOVE_PKGS	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_REMOVE_PKGS typed payload and answer effect	missing	-	M6/ALPM_QUESTION_REMOVE_PKGS	downstream-alpm.h:985
-ALPM_QUESTION_REPLACE_PKG	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_REPLACE_PKG typed payload and answer effect	missing	-	M6/ALPM_QUESTION_REPLACE_PKG	downstream-alpm.h:979
-ALPM_QUESTION_SELECT_PROVIDER	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_SELECT_PROVIDER typed payload and answer effect	missing	-	M6/ALPM_QUESTION_SELECT_PROVIDER	downstream-alpm.h:987
+ALPM_QUESTION_CONFLICT_PKG	constant	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/ALPM_QUESTION_CONFLICT_PKG	downstream-alpm.h:981
+ALPM_QUESTION_CORRUPTED_PKG	constant	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/ALPM_QUESTION_CORRUPTED_PKG	downstream-alpm.h:983
+ALPM_QUESTION_IMPORT_KEY	constant	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/ALPM_QUESTION_IMPORT_KEY	downstream-alpm.h:989
+ALPM_QUESTION_INSTALL_IGNOREPKG	constant	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/ALPM_QUESTION_INSTALL_IGNOREPKG	downstream-alpm.h:977
+ALPM_QUESTION_REMOVE_PKGS	constant	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/ALPM_QUESTION_REMOVE_PKGS	downstream-alpm.h:985
+ALPM_QUESTION_REPLACE_PKG	constant	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/ALPM_QUESTION_REPLACE_PKG	downstream-alpm.h:979
+ALPM_QUESTION_SELECT_PROVIDER	constant	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/ALPM_QUESTION_SELECT_PROVIDER	downstream-alpm.h:987
 ALPM_SIGSTATUS_INVALID	constant	upstream	M4	SignatureResult.Status: invalid	partial	verification-m4-unit	M4/ALPM_SIGSTATUS_INVALID	downstream-alpm.h:420
 ALPM_SIGSTATUS_KEY_DISABLED	constant	upstream	M4	SignatureResult.Status: key_disabled	partial	verification-m4-unit	M4/ALPM_SIGSTATUS_KEY_DISABLED	downstream-alpm.h:418
 ALPM_SIGSTATUS_KEY_EXPIRED	constant	upstream	M4	SignatureResult.Status: key_expired	partial	verification-m4-unit	M4/ALPM_SIGSTATUS_KEY_EXPIRED	downstream-alpm.h:412
@@ -187,7 +187,7 @@ ALPM_TRANS_FLAG_RECURSE	constant	upstream	M5	TransactionFlags.recurse in native 
 ALPM_TRANS_FLAG_RECURSEALL	constant	upstream	M5	TransactionFlags.recurse_all in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_RECURSEALL	downstream-alpm.h:2884
 ALPM_TRANS_FLAG_UNNEEDED	constant	upstream	M5	TransactionFlags.unneeded in native resolution/planned reasons; remaining executor behavior tracked separately	partial	resolver-m5-reference	M5/ALPM_TRANS_FLAG_UNNEEDED	downstream-alpm.h:2882
 FREELIST	macro	upstream	M1	Zig slices/ArrayList with explicit allocator ownership and stable iteration	representation_only	-	M1/FREELIST	alpm_list.h:61
-alpm_add_pkg	function	upstream	M6	Transaction.addPackage with duplicate and ownership checks	missing	-	M6/alpm_add_pkg	downstream-alpm.h:2961
+alpm_add_pkg	function	upstream	M6	Transaction.addPackage and takeArchive; explicit optional ownership transfer and duplicate identity checks	partial	transaction-m6-unit	M6/alpm_add_pkg	downstream-alpm.h:2961
 alpm_backup_t	type	upstream	M2	BackupFile: name and optional installed hash	partial	metadata-m2-reference	M2/alpm_backup_t	downstream-alpm.h:158
 alpm_capabilities	function	upstream	M1	root truthful capability reporting	partial	owner-unit	M1/alpm_capabilities	downstream-alpm.h:3030
 alpm_caps	type	upstream	M11	root capabilities; report alpm_caps only when the feature is operational	missing	-	M11/alpm_caps	downstream-alpm.h:3013
@@ -196,7 +196,7 @@ alpm_cb_event	type	upstream	M6	Callbacks.alpm_cb_event typed payload and meaning
 alpm_cb_fetch	type	upstream	M7	Callbacks.Download.alpm_cb_fetch payload/lifetime/order	partial	owner-unit	M7/alpm_cb_fetch	downstream-alpm.h:1224
 alpm_cb_log	type	upstream	M6	Callbacks.Log.alpm_cb_log severity and formatting	partial	owner-unit	M6/alpm_cb_log	downstream-alpm.h:1511
 alpm_cb_progress	type	upstream	M6	Callbacks.alpm_cb_progress typed payload and meaningful event order	partial	owner-unit	M6/alpm_cb_progress	downstream-alpm.h:1153
-alpm_cb_question	type	upstream	M6	Callbacks.Question.alpm_cb_question typed payload and answer effect	partial	owner-unit	M6/alpm_cb_question	downstream-alpm.h:1114
+alpm_cb_question	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_cb_question	downstream-alpm.h:1114
 alpm_checkconflicts	function	upstream	M5	Resolver bidirectional conflict preparation; TransactionPlan.issues.conflict	partial	resolver-m5-reference	M5/alpm_checkconflicts	downstream-alpm.h:664
 alpm_checkdeps	function	upstream	M5	Resolver final future-state checks; TransactionPlan.issues.missing and owned edges/provisions	partial	resolver-m5-reference	M5/alpm_checkdeps	downstream-alpm.h:631
 alpm_compute_md5sum	function	upstream	M4	Checksum.file(.md5) streaming lowercase hex	partial	verification-m4-reference	M4/alpm_compute_md5sum	downstream-alpm.h:2996
@@ -338,7 +338,7 @@ alpm_option_get_hookdirs	function	upstream	M9	OwnerConfiguration.hook_directorie
 alpm_option_get_ignoregroups	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_groups; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_get_ignoregroups	downstream-alpm.h:2055
 alpm_option_get_ignorepkgs	function	upstream	M5	Owner.options/setList/addListValue/removeListValue ignore_packages; Resolver fnmatch and selection policy	partial	resolver-m5-reference	M5/alpm_option_get_ignorepkgs	downstream-alpm.h:2016
 alpm_option_get_local_file_siglevel	function	upstream	M4	OwnerConfiguration.local_file_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_get_local_file_siglevel	downstream-alpm.h:2237
-alpm_option_get_lockfile	function	upstream	M6	Owner.lock_file; locking remains M6; M1 configuration coverage is partial compatibility	partial	owner-reference	M6/alpm_option_get_lockfile	downstream-alpm.h:1703
+alpm_option_get_lockfile	function	upstream	M6	Owner.lock_file; exclusive lock from initializeTransaction until release or explicit unlock	partial	transaction-m6-reference	M6/alpm_option_get_lockfile	downstream-alpm.h:1703
 alpm_option_get_logcb	function	upstream	M6	OwnerConfiguration.callbacks.log; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_logcb	downstream-alpm.h:1539
 alpm_option_get_logcb_ctx	function	upstream	M6	OwnerConfiguration.callbacks.log_context; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_logcb_ctx	downstream-alpm.h:1545
 alpm_option_get_logfile	function	upstream	M6	OwnerConfiguration.log_file; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-reference	M6/alpm_option_get_logfile	downstream-alpm.h:1835
@@ -349,7 +349,7 @@ alpm_option_get_parallel_downloads	function	upstream	M7	OwnerConfiguration.paral
 alpm_option_get_physical_architectures	function	cachyos	M1	PhysicalArchitectures.init/deinit: runtime uname/CPUID/XCR0 and ordered CachyOS base/v2/v3/v4 rules	partial	physical-architecture-unit	M1/alpm_option_get_physical_architectures	downstream-alpm.h:2134
 alpm_option_get_progresscb	function	upstream	M6	OwnerConfiguration.callbacks.progress; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_progresscb	downstream-alpm.h:1639
 alpm_option_get_progresscb_ctx	function	upstream	M6	OwnerConfiguration.callbacks.progress_context; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_progresscb_ctx	downstream-alpm.h:1645
-alpm_option_get_questioncb	function	upstream	M6	OwnerConfiguration.callbacks.question; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_questioncb	downstream-alpm.h:1619
+alpm_option_get_questioncb	function	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_option_get_questioncb	downstream-alpm.h:1619
 alpm_option_get_questioncb_ctx	function	upstream	M6	OwnerConfiguration.callbacks.question_context; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_questioncb_ctx	downstream-alpm.h:1625
 alpm_option_get_remote_file_siglevel	function	upstream	M4	OwnerConfiguration.remote_file_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_get_remote_file_siglevel	downstream-alpm.h:2250
 alpm_option_get_root	function	upstream	M1	OwnerConfiguration.root; M1 configuration coverage is partial compatibility	partial	owner-reference	M1/alpm_option_get_root	downstream-alpm.h:1669
@@ -392,7 +392,7 @@ alpm_option_set_noupgrades	function	upstream	M8	OwnerConfiguration.no_upgrade; O
 alpm_option_set_overwrite_files	function	upstream	M8	OwnerConfiguration.overwrite_files; Owner.setList; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_set_overwrite_files	downstream-alpm.h:1804
 alpm_option_set_parallel_downloads	function	upstream	M7	OwnerConfiguration.parallel_downloads; Owner.setOptions; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_set_parallel_downloads	downstream-alpm.h:2307
 alpm_option_set_progresscb	function	upstream	M6	OwnerConfiguration.callbacks.progress; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_progresscb	downstream-alpm.h:1653
-alpm_option_set_questioncb	function	upstream	M6	OwnerConfiguration.callbacks.question; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_questioncb	downstream-alpm.h:1633
+alpm_option_set_questioncb	function	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_option_set_questioncb	downstream-alpm.h:1633
 alpm_option_set_remote_file_siglevel	function	upstream	M4	OwnerConfiguration.remote_file_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_set_remote_file_siglevel	downstream-alpm.h:2257
 alpm_option_set_sandboxuser	function	upstream	M7	OwnerConfiguration.sandbox_user; Owner.setOptions; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_set_sandboxuser	downstream-alpm.h:1884
 alpm_option_set_usesyslog	function	upstream	M6	OwnerConfiguration.use_syslog; Owner.setOptions; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_usesyslog	downstream-alpm.h:1907
@@ -456,19 +456,19 @@ alpm_pkgfrom_t	type	upstream	M2	Package.Origin	partial	metadata-m2-reference	M2/
 alpm_pkgreason_t	type	upstream	M2	Package.InstallReason: explicit, dependency, unknown	partial	metadata-m2-reference	M2/alpm_pkgreason_t	downstream-alpm.h:2392
 alpm_pkgvalidation_t	type	upstream	M2	Package.Validation: performed checks on loaded archives, historical local flags; sync promises exposed by availableValidation	partial	verification-m4-unit	M2/alpm_pkgvalidation_t	downstream-alpm.h:2417
 alpm_progress_t	type	upstream	M6	Callbacks.alpm_progress_t typed payload and meaningful event order	partial	owner-unit	M6/alpm_progress_t	downstream-alpm.h:1138
-alpm_question_any_t	type	upstream	M6	Callbacks.Question.alpm_question_any_t typed payload and answer effect	missing	-	M6/alpm_question_any_t	downstream-alpm.h:998
-alpm_question_conflict_t	type	upstream	M6	Callbacks.Question.alpm_question_conflict_t typed payload and answer effect	missing	-	M6/alpm_question_conflict_t	downstream-alpm.h:1032
-alpm_question_corrupted_t	type	upstream	M6	Callbacks.Question.alpm_question_corrupted_t typed payload and answer effect	missing	-	M6/alpm_question_corrupted_t	downstream-alpm.h:1044
-alpm_question_import_key_t	type	upstream	M6	Callbacks.Question.import_key: deny default, reentry/cancellation guard, explicit import and reverification	partial	verification-m4-integration	M6/alpm_question_import_key_t	downstream-alpm.h:1078
-alpm_question_install_ignorepkg_t	type	upstream	M6	Callbacks.Question.alpm_question_install_ignorepkg_t typed payload and answer effect	missing	-	M6/alpm_question_install_ignorepkg_t	downstream-alpm.h:1008
-alpm_question_remove_pkgs_t	type	upstream	M6	Callbacks.Question.alpm_question_remove_pkgs_t typed payload and answer effect	missing	-	M6/alpm_question_remove_pkgs_t	downstream-alpm.h:1054
-alpm_question_replace_t	type	upstream	M6	Callbacks.Question.alpm_question_replace_t typed payload and answer effect	missing	-	M6/alpm_question_replace_t	downstream-alpm.h:1022
-alpm_question_select_provider_t	type	upstream	M6	Callbacks.Question.alpm_question_select_provider_t typed payload and answer effect	missing	-	M6/alpm_question_select_provider_t	downstream-alpm.h:1066
-alpm_question_t	type	upstream	M6	Callbacks.Question.alpm_question_t typed payload and answer effect	partial	owner-unit	M6/alpm_question_t	downstream-alpm.h:1106
-alpm_question_type_t	type	upstream	M6	Callbacks.Question.alpm_question_type_t typed payload and answer effect	missing	-	M6/alpm_question_type_t	downstream-alpm.h:990
+alpm_question_any_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_any_t	downstream-alpm.h:998
+alpm_question_conflict_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_conflict_t	downstream-alpm.h:1032
+alpm_question_corrupted_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_corrupted_t	downstream-alpm.h:1044
+alpm_question_import_key_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_import_key_t	downstream-alpm.h:1078
+alpm_question_install_ignorepkg_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_install_ignorepkg_t	downstream-alpm.h:1008
+alpm_question_remove_pkgs_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_remove_pkgs_t	downstream-alpm.h:1054
+alpm_question_replace_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_replace_t	downstream-alpm.h:1022
+alpm_question_select_provider_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_select_provider_t	downstream-alpm.h:1066
+alpm_question_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_t	downstream-alpm.h:1106
+alpm_question_type_t	type	upstream	M6	Callbacks.Question and OwnedQuestion; guarded answer-only dispatch and PackageManager deferred adapter; corrupt-file producer remains M7	partial	transaction-m6-adapter	M6/alpm_question_type_t	downstream-alpm.h:990
 alpm_register_syncdb	function	upstream	M1	Owner.registerSyncDatabase	partial	owner-reference	M1/alpm_register_syncdb	downstream-alpm.h:1262
-alpm_release	function	upstream	M1	Owner.deinit with callback/busy protection; active transaction and lock release remain M6	partial	owner-unit	M1/alpm_release	downstream-alpm.h:370
-alpm_remove_pkg	function	upstream	M6	Transaction.removePackage	missing	-	M6/alpm_remove_pkg	downstream-alpm.h:2968
+alpm_release	function	upstream	M1	Owner.deinit rejects active transactions; explicit releaseTransaction required before Owner teardown	partial	transaction-m6-unit	M1/alpm_release	downstream-alpm.h:370
+alpm_remove_pkg	function	upstream	M6	Transaction.remove local name; fresh local identities and harmless repeated target	partial	transaction-m6-reference	M6/alpm_remove_pkg	downstream-alpm.h:2968
 alpm_sandbox_setup_child	function	upstream	M7	Sandbox child credential/filesystem/syscall setup	missing	-	M7/alpm_sandbox_setup_child	downstream-alpm.h:3039
 alpm_siglevel_t	type	upstream	M4	SignaturePolicy: separate package/database requirement and trust, null override inheritance	partial	verification-m4-unit	M4/alpm_siglevel_t	downstream-alpm.h:405
 alpm_siglist_cleanup	function	upstream	M4	SignatureResult.deinit owns all signature, status and key-operation storage	partial	verification-m4-unit	M4/alpm_siglist_cleanup	downstream-alpm.h:505
@@ -481,15 +481,15 @@ alpm_sync_get_new_version	function	upstream	M5	Owner.newVersion / Resolver.newVe
 alpm_sync_sysupgrade	function	upstream	M5	Owner.resolve system_upgrade: priority, replacements, ignores, opt-in downgrade, absent locals	partial	resolver-m5-reference	M5/alpm_sync_sysupgrade	downstream-alpm.h:2952
 alpm_time_t	type	upstream	M2	Package.build_date / install_date: optional i64 timestamps	partial	metadata-m2-reference	M2/alpm_time_t	downstream-alpm.h:127
 alpm_trans_commit	function	upstream	M10	Transaction.commit filesystem/database/hooks execution	missing	-	M10/alpm_trans_commit	downstream-alpm.h:2928
-alpm_trans_get_add	function	upstream	M6	TransactionPlan ordered additions	missing	-	M6/alpm_trans_get_add	downstream-alpm.h:2899
-alpm_trans_get_flags	function	upstream	M6	TransactionFlags query	missing	-	M6/alpm_trans_get_flags	downstream-alpm.h:2893
-alpm_trans_get_remove	function	upstream	M6	TransactionPlan ordered removals	missing	-	M6/alpm_trans_get_remove	downstream-alpm.h:2905
-alpm_trans_init	function	upstream	M6	Transaction.init and database lock	missing	-	M6/alpm_trans_init	downstream-alpm.h:2912
-alpm_trans_interrupt	function	upstream	M6	Transaction cancellation state machine	missing	-	M6/alpm_trans_interrupt	downstream-alpm.h:2934
-alpm_trans_prepare	function	upstream	M6	Transaction.prepare state transition and diagnostics	missing	-	M6/alpm_trans_prepare	downstream-alpm.h:2920
-alpm_trans_release	function	upstream	M6	Transaction.deinit and lock/archive release	missing	-	M6/alpm_trans_release	downstream-alpm.h:2940
-alpm_transflag_t	type	upstream	M6	TransactionFlags typed options	missing	-	M6/alpm_transflag_t	downstream-alpm.h:2887
-alpm_unlock	function	upstream	M6	Owner explicit lock release	missing	-	M6/alpm_unlock	downstream-alpm.h:3010
+alpm_trans_get_add	function	upstream	M6	Transaction.plan ordered additions after prepare; pre-prepare native list projection remains a representation difference	partial	transaction-m6-reference	M6/alpm_trans_get_add	downstream-alpm.h:2899
+alpm_trans_get_flags	function	upstream	M6	Transaction.flags and TransactionPlan.flags; immutable transaction configuration	partial	transaction-m6-unit	M6/alpm_trans_get_flags	downstream-alpm.h:2893
+alpm_trans_get_remove	function	upstream	M6	Transaction.plan ordered removals after prepare; repeated removal is harmless	partial	transaction-m6-reference	M6/alpm_trans_get_remove	downstream-alpm.h:2905
+alpm_trans_init	function	upstream	M6	Owner.initializeTransaction; stable Owner-owned Transaction; mode-000 exclusive db.lck; fresh generations	partial	transaction-m6-reference	M6/alpm_trans_init	downstream-alpm.h:2912
+alpm_trans_interrupt	function	upstream	M6	Transaction.interrupt state checks; Owner.requestCancellation supports all implemented phases; mutation pending M10	partial	transaction-m6-unit	M6/alpm_trans_interrupt	downstream-alpm.h:2934
+alpm_trans_prepare	function	upstream	M6	Transaction.prepare; frozen configuration and content snapshot; explicit states and retained failures	partial	transaction-m6-reference	M6/alpm_trans_prepare	downstream-alpm.h:2920
+alpm_trans_release	function	upstream	M6	Owner.releaseTransaction; always frees plan/archives/descriptors; identity-checked lock unlink	partial	transaction-m6-unit	M6/alpm_trans_release	downstream-alpm.h:2940
+alpm_transflag_t	type	upstream	M6	TransactionFlags typed options; execution flags retained for M7-M10	partial	resolver-m5-unit	M6/alpm_transflag_t	downstream-alpm.h:2887
+alpm_unlock	function	upstream	M6	Owner.unlock releases only its retained descriptor/path identity; foreign/stale locks preserved	partial	transaction-m6-unit	M6/alpm_unlock	downstream-alpm.h:3010
 alpm_unregister_all_syncdbs	function	upstream	M1	Owner.unregisterSyncDatabases	partial	owner-unit	M1/alpm_unregister_all_syncdbs	downstream-alpm.h:1271
 alpm_version	function	upstream	M1	root version reporting	partial	owner-unit	M1/alpm_version	downstream-alpm.h:3025
 behavior.archive-streams	behavior	upstream	M2	Package.openMember / openMtree: independently owned archive and local member streams	partial	database-m3-unit	M2/behavior.archive-streams	upstream-source-tests.tar.gz!lib/libalpm/be_package.c
@@ -516,4 +516,4 @@ behavior.signature-policy-matrix	behavior	upstream	M4	Effective policy; all sign
 behavior.solver-selection	behavior	upstream	M5	Resolver shared closure, questions, conflicts and final future-state edges/provisions; owned plan diagnostics	partial	resolver-m5-reference	M5/behavior.solver-selection	upstream-source-tests.tar.gz!lib/libalpm/deps.c
 behavior.solver-system-upgrade	behavior	upstream	M5	Resolver ordered system-upgrade/replacement/removal selection, reasons, flags and cycle ordering	partial	resolver-m5-reference	M5/behavior.solver-system-upgrade	upstream-source-tests.tar.gz!lib/libalpm/sync.c
 behavior.sync-formats	behavior	upstream	M3	SyncBackend: libarchive plain/gzip/xz/zstd/bzip2 db/files, merged desc/depends/files, transactional failure	partial	database-m3-reference	M3/behavior.sync-formats	upstream-source-tests.tar.gz!lib/libalpm/be_sync.c
-behavior.transaction-lifecycle	behavior	upstream	M6	State transitions; lock contention; cancellation; question answers; deterministic event order	missing	-	M6/behavior.transaction-lifecycle	upstream-source-tests.tar.gz!lib/libalpm/trans.c
+behavior.transaction-lifecycle	behavior	upstream	M6	Transaction states, lock ownership, stale-state detection, archive cleanup, deferred questions and ordered events; nonempty commit pending M10	partial	transaction-m6-reference	M6/behavior.transaction-lifecycle	upstream-source-tests.tar.gz!lib/libalpm/trans.c

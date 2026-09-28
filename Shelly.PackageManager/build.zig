@@ -43,6 +43,27 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
+    const operation_context_mod = b.createModule(.{
+        .root_source_file = b.path("src/shared/operation_context.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    operation_context_mod.addImport("diagnostics", diagnostics);
+    const rlpm_adapter = b.addModule("rlpm_operation_adapter", .{
+        .root_source_file = b.path("src/rlpm/operation_adapter.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "operation_context", .module = operation_context_mod },
+            .{ .name = "Shelly_Rlpm", .module = b.dependency("shelly_rlpm", .{ .target = target, .optimize = optimize }).module("Shelly_Rlpm") },
+        },
+    });
+    const rlpm_adapter_tests = b.addRunArtifact(b.addTest(.{ .root_module = rlpm_adapter }));
+    const rlpm_adapter_step = b.step("rlpm-adapter-test", "Test RLPM lifecycle/deferred UI adapter in private roots");
+    rlpm_adapter_step.dependOn(&rlpm_adapter_tests.step);
+    rlpm_adapter_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = operation_context_mod })).step);
+    // Validate this opt-in adapter without building the other native backends.
+    if (b.option(bool, "rlpm-adapter-only", "Build only the RLPM callback adapter") orelse false) return;
     const shelly_http = b.dependency("shelly_http", .{
         .target = target,
         .optimize = optimize,
@@ -70,12 +91,6 @@ pub fn build(b: *std.Build) void {
     });
     const alpm_c = translate_alpm.createModule();
 
-    const operation_context_mod = b.createModule(.{
-        .root_source_file = b.path("src/shared/operation_context.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    operation_context_mod.addImport("diagnostics", diagnostics);
     const user_account_mod = b.createModule(.{
         .root_source_file = b.path("src/shared/user_account.zig"),
         .target = target,
@@ -117,6 +132,7 @@ pub fn build(b: *std.Build) void {
     mod.addImport("alpm_c", alpm_c);
     mod.addImport("archive", archive_mod);
     mod.addImport("operation_context", operation_context_mod);
+    mod.addImport("rlpm_operation_adapter", rlpm_adapter);
     mod.addImport("user_account", user_account_mod);
     mod.addImport("ShellyHttp", shelly_http.module("ShellyHttp"));
     mod.addImport("toml", toml_module);
@@ -262,6 +278,7 @@ pub fn build(b: *std.Build) void {
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
     const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&rlpm_adapter_tests.step);
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 

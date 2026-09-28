@@ -32,6 +32,8 @@ pub const PhysicalArchitectures = @import("structs/PhysicalArchitectures.zig");
 pub const Resolver = @import("structs/Resolver.zig");
 pub const TransactionPlan = @import("structs/TransactionPlan.zig");
 pub const TransactionFlags = @import("structs/TransactionFlags.zig");
+pub const Transaction = @import("structs/Transaction.zig");
+pub const OwnedQuestion = @import("structs/OwnedQuestion.zig");
 pub const version = "0.0.0";
 
 pub const Capabilities = struct {
@@ -44,6 +46,7 @@ pub const Capabilities = struct {
     sqlite_sync_databases: bool = true,
     signature_policy_enforcement: bool = true,
     resolution_plans: bool = true,
+    transaction_lifecycle: bool = true,
     downloads: bool = false,
     transactions: bool = false,
     localization: bool = false,

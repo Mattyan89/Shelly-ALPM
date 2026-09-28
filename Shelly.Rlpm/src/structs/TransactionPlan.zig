@@ -1,6 +1,6 @@
 //! Owned, read-only resolution result. Treat its views as immutable. It survives
 //! Owner/cache/archive release; deinit exactly once. A failed plan is diagnostic
-//! data, never an executable transaction. M6 will bind review to live state.
+//! data, never an executable transaction. Transaction binds review to live state.
 const Plan = @This();
 const std = @import("std");
 const Package = @import("Package.zig");
@@ -63,6 +63,8 @@ pub const Sizes = struct {
 arena: std.heap.ArenaAllocator,
 candidates: []const Candidate = &.{},
 flags: @import("TransactionFlags.zig") = .{},
+/// Whether target selection left work for native prepare to enter a phase.
+had_prepare_targets: bool = false,
 additions: []const Addition = &.{},
 removals: []const Id = &.{},
 unchanged_satisfiers: []const Id = &.{},

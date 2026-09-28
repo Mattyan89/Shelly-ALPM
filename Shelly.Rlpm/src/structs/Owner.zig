@@ -13,6 +13,7 @@ const Group = @import("Group.zig");
 const Callbacks = @import("Callbacks.zig");
 const Diagnostic = @import("Diagnostic.zig");
 const Verification = @import("Verification.zig");
+const Transaction = @import("Transaction.zig");
 
 allocator: std.mem.Allocator,
 configuration_arena: std.heap.ArenaAllocator,
@@ -27,6 +28,7 @@ in_callback: bool = false,
 cancelled: std.atomic.Value(bool) = .init(false),
 last_diagnostic: ?Diagnostic = null,
 last_verification: ?@import("SignatureResult.zig") = null,
+active_transaction: ?*Transaction = null,
 
 var next_owner_id: std.atomic.Value(u64) = .init(1);
 
@@ -70,6 +72,7 @@ fn allocateIdentity() !DatabaseRef.OwnerId {
 
 pub fn deinit(self: *Owner) !void {
     try self.checkIdle();
+    if (self.active_transaction != null) return error.TransactionActive;
     Verification.clearReport(&self.last_verification);
     self.destroyDatabases();
     self.configuration_arena.deinit();
@@ -350,7 +353,7 @@ pub fn findGroup(self: *Owner, io: std.Io, reference: DatabaseRef, name: []const
 
 /// Lazy query variants take Io explicitly; snapshot accessors never hide I/O.
 pub fn ensureDatabase(self: *Owner, io: std.Io, reference: DatabaseRef) !void {
-    try self.begin(.load_database);
+    try self.begin(.query);
     defer self.busy = false;
     self.ensureInternal(io, reference) catch |err| return self.fail(.load_database, err, reference);
 }
@@ -666,7 +669,12 @@ fn resolveInternal(self: *Owner, io: std.Io, request: @import("Resolver.zig").Re
         .ignore_packages = self.configuration.ignore_packages,
         .ignore_groups = self.configuration.ignore_groups,
         .assume_installed = self.configuration.assume_installed,
-    }, request, .{ .user = self, .question = resolutionQuestion, .check_cancelled = verificationCancellation });
+    }, request, .{ .user = self, .question = resolutionQuestion, .check_cancelled = verificationCancellation, .event = resolutionEvent });
+}
+fn resolutionEvent(context: ?*anyopaque, event: Callbacks.Event) !void {
+    const self: *Owner = @ptrCast(@alignCast(context.?));
+    self.transactionEvent(event);
+    try self.checkCancelled();
 }
 fn resolutionEntries(self: *Owner, io: std.Io, a: std.mem.Allocator, reference: DatabaseRef) ![]const @import("Resolver.zig").Entry {
     try self.ensureInternal(io, reference);
@@ -689,6 +697,7 @@ fn resolutionQuestion(context: ?*anyopaque, question: *Callbacks.Question) anyer
 
 pub fn setCallbacks(self: *Owner, callbacks: Callbacks) !void {
     try self.checkIdle();
+    if (self.active_transaction != null) return error.TransactionActive;
     self.configuration.callbacks = callbacks;
 }
 pub fn emit(self: *Owner, event: Callbacks.Event) !void {
@@ -713,12 +722,18 @@ pub fn ask(self: *Owner, question: *Callbacks.Question) !void {
 }
 fn askInternal(self: *Owner, question: *Callbacks.Question) !void {
     try self.checkCancelled();
-    if (self.configuration.callbacks.question) |callback| {
+    var answer = question.*;
+    if (self.configuration.callbacks.question_with_error) |callback| {
         self.in_callback = true;
         defer self.in_callback = false;
-        callback(self.configuration.callbacks.question_context, question);
+        try callback(self.configuration.callbacks.question_context, &answer);
+    } else if (self.configuration.callbacks.question) |callback| {
+        self.in_callback = true;
+        defer self.in_callback = false;
+        callback(self.configuration.callbacks.question_context, &answer);
     }
     try self.checkCancelled();
+    try @import("OwnedQuestion.zig").applyAnswer(question, answer);
 }
 /// The only method callable from another thread or from an active callback.
 pub fn requestCancellation(self: *Owner) void {
@@ -740,10 +755,82 @@ fn checkIdle(self: *const Owner) !void {
 }
 fn begin(self: *Owner, operation: Diagnostic.Operation) !void {
     self.checkIdle() catch |err| return self.fail(operation, err, null);
+    if (self.active_transaction != null and operation != .query and operation != .callback and operation != .load_package) return self.fail(operation, error.TransactionActive, null);
     self.last_diagnostic = null;
     self.busy = true;
 }
 fn fail(self: *Owner, operation: Diagnostic.Operation, cause: anyerror, db: ?DatabaseRef) anyerror {
     self.last_diagnostic = Diagnostic.init(operation, cause, db);
     return cause;
+}
+
+/// Acquires db.lck before reloading cached identities. PackageRefs acquired
+/// before initialization become stale; obtain targets after this call.
+pub fn initializeTransaction(self: *Owner, io: std.Io, flags: @import("TransactionFlags.zig")) !*Transaction {
+    try self.begin(.transaction);
+    defer self.busy = false;
+    return self.initializeTransactionInternal(io, flags) catch |err| return self.transactionFailure(err);
+}
+fn initializeTransactionInternal(self: *Owner, io: std.Io, flags: @import("TransactionFlags.zig")) !*Transaction {
+    try self.checkCancelled();
+    var lock: ?@import("DatabaseLock.zig") = if (flags.no_lock) null else try @import("DatabaseLock.zig").acquire(self.allocator, self.lock_file);
+    errdefer if (lock) |*value| value.release(self.allocator) catch {};
+    const snapshot = try @import("DatabaseSnapshot.zig").capture(self, io);
+    const local = if (self.local) |*db| db else return error.StaleDatabaseReference;
+    try local.invalidateCache();
+    for (self.sync_databases.items) |*db| try db.invalidateCache();
+    try self.loadInternal(io, self.localDatabase().?);
+    if (!std.mem.eql(u8, &snapshot, &try @import("DatabaseSnapshot.zig").capture(self, io))) return error.StaleDatabaseState;
+    const active = try self.allocator.create(Transaction);
+    active.* = .{ .owner = self, .io = io, .flags = flags, .storage = .init(self.allocator), .snapshot = snapshot, .lock = lock };
+    self.active_transaction = active;
+    active.transition(.initialized, null);
+    return active;
+}
+pub fn transaction(self: *const Owner) ?*const Transaction {
+    return self.active_transaction;
+}
+pub fn releaseTransaction(self: *Owner) !void {
+    try self.checkIdle();
+    const active = self.active_transaction orelse return self.transactionFailure(error.TransactionNotInitialized);
+    self.busy = true;
+    defer self.busy = false;
+    defer self.active_transaction = null;
+    active.destroy() catch |err| return self.transactionFailure(err);
+}
+/// Explicitly drops only this owner's lock. Foreign/stale locks are never
+/// removed. A transaction whose lock was dropped cannot subsequently commit.
+pub fn unlock(self: *Owner) !void {
+    try self.checkIdle();
+    const active = self.active_transaction orelse return;
+    if (active.lock) |*lock| {
+        defer active.lock = null;
+        lock.release(self.allocator) catch |err| return self.transactionFailure(err);
+    }
+}
+// Internal transaction bridge; callers use Transaction methods.
+pub fn beginTransactionOperation(self: *Owner, active: *Transaction) !void {
+    try self.checkIdle();
+    if (self.active_transaction != active) return self.transactionFailure(error.TransactionNotInitialized);
+    self.last_diagnostic = null;
+    self.busy = true;
+}
+pub fn transactionFailure(self: *Owner, cause: anyerror) anyerror {
+    return self.fail(.transaction, cause, null);
+}
+pub fn transactionPackage(self: *Owner, reference: PackageRef) !*const Package {
+    const db = try self.resolveDatabase(reference.database);
+    if (db.generation != reference.generation or !db.status.package_cache_loaded or @intFromEnum(reference.id) >= db.packages.packages.items.len) return error.StalePackageReference;
+    return &db.packages.packages.items[@intFromEnum(reference.id)];
+}
+pub fn resolveTransaction(self: *Owner, active: *Transaction, request: @import("Resolver.zig").Request) !@import("TransactionPlan.zig") {
+    std.debug.assert(self.busy and self.active_transaction == active);
+    return self.resolveInternal(active.io, request);
+}
+pub fn transactionEvent(self: *Owner, event: Callbacks.Event) void {
+    if (self.configuration.callbacks.event) |callback| {
+        self.in_callback = true;
+        defer self.in_callback = false;
+        callback(self.configuration.callbacks.event_context, event);
+    }
 }

@@ -216,3 +216,21 @@ behavior. The final reason overrides are additionally checked against the pinned
 commit source without committing any package. The [resolution guide](../../../resolution.md)
 documents plan ownership, safety boundaries, evidence and deferred execution work.
 This is prepare coverage, not a complete run of pacman's installation test suite.
+
+M6 adds a lifecycle/event recorder:
+
+```sh
+python3 src/tests/reference/record_transaction.py \
+  --library /usr/lib/libalpm.so.16.0.1
+```
+
+The [transaction fixture](transaction.json) contains 16 scenarios for lock mode,
+contents, timing, lifecycle errors, duplicate removals, flag-dependent prepare
+events, and empty commit. The recorder checks the binary hash and uses only
+private roots. It guards every commit by checking both native target lists;
+nonempty commits are permitted only with NOLOCK, which is rejected before work.
+It performs no downloads, refresh, package writes or host database operations.
+The production executor remains M7–M10. `test-transaction` replays the fixture;
+normal builds never load the reference library. See the
+[transaction guide](../../../transactions.md) for representation and safety
+differences, independent process tests and deferred UI integration.

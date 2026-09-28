@@ -3,7 +3,8 @@
 M5 implements native install, removal and system-upgrade selection through
 `Owner.resolve(io, request)`. It returns an owned `TransactionPlan`. The resolver
 follows the pinned CachyOS libalpm dependency walk and repository priorities.
-M6 will add transaction states, locks and the prepare/commit contract.
+M6 adds transaction states, locks and the prepare/commit contract; see
+[transactions](transactions.md). Nonempty commit still requires M7–M10.
 
 ```zig
 var plan = try owner.resolve(io, .{
@@ -139,8 +140,8 @@ compressed download upper bound. M7 must account for cache hits, partial files
 and actual transfers. Each addition also retains its selected repository as
 `installed_database`, while old CachyOS provenance remains in local metadata.
 Writing that provenance belongs to M10. Plans take no transaction lock and are
-not executable authorizations: M6 must bind the reviewed set/options to live
-state and require another prepare/review whenever that set changes.
+not executable authorizations. M6 binds a transaction-owned plan to frozen options
+and a live database snapshot; changed state requires a new transaction/review.
 
 ## Evidence and remaining boundaries
 
@@ -164,7 +165,7 @@ and manifest are unchanged. The optional recorder checks the exact library hash,
 uses private roots and `NOLOCK`, and never commits or downloads. Regular builds
 and tests neither link nor load libalpm.
 
-Full backend equivalence still requires M6–M11: transaction lifecycle, transfer,
+Full backend equivalence still requires M7–M11: transfer,
 filesystem conflict checks, hooks/scriptlets, installation/database persistence,
 integration and broader interoperability/performance gates. Capability reporting
 therefore exposes `resolution_plans = true` while `transactions = false` and

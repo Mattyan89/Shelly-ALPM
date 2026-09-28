@@ -190,6 +190,7 @@ pub const repo = struct {
 
 /// Backend-neutral lifecycle, event, question, and cancellation API.
 pub const operation = @import("operation_context");
+pub const RlpmOperationAdapter = @import("rlpm_operation_adapter");
 
 /// Zig 0.16 HTTP client with a compact, VPN-compatible TLS ClientHello.
 pub const HttpClient = @import("ShellyHttp");

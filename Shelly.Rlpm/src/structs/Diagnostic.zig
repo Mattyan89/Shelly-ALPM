@@ -12,6 +12,7 @@ pub const Operation = enum {
     invalidate_database,
     query,
     resolve,
+    transaction,
     callback,
 };
 pub const Category = enum {
@@ -42,7 +43,10 @@ pub fn init(operation: Operation, cause: anyerror, database: ?DatabaseRef) Diagn
         error.InvalidPath, error.InvalidOption, error.InvalidVersion, error.InvalidCharacter, error.InvalidPackageRelation, error.InvalidDatabaseName, error.ReservedDatabaseName, error.ImmutablePath, error.InvalidAnswer, error.InvalidRegex => .invalid_argument,
         error.DuplicateDatabase, error.DatabaseNotLoaded, error.DatabaseAlreadyLoaded, error.UnsupportedDatabaseVersion, error.InvalidDatabaseEntry, error.InvalidSqliteDatabase, error.DuplicatePackage, error.InvalidPackageFilename, error.ArchiveFailed => .database,
         error.ForeignOwner, error.StaleDatabaseReference, error.StalePackageReference => .stale_reference,
-        error.CallbackReentry, error.OwnerBusy => .busy,
+        error.CallbackReentry, error.OwnerBusy, error.TransactionActive, error.DatabaseLocked => .busy,
+        error.InvalidTransactionState, error.TransactionNotInitialized, error.InvalidPackageOwnership, error.TransactionNotLocked => .invalid_argument,
+        error.StaleDatabaseState, error.LockOwnershipLost, error.LockNotHeld => .stale_reference,
+        error.CommitUnavailable => .unsupported,
         error.Cancelled => .cancelled,
         error.UnsupportedDatabaseBackend => .unsupported,
         else => .io,

@@ -3,8 +3,8 @@
 RLPM is the native Zig package backend under development. The
 [completion plan](../docs/rlpm-libalpm-completion-plan.md) targets libalpm's
 functional behavior **including CachyOS extensions**, following the existing
-Owner/Database/Package design. M0–M4 are accepted; M5 is implemented and
-awaiting acceptance before M6. RLPM is not yet a replacement for libalpm.
+Owner/Database/Package design. M0–M5 are accepted; M6 is implemented and
+awaiting acceptance before M7. RLPM is not yet a replacement for libalpm.
 
 M1 exports an owning `Owner` with copied options, ordered repository registration,
 read-only local queries, stable database identity, package cache generations,
@@ -30,6 +30,10 @@ import, structured GPG results and sealed archive snapshots. The
 M5 adds native resolution and owned install/removal/system-upgrade plans with
 provider questions, future-state checks and dependency ordering. The
 [resolution guide](resolution.md) covers plans, flags, lifetimes and evidence.
+M6 adds owned transactions, exclusive locks, frozen preparation, typed lifecycle
+events and PackageManager deferred-question/cancellation support. The
+[transaction guide](transactions.md) covers the state machine and lock contract.
+Nonempty commit explicitly remains unavailable until M7–M10 supply execution.
 Provenance writes and hook/scriptlet network isolation remain required
 later milestones. M7 will reuse PackageManager's
 downloader, queue and mirror logic with its Shelly.Http transport, extracting
@@ -51,6 +55,7 @@ module dependency. From this directory:
 | `zig build test-database` | M3 local/tar/SQLite metadata, queries, reloads and allocation failures |
 | `zig build test-verification` | M4 policy/status, checksums, reference cases, imports and sealed-file tests |
 | `zig build test-resolver` | M5 plans, flags, questions, removal/upgrade behavior and 314 reference scenarios |
+| `zig build test-transaction` | M6 lifecycle, locks/process contention, archive ownership, cancellation and 16 reference scenarios |
 | `zig build test-metadata` | M2 relation, archive, metadata and independent reference fixtures |
 | `zig build test-compatibility` | Frozen reference integrity, complete API inventory and evidence schema |
 | `zig build test-version` | Existing fixed version expectations and ownership tests |
@@ -83,7 +88,7 @@ local storage/version 9 by default; explicit `.read_only` mode never writes.
 Descriptions/files/groups load lazily. Registered sync databases need not exist;
 queries load their tar/SQLite archives under their effective signature policy.
 Signature policy enforcement is enabled in capability reporting; downloads and
-transactions remain disabled. Metadata-only `Package.loadArchive` is explicitly
+package-executing transactions remain disabled. `transaction_lifecycle` is enabled. Metadata-only `Package.loadArchive` is explicitly
 unverified; `Owner.loadPackage` performs policy checks and retains the verified
 bytes. Sealed snapshots require RAM/swap proportional to archive size.
 
@@ -92,7 +97,7 @@ bytes. Sealed snapshots require RAM/swap proportional to archive size.
   [Reference documentation](src/tests/reference/README.md) explains attribution,
   corpus provenance and optional capture on disposable roots.
 - The [ledger](src/tests/compatibility-ledger.tsv) tracks 493 public symbols and
-  25 behavioral contracts. There are 187 missing, 298 partial and 33
+  25 behavioral contracts. There are 147 missing, 338 partial and 33
   representation-only rows. No row claims verified full compatibility, and
   every CachyOS extension remains required.
 - [Owner reference fixtures](src/tests/fixtures/owner-reference.json) capture

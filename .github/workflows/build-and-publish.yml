@@ -36,6 +36,8 @@ jobs:
               - 'Shelly.Http/**'
             packagemanager:
               - 'Shelly.PackageManager/**'
+              - 'Shelly.Rlpm/**'
+              - 'Shelly.Key/**'
               - 'Shelly.Diagnostics/**'
             cli:
               - 'Shelly.Cli.Zig/**'
@@ -54,6 +56,10 @@ jobs:
               - 'Shelly.Diagnostics/**'
             rlpm:
               - 'Shelly.Rlpm/**'
+              - 'Shelly.PackageManager/src/rlpm/**'
+              - 'Shelly.PackageManager/src/shared/operation_context.zig'
+              - 'Shelly.PackageManager/build.zig'
+              - 'Shelly.PackageManager/build.zig.zon'
               - 'Shelly.Key/**'
               - 'Shelly.Diagnostics/**'
               - '.github/workflows/build-and-publish.yml'
@@ -246,6 +252,9 @@ jobs:
         if: ${{ matrix.optimize == 'Debug' }}
         working-directory: Shelly.Rlpm
         run: zig build test-signature --summary all
+      - name: Test RLPM deferred questions and cancellation adapter
+        working-directory: Shelly.PackageManager
+        run: zig build rlpm-adapter-test -Drlpm-adapter-only=true -Doptimize=${{ matrix.optimize }} --summary all
 
   notifications:
     needs: changes
