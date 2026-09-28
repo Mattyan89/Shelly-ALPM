@@ -93,21 +93,21 @@ test "owner paths use canonical independent root and database directories" {
     const expected_local = try std.fmt.allocPrint(allocator, "{s}/local/", .{fixture.db});
     defer allocator.free(expected_local);
     try std.testing.expectEqualStrings(expected_local, local.path);
-    try std.testing.expectEqual(.missing, local.status.presence);
+    try std.testing.expectEqual(.exists, local.status.presence);
     const expected_sync = try std.fmt.allocPrint(allocator, "{s}/sync/core.db", .{fixture.db});
     defer allocator.free(expected_sync);
     try std.testing.expectEqualStrings(expected_sync, owner.syncDatabases()[0].path);
     const expected_hook = try std.fmt.allocPrint(allocator, "{s}/usr/share/libalpm/hooks/", .{fixture.root});
     defer allocator.free(expected_hook);
     try std.testing.expectEqualStrings(expected_hook, owner.options().hook_directories.?[0]);
-    try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.statFile(io, "db/local", .{}));
+    _ = try fixture.temporary.dir.statFile(io, "db/local/ALPM_DB_VERSION", .{});
     try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.statFile(io, "db/sync", .{}));
-    try std.testing.expectError(error.UnsupportedDatabaseBackend, owner.loadDatabase(io, owner.findDatabase("core").?));
-    try std.testing.expectEqual(.unsupported, owner.diagnostic().?.category);
+    try std.testing.expectError(error.FileNotFound, owner.loadDatabase(io, owner.findDatabase("core").?));
+    try std.testing.expectEqual(.io, owner.diagnostic().?.category);
     var message: [128]u8 = undefined;
     var writer = std.Io.Writer.fixed(&message);
     try owner.diagnostic().?.format(&writer);
-    try std.testing.expect(std.mem.startsWith(u8, writer.buffered(), "load_database: UnsupportedDatabaseBackend"));
+    try std.testing.expect(std.mem.startsWith(u8, writer.buffered(), "load_database: FileNotFound"));
     try std.testing.expectError(error.DatabaseNotLoaded, owner.packageIds(owner.findDatabase("core").?));
 }
 
@@ -199,14 +199,14 @@ test "local queries retain repository provenance and reject invalidated package 
     const local = owner.localDatabase().?;
     const alpha = (try owner.findPackage(local, "alpha")).?;
     try std.testing.expectEqualStrings("local", (try owner.package(alpha)).database_name);
-    try std.testing.expectEqualStrings("cachyos", (try owner.package(alpha)).installed_database.?);
+    try std.testing.expectEqualStrings("cachyos", (try owner.packageMetadata(io, alpha, .{})).installed_database.?);
     try std.testing.expect(try owner.findPackage(local, "absent") == null);
-    try std.testing.expect(try owner.findGroup(local, "absent") == null);
+    try std.testing.expect(try owner.findGroup(io, local, "absent") == null);
     const expected = [_][]const u8{ "alpha", "beta", "zeta" };
     for (try owner.packageIds(local), expected) |id, name| {
         try std.testing.expectEqualStrings(name, (try owner.package(try owner.packageReference(local, id))).name);
     }
-    const group = (try owner.findGroup(local, "common")).?;
+    const group = (try owner.findGroup(io, local, "common")).?;
     for (group.packages.items, expected) |id, name| {
         try std.testing.expectEqualStrings(name, (try owner.package(try owner.packageReference(local, id))).name);
     }
@@ -488,10 +488,9 @@ test "owner defaults and registration match independently recorded libalpm resul
     try std.testing.expectEqual(1, sandbox.legacyDisabledState());
     sandbox.disable_syscalls = true;
     try std.testing.expectEqual(2, sandbox.legacyDisabledState());
-    // Explicit remaining M3 difference: libalpm initializes on-disk local DB
-    // format; the current read-only Owner does not create or validate it yet.
+    // M3 closes the recorded local format creation/validation gap.
     try std.testing.expect(reference.get("initialization_creates_local_version_file").?.bool);
-    try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.statFile(io, "db/local", .{}));
+    _ = try fixture.temporary.dir.statFile(io, "db/local/ALPM_DB_VERSION", .{});
 }
 
 fn expectReferencePath(actual: []const u8, expected: []const u8, fixture: Fixture) !void {

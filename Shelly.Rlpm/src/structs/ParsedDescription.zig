@@ -58,6 +58,7 @@ pub fn intoPackage(self: *const ParsedDescription, arena: *std.heap.ArenaAllocat
         .origin = source.origin,
         .database_name = try allocator.dupe(u8, source.database_name),
         .archive_path = try copyOptional(allocator, source.archive_path),
+        .metadata_directory = try copyOptional(allocator, source.metadata_directory),
         .install_reason = self.reason orelse .explicit,
         .validation = self.validation,
         .build_date = self.build_date,
@@ -277,7 +278,7 @@ pub fn parse(
     return result;
 }
 
-fn descSectionFromHeader(header: []const u8) DescSection {
+pub fn descSectionFromHeader(header: []const u8) DescSection {
     if (std.mem.eql(u8, header, "%NAME%"))
         return .name;
 
@@ -348,7 +349,7 @@ fn descSectionFromHeader(header: []const u8) DescSection {
     if (std.mem.eql(u8, header, "%REPLACES%"))
         return .replaces;
 
-    if (std.mem.eql(u8, header, "%XDATA%"))
+    if (std.mem.eql(u8, header, "%XDATA%") or std.mem.eql(u8, header, "%DATA%"))
         return .xdata;
 
     if (std.mem.eql(u8, header, "%FILENAME%")) return .repository_filename;
@@ -372,7 +373,7 @@ fn setDescValue(
     destination.* = value;
 }
 
-const DescSection = enum {
+pub const DescSection = enum {
     none,
     ignore,
     name,

@@ -11,7 +11,7 @@ const BackupFile = @import("BackupFile.zig");
 const c = ArchiveReader.c;
 
 pub const Origin = enum { local, sync, archive };
-pub const Source = struct { origin: Origin, database_name: []const u8 = "", archive_path: ?[]const u8 = null };
+pub const Source = struct { origin: Origin, database_name: []const u8 = "", archive_path: ?[]const u8 = null, metadata_directory: ?[]const u8 = null };
 pub const Availability = enum { unknown, absent, present };
 pub const Member = enum { install, changelog, mtree };
 pub const LoadOptions = struct { mode: enum { metadata, full } = .metadata };
@@ -40,6 +40,10 @@ version: Version,
 database_name: []const u8,
 origin: Origin = .local,
 archive_path: ?[]const u8 = null,
+metadata_directory: ?[]const u8 = null,
+description_loaded: bool = true,
+metadata_error: ?anyerror = null,
+metadata_issues: @import("DatabaseRecord.zig").Issues = .{},
 repository_filename: ?[]const u8 = null,
 compressed_size: ?u64 = null,
 /// Remaining transfer after cache planning; null means not planned yet.
@@ -75,6 +79,9 @@ groups: []const []const u8 = &.{},
 licenses: []const []const u8 = &.{},
 xdata: []const XData = &.{},
 archive_arena: ?std.heap.ArenaAllocator = null,
+/// Owned only by verified archive packages. Member/payload readers reopen this
+/// sealed file, while archive_path retains the caller's original pathname.
+verified_archive: ?@import("ImmutableFile.zig") = null,
 
 /// Compatibility entry point for metadata loading. This does not verify payloads
 /// or signatures. The owned result must be released exactly once with deinit.
@@ -211,18 +218,40 @@ pub fn findFile(self: *const Package, path: []const u8) ?*const PackageFile {
 /// The caller owns the decoded bytes. Decoding is not signature verification.
 pub fn decodeSignature(self: *const Package, allocator: std.mem.Allocator) !?[]u8 {
     const encoded = self.base64_signature orelse return null;
-    const decoder = std.base64.standard.Decoder;
-    const length = try decoder.calcSizeForSlice(encoded);
-    const bytes = try allocator.alloc(u8, length);
-    errdefer allocator.free(bytes);
-    try decoder.decode(bytes, encoded);
-    return bytes;
+    return try @import("OpenPgp.zig").decode(allocator, encoded);
+}
+/// Available metadata, not evidence that the corresponding checks have run.
+pub fn availableValidation(self: *const Package) Validation {
+    return .{ .none = self.md5_sum == null and self.sha256_sum == null and self.base64_signature == null, .md5 = self.md5_sum != null, .sha256 = self.sha256_sum != null, .pgp = self.base64_signature != null };
+}
+/// Embedded signature first, otherwise a sidecar beside the supplied cache file
+/// (or this archive). A cache path is required for a repository-only package.
+pub fn getSignature(self: *const Package, allocator: std.mem.Allocator, io: std.Io, cached_path: ?[]const u8) !?[]u8 {
+    if (self.base64_signature != null) return self.decodeSignature(allocator);
+    const path = cached_path orelse self.archive_path orelse return error.PackageArchiveRequired;
+    return @import("OpenPgp.zig").readDetached(allocator, io, path);
+}
+pub fn checkMd5sum(self: *const Package, io: std.Io, cached_path: []const u8) !void {
+    if (self.origin != .sync) return error.UnsupportedPackageOrigin;
+    try @import("Checksum.zig").check(.md5, io, cached_path, self.md5_sum orelse return error.ChecksumMissing);
+}
+/// Readers opened here remain valid after package release. Verified packages
+/// always use the same bytes checked by Owner.loadPackage.
+pub fn openArchive(self: *const Package, allocator: std.mem.Allocator) !ArchiveReader {
+    if (self.origin != .archive) return error.UnsupportedPackageOrigin;
+    const path = if (self.verified_archive) |*snapshot| snapshot.path() else self.archive_path orelse return error.InvalidPath;
+    return ArchiveReader.openFile(allocator, path);
 }
 /// Reopens the archive independently. The returned reader remains valid after
 /// package release, and must be deinitialized even after read errors.
-pub fn openMember(self: *const Package, allocator: std.mem.Allocator, member: Member) !?ArchiveReader {
+pub fn openMember(self: *const Package, allocator: std.mem.Allocator, member: Member) !?@import("MemberReader.zig") {
+    if (self.origin == .local and self.metadata_directory != null) {
+        const path = try std.fs.path.join(allocator, &.{ self.metadata_directory.?, @tagName(member) });
+        defer allocator.free(path);
+        return @import("MemberReader.zig").openFile(allocator, path);
+    }
     if (self.origin != .archive) return error.UnsupportedPackageOrigin;
-    var reader = try ArchiveReader.openFile(allocator, self.archive_path orelse return error.InvalidPath);
+    var reader = try self.openArchive(allocator);
     errdefer reader.deinit();
     const wanted = switch (member) {
         .install => ".INSTALL",
@@ -232,7 +261,7 @@ pub fn openMember(self: *const Package, allocator: std.mem.Allocator, member: Me
     while (try reader.next()) |entry| {
         if (std.mem.eql(u8, ArchiveReader.normalizedName(entry.name), wanted)) {
             if (entry.kind != .regular) return error.InvalidArchiveEntry;
-            return reader;
+            return .{ .stream = .{ .archive = reader } };
         }
         try reader.skip();
     }
@@ -249,6 +278,7 @@ pub fn openMtree(self: *const Package, allocator: std.mem.Allocator) !?MtreeIter
 
 /// Releases archive-owned storage. Database packages remain owned by their database.
 pub fn deinit(self: *Package) void {
+    if (self.verified_archive) |*snapshot| snapshot.deinit();
     if (self.archive_arena) |*arena| arena.deinit();
     self.* = undefined;
 }

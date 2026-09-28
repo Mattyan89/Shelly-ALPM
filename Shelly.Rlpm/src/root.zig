@@ -2,6 +2,10 @@
 //! reporting is intentionally narrower than the eventual libalpm target.
 pub const Owner = @import("structs/Owner.zig");
 pub const OwnerConfiguration = @import("structs/OwnerConfiguration.zig");
+pub const Backend = @import("structs/Backend.zig").Backend;
+pub const LocalBackend = @import("structs/LocalBackend.zig");
+pub const SyncBackend = @import("structs/SyncBackend.zig");
+pub const MemberReader = @import("structs/MemberReader.zig");
 pub const Database = @import("structs/Database.zig");
 pub const DatabaseConfiguration = @import("structs/DatabaseConfiguration.zig");
 pub const DatabaseRef = @import("structs/DatabaseRef.zig");
@@ -15,6 +19,11 @@ pub const Version = @import("structs/Version.zig");
 pub const ParsedDescription = @import("structs/ParsedDescription.zig");
 pub const Group = @import("structs/Group.zig");
 pub const SignaturePolicy = @import("structs/SignaturePolicy.zig");
+pub const SignatureResult = @import("structs/SignatureResult.zig");
+pub const Verification = @import("structs/Verification.zig");
+pub const ImmutableFile = @import("structs/ImmutableFile.zig");
+pub const Checksum = @import("structs/Checksum.zig");
+pub const OpenPgp = @import("structs/OpenPgp.zig");
 pub const DatabaseUsage = @import("structs/DatabaseUsage.zig");
 pub const DatabaseStatus = @import("structs/DatabaseStatus.zig");
 pub const Callbacks = @import("structs/Callbacks.zig");
@@ -28,9 +37,9 @@ pub const Capabilities = struct {
     version_comparison: bool = true,
     detached_signature_verification: bool = true,
     physical_architectures: bool = @import("builtin").os.tag == .linux,
-    sync_databases: bool = false,
-    sqlite_sync_databases: bool = false,
-    signature_policy_enforcement: bool = false,
+    sync_databases: bool = true,
+    sqlite_sync_databases: bool = true,
+    signature_policy_enforcement: bool = true,
     downloads: bool = false,
     transactions: bool = false,
     localization: bool = false,

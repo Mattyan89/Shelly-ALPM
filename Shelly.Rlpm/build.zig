@@ -13,6 +13,8 @@ pub fn build(b: *std.Build) void {
     });
     mod.addImport("Shelly_Key", shelly_key.module("Shelly_Key"));
     mod.linkSystemLibrary("archive", .{});
+    mod.linkSystemLibrary("sqlite3", .{});
+    mod.addCSourceFile(.{ .file = b.path("src/native/regex.c"), .flags = &.{"-std=c11"} });
 
     const exe = b.addExecutable(.{
         .name = "Shelly_Rlpm",
@@ -53,6 +55,22 @@ pub fn build(b: *std.Build) void {
     }) });
     b.step("test-metadata", "Run M2 metadata, archive, relation and reference fixtures").dependOn(&b.addRunArtifact(metadata_tests).step);
 
+    const database_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/database.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    b.step("test-database", "Run M3 local, tar/SQLite, query, reload and allocation fixtures").dependOn(&b.addRunArtifact(database_tests).step);
+
+    const verification_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/tests/verification.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+    }) });
+    b.step("test-verification", "Run M4 integrity, trust, status, import and immutable-file fixtures").dependOn(&b.addRunArtifact(verification_tests).step);
+
     const ledger_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/compatibility.zig"),
         .target = target,
@@ -85,20 +103,12 @@ pub fn build(b: *std.Build) void {
         .path = .{ .cwd_relative = b.pathJoin(&.{ b.graph.zig_lib_directory.path.?, "compiler/test_runner.zig" }) },
         .mode = .simple,
     };
-    const database_mod = b.createModule(.{
-        .root_source_file = b.path("src/structs/Database.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .imports = &.{.{ .name = "Shelly_Key", .module = shelly_key.module("Shelly_Key") }},
-    });
-    database_mod.linkSystemLibrary("archive", .{});
     const signature_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/tests/signature.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{.{ .name = "database", .module = database_mod }},
+            .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
         }),
         .test_runner = terminal_runner,
     });
@@ -115,6 +125,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "Shelly_Key", .module = shelly_key.module("Shelly_Key") }},
     });
     host_mod.linkSystemLibrary("archive", .{});
+    host_mod.linkSystemLibrary("sqlite3", .{});
     const host_tests = b.addTest(.{
         .root_module = host_mod,
         .filters = &.{"host-readonly:"},

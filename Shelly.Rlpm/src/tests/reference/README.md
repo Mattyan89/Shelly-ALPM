@@ -117,7 +117,8 @@ The deprecated aggregate sandbox getter/setter are declared in the pinned header
 but not exported by the installed binary. Their M1 behavior is derived from
 the pinned source; the fixture records execution of the independent filesystem,
 syscall and CachyOS network controls. M1 also records the remaining difference
-between RLPM's read-only initialization and libalpm's version-file creation.
+between M1's read-only initialization and libalpm's version-file creation; M3
+closes it with default creation and an explicit read-only mode.
 Neither the fixture nor source-derived CPU feature tests establish full parity.
 Future operation recorders and pactest adaptations must likewise use dedicated
 disposable roots and reviewed independent expectations.
@@ -146,3 +147,47 @@ and local file/backup/CachyOS provenance. Original M0 reference assets and the
 54 existing version signs are unchanged. `test-metadata` consumes this output
 offline; it never regenerates expected results. The [metadata API guide](../../../metadata.md)
 documents coverage and remaining backend/verification work.
+
+M3's optional database recorder is separate from the frozen source corpus:
+
+```sh
+python3 src/tests/reference/record_database.py \
+  --library /usr/lib/libalpm.so.16.0.1
+```
+
+It checks the same binary hash and records 12 local and 16 sync cases from private
+roots: version creation/validation, directory identities, corrupt descriptions,
+duplicates, tar and SQLite records, truncation, scalar parsing, ordered groups,
+regex/AND search, reverse dependencies and usage visibility. SQLite fixtures use
+Python's standard sqlite3 module. Native reads run in forked workers; no package
+operation or host database is used. The parent cleans its private fixture tree.
+
+The [database fixture](../fixtures/database-reference.json) is consumed offline
+by `test-database`. Null/missing SQLite identities are recorded as reference
+behavior but rejected by RLPM so they cannot corrupt typed indexes. Negative
+reference size/error sentinels map to unavailable unsigned sizes with explicit
+issues. [The database guide](../../../databases.md) lists these boundaries,
+metadata limits, generation semantics and policy-aware verification.
+
+M4 records integrity and signature policy separately:
+
+```sh
+python3 src/tests/reference/record_signature.py \
+  --library /usr/lib/libalpm.so.16.0.1
+```
+
+The recorder checks the frozen library hash, creates private roots and ephemeral
+GPG homes, and records 144 file-policy outcomes across twelve cases: full and
+unknown trust, missing/unknown-key/bad/malformed signatures, multiple signatures,
+expired keys/signatures, disabled keys and revocation. It captures real GPG
+status/key listings, reference digest values and binary issuer data. No network
+or host package operation is used; only fixture agents are stopped on cleanup.
+
+Each case runs libalpm in a fresh fork because its GPGME initialization caches the
+first home process-wide. Package-load expired-key preflight is recorded separately
+from the low-level helper's acceptance of KEY_EXPIRED under allowed trust. The
+[signature fixture](../fixtures/signature-reference.json) is replayed offline by
+`test-verification`; live GPG tests independently exercise these integrations.
+All original manifest assets remain unchanged. See the
+[verification guide](../../../verification.md) for limits and remaining transfer/
+transaction integration.

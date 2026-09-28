@@ -10,9 +10,14 @@ const ParsedDescription = @import("ParsedDescription.zig");
 const ShellyKey = @import("Shelly_Key");
 const DatabaseConfiguration = @import("DatabaseConfiguration.zig");
 const DatabaseRef = @import("DatabaseRef.zig");
+const Verification = @import("Verification.zig");
+const SignatureResult = @import("SignatureResult.zig");
 
 pub const PackageId = @import("PackageRef.zig").Id;
 pub const Kind = enum { local, sync };
+pub const Backend = @import("Backend.zig").Backend;
+pub const Metadata = @import("LocalBackend.zig").Metadata;
+pub const EntryIssue = struct { entry: []const u8, cause: anyerror };
 
 pub const GroupId = enum(u32) {
     _,
@@ -34,6 +39,13 @@ allocator: std.mem.Allocator,
 arena: std.heap.ArenaAllocator,
 cache_arena: std.heap.ArenaAllocator,
 kind: Kind = .local,
+backend: Backend = .{ .local = .{} },
+metadata_arenas: std.ArrayList(std.heap.ArenaAllocator) = .empty,
+skipped_entries: std.ArrayList(EntryIssue) = .empty,
+last_load_error: ?anyerror = null,
+/// Last verification attempt, including a rejected reload. Cache generations
+/// remain unchanged on failure. null means no GPG check was performed.
+last_verification: ?SignatureResult = null,
 identity: ?DatabaseRef = null,
 generation: u64 = 1,
 
@@ -84,6 +96,7 @@ pub fn initSync(
     var result = try init(allocator, configuration.database_name, path, configuration.signature_policy orelse default_policy);
     errdefer result.deinit();
     result.kind = .sync;
+    result.backend = .{ .sync = .{} };
     result.signature_override = configuration.signature_policy;
     result.usage = configuration.usage;
     const owned = result.arena.allocator();
@@ -112,6 +125,10 @@ pub fn copyRegistration(self: *const Database, path: []const u8, default_policy:
     var result = try init(self.allocator, self.name, path, self.signature_override orelse default_policy);
     errdefer result.deinit();
     result.kind = self.kind;
+    result.backend = switch (self.backend) {
+        .local => |local| .{ .local = local },
+        .sync => .{ .sync = .{} },
+    };
     result.identity = self.identity;
     result.generation = std.math.add(u64, self.generation, 1) catch return error.IdentityExhausted;
     result.signature_override = self.signature_override;
@@ -122,7 +139,32 @@ pub fn copyRegistration(self: *const Database, path: []const u8, default_policy:
     return result;
 }
 
+/// Used only after candidate configuration has been fully allocated. Borrowed
+/// cache data never points into registration storage, so it can move unchanged.
+pub fn takeCache(self: *Database, source: *Database) void {
+    self.resetCacheStorage();
+    self.cache_arena = source.cache_arena;
+    self.metadata_arenas = source.metadata_arenas;
+    self.packages = source.packages;
+    self.groups = source.groups;
+    self.skipped_entries = source.skipped_entries;
+    self.status = source.status;
+    self.backend = source.backend;
+    self.generation = source.generation;
+    self.last_load_error = source.last_load_error;
+    self.last_verification = source.last_verification;
+    source.last_verification = null;
+    source.cache_arena = std.heap.ArenaAllocator.init(source.allocator);
+    source.metadata_arenas = .empty;
+    source.packages = .{};
+    source.groups = .{};
+    source.skipped_entries = .empty;
+    source.status = .{};
+}
+
 pub fn deinit(self: *Database) void {
+    Verification.clearReport(&self.last_verification);
+    for (self.metadata_arenas.items) |*arena| arena.deinit();
     self.cache_arena.deinit();
     self.arena.deinit();
     self.* = undefined;
@@ -137,6 +179,12 @@ pub fn invalidateCache(self: *Database) !void {
 }
 
 fn resetCacheStorage(self: *Database) void {
+    Verification.clearReport(&self.last_verification);
+    for (self.metadata_arenas.items) |*arena| arena.deinit();
+    self.metadata_arenas = .empty;
+    self.skipped_entries = .empty;
+    self.last_load_error = null;
+    if (self.backend == .sync) self.backend.sync = .{};
     self.cache_arena.deinit();
     self.cache_arena = std.heap.ArenaAllocator.init(self.allocator);
     self.packages = .{};
@@ -144,138 +192,135 @@ fn resetCacheStorage(self: *Database) void {
     self.status.clearCaches();
 }
 
-pub fn loadDatabase(
-    self: *Database,
-    io: std.Io,
-    gnupg_path: ?[]const u8,
-) !void {
-    if (self.kind == .sync) return error.UnsupportedDatabaseBackend;
+/// Explicit load retains the historical AlreadyLoaded error. reloadDatabase
+/// builds a separate generation and retains the old generation on every failure.
+pub fn loadDatabase(self: *Database, io: std.Io, gnupg_path: ?[]const u8) !void {
     if (self.status.package_cache_loaded) return error.DatabaseAlreadyLoaded;
-    const allocator = self.cache_arena.allocator();
-    errdefer self.resetCacheStorage();
-
-    var root_dir = std.Io.Dir.cwd().openDir(io, self.path, .{
-        .iterate = true,
-        .access_sub_paths = true,
-    }) catch |err| {
-        if (err == error.FileNotFound) self.status.markMissing();
+    try self.reloadDatabase(io, gnupg_path);
+}
+pub fn reloadDatabase(self: *Database, io: std.Io, gnupg_path: ?[]const u8) !void {
+    try self.reloadWithVerification(io, .{ .gpg_directory = gnupg_path });
+}
+pub fn reloadWithVerification(self: *Database, io: std.Io, context: Verification.Context) !void {
+    var candidate = self.copyRegistration(self.path, self.signature_policy) catch |err| {
+        self.last_load_error = err;
         return err;
     };
-    defer root_dir.close(io);
-    self.status.presence = .exists;
-
-    var iterator = root_dir.iterate();
-
-    while (try iterator.next(io)) |entry| {
-        // Only consider top-level directories.
-        if (entry.kind != .directory and entry.kind != .unknown) continue;
-
-        var package_dir = root_dir.openDir(io, entry.name, .{}) catch |err| switch (err) {
-            error.NotDir => continue,
-            else => return err,
-        };
-        defer package_dir.close(io);
-
-        // Look for "desc" inside this directory.
-        const contents = package_dir.readFileAlloc(
-            io,
-            "desc",
-            allocator,
-            .limited(1024 * 1024),
-        ) catch |err| switch (err) {
-            error.OutOfMemory => return err,
-            error.FileNotFound => {
-                std.log.warn("package directory {s} has no desc file", .{entry.name});
-                continue;
-            },
-            else => {
-                std.log.warn("could not read {s}/desc: {}", .{ entry.name, err });
-                continue;
-            },
-        };
-
-        // The arena retains contents because Package fields borrow slices from it.
-        var parsed = parseDescription(allocator, contents) catch |err| {
-            if (err == error.OutOfMemory) return err;
-            std.log.warn("could not parse {s}/desc: {}", .{ entry.name, err });
-            continue;
-        };
-        defer parsed.deinit(allocator);
-
-        const package = parsed.intoPackage(&self.cache_arena, .{ .origin = .local, .database_name = self.name }) catch |err| {
-            if (err == error.OutOfMemory) return err;
-            std.log.warn("could not create package from {s}/desc: {}", .{ entry.name, err });
-            continue;
-        };
-
-        if (!entryMatchesPackage(entry.name, package)) {
-            std.log.warn(
-                "local database entry {s} does not match {s}-{s}",
-                .{ entry.name, package.name, package.version.raw },
-            );
-            continue;
+    errdefer candidate.deinit();
+    candidate.populate(io, context) catch |err| {
+        Verification.clearReport(&self.last_verification);
+        self.last_verification = candidate.last_verification;
+        candidate.last_verification = null;
+        self.last_load_error = err;
+        if (!self.status.package_cache_loaded) {
+            if (err == error.FileNotFound) self.status.markMissing() else self.status.markInvalid();
         }
-        if (self.packages.by_name.contains(package.name)) {
-            std.log.warn("duplicate local database package: {s}", .{package.name});
-            continue;
-        }
-
-        const package_id: PackageId = @enumFromInt(
-            @as(u32, @intCast(self.packages.packages.items.len)),
-        );
-        try self.packages.packages.append(allocator, package);
-        try self.packages.by_name.put(allocator, package.name, package_id);
-        try self.packages.ordered.append(allocator, package_id);
+        return err;
+    };
+    try context.checkCancelled();
+    var old = self.*;
+    self.* = candidate;
+    old.deinit();
+}
+fn populate(self: *Database, io: std.Io, context: Verification.Context) !void {
+    switch (self.backend) {
+        .local => |local| try local.populate(io, self),
+        .sync => {
+            var snapshot = try @import("ImmutableFile.zig").copy(io, self.path);
+            defer snapshot.deinit();
+            _ = try Verification.check(self.allocator, io, context, &snapshot, self.path, .{
+                .requirement = self.signature_policy.database,
+                .trust = self.signature_policy.database_trust,
+            }, &self.last_verification);
+            try @import("SyncBackend.zig").populateFromPath(self, snapshot.path());
+        },
     }
-
     std.mem.sort(PackageId, self.packages.ordered.items, self, struct {
         fn lessThan(db: *Database, a: PackageId, b: PackageId) bool {
             return std.mem.lessThan(u8, db.packages.packages.items[@intFromEnum(a)].name, db.packages.packages.items[@intFromEnum(b)].name);
         }
     }.lessThan);
-    try self.buildGroupIndex(allocator);
-    if (self.signature_policy.database == .required and !try self.validateSignature(
-        io,
-        gnupg_path,
-    ))
-        return error.InvalidSignature;
-    self.status.markValid();
+    if (self.status.presence != .missing) self.status.markValid();
     self.status.package_cache_loaded = true;
-    self.status.group_cache_loaded = true;
 }
-
-fn entryMatchesPackage(entry_name: []const u8, package: Package) bool {
-    const separator_index = package.name.len;
-    return entry_name.len == package.name.len + 1 + package.version.raw.len and
-        std.mem.eql(u8, entry_name[0..separator_index], package.name) and
-        entry_name[separator_index] == '-' and
-        std.mem.eql(u8, entry_name[separator_index + 1 ..], package.version.raw);
+pub fn addPackage(self: *Database, package: Package) !void {
+    const allocator = self.cache_arena.allocator();
+    const id: PackageId = @enumFromInt(std.math.cast(u32, self.packages.packages.items.len) orelse return error.TooManyPackages);
+    if (self.packages.by_name.contains(package.name)) return error.DuplicatePackage;
+    try self.packages.packages.append(allocator, package);
+    try self.packages.by_name.put(allocator, package.name, id);
+    try self.packages.ordered.append(allocator, id);
 }
-
-fn buildGroupIndex(self: *Database, allocator: std.mem.Allocator) !void {
+pub fn recordSkipped(self: *Database, entry: []const u8, cause: anyerror) !void {
+    const allocator = self.cache_arena.allocator();
+    try self.skipped_entries.append(allocator, .{ .entry = try allocator.dupe(u8, entry), .cause = cause });
+}
+pub fn loadMetadata(self: *Database, io: std.Io, id: PackageId, request: Metadata) !void {
+    const index = @intFromEnum(id);
+    if (!self.status.package_cache_loaded or index >= self.packages.packages.items.len) return error.StalePackageReference;
+    const package = &self.packages.packages.items[index];
+    if (self.kind != .local) return;
+    if ((!request.description or package.description_loaded) and (!request.files or package.files_loaded) and (!request.members or package.members.install != .unknown)) return;
+    if (package.metadata_error) |err| return err;
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    errdefer arena.deinit();
+    var candidate = package.*;
+    @import("LocalBackend.zig").loadMetadata(io, &arena, &candidate, request) catch |err| {
+        if (isCorruptMetadata(err)) package.metadata_error = err;
+        return err;
+    };
+    try self.metadata_arenas.append(self.cache_arena.allocator(), arena);
+    package.* = candidate;
+}
+fn isCorruptMetadata(err: anyerror) bool {
+    return switch (err) {
+        error.FileNotFound, error.InvalidDatabaseEntry, error.InvalidXData, error.InvalidBackup, error.StreamTooLong, error.MetadataLineTooLong => true,
+        else => false,
+    };
+}
+pub fn loadDescriptions(self: *Database, io: std.Io) !void {
+    for (self.packages.ordered.items) |id| self.loadMetadata(io, id, .{}) catch |err| {
+        if (!isCorruptMetadata(err)) return err;
+    };
+}
+pub fn loadGroups(self: *Database, io: std.Io) !void {
+    if (self.status.group_cache_loaded) return;
+    if (!self.status.package_cache_loaded) return error.DatabaseNotLoaded;
+    try self.loadDescriptions(io);
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    errdefer arena.deinit();
+    const allocator = arena.allocator();
+    var groups: GroupIndex = .{};
     for (self.packages.ordered.items) |package_id| {
         const package = self.packages.packages.items[@intFromEnum(package_id)];
         for (package.groups) |group_name| {
-            const group_id = self.groups.by_name.get(group_name) orelse create: {
-                const id: GroupId = @enumFromInt(
-                    @as(u32, @intCast(self.groups.groups.items.len)),
-                );
-                try self.groups.groups.append(allocator, .{
-                    .name = group_name,
-                    .packages = .empty,
-                });
-                try self.groups.by_name.put(allocator, group_name, id);
-                try self.groups.ordered.append(allocator, id);
-                break :create id;
-            };
-            try self.groups.groups.items[@intFromEnum(group_id)].packages.append(allocator, package_id);
+            const group_id = try groupForPackage(&groups, allocator, group_name, package_id);
+            try groups.groups.items[@intFromEnum(group_id)].packages.append(allocator, package_id);
         }
     }
-    std.mem.sort(GroupId, self.groups.ordered.items, self, struct {
-        fn lessThan(db: *Database, a: GroupId, b: GroupId) bool {
-            return std.mem.lessThan(u8, db.groups.groups.items[@intFromEnum(a)].name, db.groups.groups.items[@intFromEnum(b)].name);
+    // libalpm group enumeration follows first encounter in sorted package order.
+    try self.metadata_arenas.append(self.cache_arena.allocator(), arena);
+    self.groups = groups;
+    self.status.group_cache_loaded = true;
+}
+
+fn groupForPackage(groups: *GroupIndex, allocator: std.mem.Allocator, name: []const u8, package: PackageId) !GroupId {
+    if (groups.by_name.get(name)) |first| {
+        const members = groups.groups.items[@intFromEnum(first)].packages.items;
+        if (members.len == 0 or members[members.len - 1] != package) return first;
+        // The reference creates another same-name group for duplicate group
+        // metadata. Preserve that observable enumeration; exact lookup uses first.
+        for (groups.groups.items[@intFromEnum(first) + 1 ..], @intFromEnum(first) + 1..) |group, index| {
+            if (!std.mem.eql(u8, group.name, name)) continue;
+            const other = group.packages.items;
+            if (other.len == 0 or other[other.len - 1] != package) return @enumFromInt(index);
         }
-    }.lessThan);
+    }
+    const id: GroupId = @enumFromInt(std.math.cast(u32, groups.groups.items.len) orelse return error.TooManyGroups);
+    try groups.groups.append(allocator, .{ .name = name, .packages = .empty });
+    if (!groups.by_name.contains(name)) try groups.by_name.put(allocator, name, id);
+    try groups.ordered.append(allocator, id);
+    return id;
 }
 
 fn parseDescription(allocator: std.mem.Allocator, contents: []const u8) !ParsedDescription {
@@ -293,6 +338,8 @@ fn freeStrings(
     strings.* = .empty;
 }
 
+/// Legacy cryptographic boolean check (no trust policy). Prefer database loading
+/// and last_verification for policy enforcement and structured results.
 pub fn validateSignature(
     self: *Database,
     io: std.Io,
@@ -305,17 +352,26 @@ pub fn validateSignature(
     };
     const db_name = try std.fmt.allocPrint(self.allocator, "{s}.db", .{self.name});
     defer self.allocator.free(db_name);
-    const db_path = try std.fs.path.join(self.allocator, &.{ self.path, db_name });
+    const db_path = if (self.kind == .sync) try self.allocator.dupe(u8, self.path) else try std.fs.path.join(self.allocator, &.{ self.path, db_name });
     defer self.allocator.free(db_path);
     const sig_path = try std.fmt.allocPrint(self.allocator, "{s}.sig", .{db_path});
     defer self.allocator.free(sig_path);
 
     const status = gpg.runCapture(self.allocator, &.{
+        "--no-options",
         "--batch",
+        "--no-tty",
+        "--no-auto-key-retrieve",
+        "--no-auto-key-import",
+        "--auto-key-locate",
+        "clear",
+        "--no-autostart",
+        "--proc-all-sigs",
         "--no-auto-check-trustdb",
         "--status-fd",
         "1",
         "--verify",
+        "--",
         sig_path,
         db_path,
     }) catch |err| switch (err) {
@@ -616,6 +672,7 @@ test "loadDatabase owns and indexes parsed packages" {
     const path = try temporary.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(path);
 
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "ALPM_DB_VERSION", .data = "9\n" });
     var database = try Database.init(std.testing.allocator, "local", path, .{});
     defer database.deinit();
     database.signature_policy.database = .disabled;
@@ -625,6 +682,8 @@ test "loadDatabase owns and indexes parsed packages" {
     try std.testing.expectEqual(@as(usize, 1), database.packages.packages.items.len);
     const package_id = database.packages.by_name.get("demo") orelse return error.TestUnexpectedResult;
     try std.testing.expectEqual(@as(u32, 0), @intFromEnum(package_id));
+    try database.loadMetadata(std.testing.io, package_id, .{});
+    try database.loadGroups(std.testing.io);
     const package = database.packages.packages.items[@intFromEnum(package_id)];
     try std.testing.expectEqualStrings("demo", package.name);
     try std.testing.expectEqualStrings("1.2.3-4", package.version.raw);
@@ -639,7 +698,7 @@ test "loadDatabase owns and indexes parsed packages" {
     );
 }
 
-test "loadDatabase skips missing and malformed package descriptions" {
+test "loadDatabase retains identities with missing and incomplete descriptions" {
     const previous_log_level = std.testing.log_level;
     std.testing.log_level = .err;
     defer std.testing.log_level = previous_log_level;
@@ -671,15 +730,16 @@ test "loadDatabase skips missing and malformed package descriptions" {
     const path = try temporary.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(path);
 
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "ALPM_DB_VERSION", .data = "9\n" });
     var database = try Database.init(std.testing.allocator, "local", path, .{});
     defer database.deinit();
     database.signature_policy.database = .disabled;
     try database.loadDatabase(std.testing.io, null);
 
-    try std.testing.expectEqual(@as(usize, 1), database.packages.packages.items.len);
+    try std.testing.expectEqual(@as(usize, 3), database.packages.packages.items.len);
     try std.testing.expect(database.packages.by_name.contains("valid"));
-    try std.testing.expect(!database.packages.by_name.contains("malformed"));
-    try std.testing.expect(!database.packages.by_name.contains("missing"));
+    try database.loadMetadata(std.testing.io, database.packages.by_name.get("malformed").?, .{});
+    try std.testing.expectError(error.FileNotFound, database.loadMetadata(std.testing.io, database.packages.by_name.get("missing").?, .{}));
 }
 
 /// Opt-in host smoke tests; never referenced by the ordinary test root.
@@ -733,159 +793,28 @@ pub const HostTests = struct {
         }
     }
 
-    test "host-readonly: parses descriptions from actual sync databases" {
-        const sync_database_path = "/var/lib/pacman/sync";
-        var sync_dir = std.Io.Dir.cwd().openDir(std.testing.io, sync_database_path, .{
-            .iterate = true,
-            .access_sub_paths = true,
-        }) catch |err| switch (err) {
+    test "host-readonly: production backend reads actual sync databases" {
+        const path = "/var/lib/pacman/sync";
+        var dir = std.Io.Dir.cwd().openDir(std.testing.io, path, .{ .iterate = true }) catch |err| switch (err) {
             error.FileNotFound, error.AccessDenied => return error.SkipZigTest,
             else => return err,
         };
-        defer sync_dir.close(std.testing.io);
-
-        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer arena.deinit();
-        const allocator = arena.allocator();
-
-        var parsed_databases: usize = 0;
-        var parsed_packages: usize = 0;
-        var preview_remaining: usize = 10;
-        std.debug.print("\nsync database preview (up to {d} packages):\n", .{preview_remaining});
-
-        var iterator = sync_dir.iterate();
+        defer dir.close(std.testing.io);
+        var count: usize = 0;
+        var iterator = dir.iterate();
         while (try iterator.next(std.testing.io)) |entry| {
             if (!std.mem.endsWith(u8, entry.name, ".db")) continue;
-            if (entry.kind != .file and entry.kind != .sym_link and entry.kind != .unknown) continue;
-
-            var file = sync_dir.openFile(std.testing.io, entry.name, .{}) catch continue;
-            defer file.close(std.testing.io);
-
-            var magic: [4]u8 = undefined;
-            const magic_length = try file.readPositionalAll(std.testing.io, &magic, 0);
-            if (magic_length < 2) continue;
-
-            const archive_contents: []const u8 = archive: {
-                if (magic[0] == 0x1f and magic[1] == 0x8b) {
-                    var read_buffer: [64 * 1024]u8 = undefined;
-                    var file_reader = file.reader(std.testing.io, &read_buffer);
-                    var decompression_buffer: [std.compress.flate.max_window_len]u8 = undefined;
-                    var decompressor: std.compress.flate.Decompress = .init(
-                        &file_reader.interface,
-                        .gzip,
-                        &decompression_buffer,
-                    );
-                    break :archive try decompressor.reader.allocRemaining(
-                        allocator,
-                        .limited(256 * 1024 * 1024),
-                    );
-                }
-
-                // Zstandard-compressed repository databases need a different
-                // decoder. Skip them rather than mistaking them for a tar stream.
-                if (magic_length == magic.len and std.mem.eql(u8, &magic, "\x28\xb5\x2f\xfd")) {
-                    continue;
-                }
-
-                var read_buffer: [64 * 1024]u8 = undefined;
-                var file_reader = file.reader(std.testing.io, &read_buffer);
-                break :archive try file_reader.interface.allocRemaining(
-                    allocator,
-                    .limited(256 * 1024 * 1024),
-                );
-            };
-
-            const database_name = entry.name[0 .. entry.name.len - ".db".len];
-            const package_count = try parseSyncTarDescriptions(
-                &arena,
-                database_name,
-                archive_contents,
-                &preview_remaining,
-            );
-            try std.testing.expect(package_count > 0);
-            std.debug.print("  [{s}: {d} packages parsed]\n", .{ database_name, package_count });
-            parsed_databases += 1;
-            parsed_packages += package_count;
+            const full_path = try std.fs.path.join(std.testing.allocator, &.{ path, entry.name });
+            defer std.testing.allocator.free(full_path);
+            var database = try Database.initSync(std.testing.allocator, .{ .database_name = entry.name[0 .. entry.name.len - 3] }, full_path, .{ .package = .disabled, .database = .disabled });
+            defer database.deinit();
+            try database.loadDatabase(std.testing.io, null);
+            try database.loadGroups(std.testing.io);
+            try std.testing.expect(database.packages.ordered.items.len > 0);
+            std.debug.print("  {s}: {d} packages ({t})\n", .{ database.name, database.packages.ordered.items.len, database.backend.sync.format });
+            count += 1;
         }
-
-        if (parsed_databases == 0) return error.SkipZigTest;
-        try std.testing.expect(parsed_packages >= parsed_databases);
-    }
-
-    fn parseSyncTarDescriptions(
-        arena: *std.heap.ArenaAllocator,
-        database_name: []const u8,
-        archive_contents: []const u8,
-        preview_remaining: *usize,
-    ) !usize {
-        const allocator = arena.allocator();
-        const tar_block_size = 512;
-        var offset: usize = 0;
-        var package_count: usize = 0;
-
-        while (offset + tar_block_size <= archive_contents.len) {
-            const header = archive_contents[offset .. offset + tar_block_size];
-            if (isZeroTarBlock(header)) break;
-
-            const file_size = try parseTarOctal(header[124..136]);
-            const data_start = offset + tar_block_size;
-            if (file_size > archive_contents.len - data_start) return error.TruncatedTarArchive;
-            const data_end = data_start + file_size;
-
-            const entry_name = tarString(header[0..100]);
-            const type_flag = header[156];
-            if ((type_flag == 0 or type_flag == '0') and std.mem.endsWith(u8, entry_name, "/desc")) {
-                var parsed = try parseDescription(allocator, archive_contents[data_start..data_end]);
-                defer parsed.deinit(allocator);
-                const package = try parsed.intoPackage(arena, .{ .origin = .sync, .database_name = database_name });
-                if (preview_remaining.* > 0) {
-                    std.debug.print(
-                        "  {s}/{s} {s}\n",
-                        .{ database_name, package.name, package.version.raw },
-                    );
-                    preview_remaining.* -= 1;
-                }
-                package_count += 1;
-            }
-
-            const remainder = file_size % tar_block_size;
-            const padded_size = if (remainder == 0)
-                file_size
-            else
-                file_size + (tar_block_size - remainder);
-            if (padded_size > archive_contents.len - data_start) return error.TruncatedTarArchive;
-            offset = data_start + padded_size;
-        }
-
-        return package_count;
-    }
-
-    fn isZeroTarBlock(block: []const u8) bool {
-        for (block) |byte| {
-            if (byte != 0) return false;
-        }
-        return true;
-    }
-
-    fn tarString(field: []const u8) []const u8 {
-        const end = std.mem.indexOfScalar(u8, field, 0) orelse field.len;
-        return std.mem.trimEnd(u8, field[0..end], " ");
-    }
-
-    fn parseTarOctal(field: []const u8) !usize {
-        const digits = std.mem.trim(u8, field, " \x00");
-        if (digits.len == 0) return 0;
-
-        var value: usize = 0;
-        for (digits) |digit| {
-            if (digit < '0' or digit > '7') return error.InvalidTarHeader;
-            const numeric_digit: usize = digit - '0';
-            if (value > (std.math.maxInt(usize) - numeric_digit) / 8) {
-                return error.InvalidTarHeader;
-            }
-            value = value * 8 + numeric_digit;
-        }
-        return value;
+        if (count == 0) return error.SkipZigTest;
     }
 };
 

@@ -12,6 +12,7 @@ const Package = @import("Package.zig");
 const Group = @import("Group.zig");
 const Callbacks = @import("Callbacks.zig");
 const Diagnostic = @import("Diagnostic.zig");
+const Verification = @import("Verification.zig");
 
 allocator: std.mem.Allocator,
 configuration_arena: std.heap.ArenaAllocator,
@@ -25,11 +26,12 @@ busy: bool = false,
 in_callback: bool = false,
 cancelled: std.atomic.Value(bool) = .init(false),
 last_diagnostic: ?Diagnostic = null,
+last_verification: ?@import("SignatureResult.zig") = null,
 
 var next_owner_id: std.atomic.Value(u64) = .init(1);
 
-/// root/dbpath must already be directories. This stage opens local metadata
-/// read-only; an absent local directory yields an empty, missing snapshot.
+/// root/dbpath must already be directories. Local format is validated, then
+/// identities are loaded. Descriptions/files/groups are loaded on demand.
 /// Registration of sync databases never requires their archives or a network.
 pub fn init(io: std.Io, allocator: std.mem.Allocator, configuration: OwnerConfiguration, databases: []const DatabaseConfiguration) !Owner {
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -39,6 +41,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator, configuration: OwnerConfig
     const lock_file = try std.fmt.allocPrint(arena.allocator(), "{s}db.lck", .{owned.database_path});
     const owner_id = try allocateIdentity();
     var local = try Database.init(allocator, "local", local_path, OwnerConfiguration.disabled_signatures);
+    local.backend.local.mode = owned.local_database_mode;
     local.identity = .{ .owner = owner_id, .id = .local };
     var result: Owner = .{
         .allocator = allocator,
@@ -67,6 +70,7 @@ fn allocateIdentity() !DatabaseRef.OwnerId {
 
 pub fn deinit(self: *Owner) !void {
     try self.checkIdle();
+    Verification.clearReport(&self.last_verification);
     self.destroyDatabases();
     self.configuration_arena.deinit();
     self.* = undefined;
@@ -155,8 +159,8 @@ pub fn unregisterSyncDatabases(self: *Owner) !void {
 }
 
 /// Atomic replacement: copies input before releasing any borrowed old values.
-/// Root/dbpath are immutable. Sync cache generations change; local metadata is
-/// retained. M3 will refine invalidation for individual operational options.
+/// Root/dbpath are immutable. Only sync path/signature-policy changes invalidate
+/// sync generations. Local metadata and unrelated option changes retain caches.
 pub fn setOptions(self: *Owner, io: std.Io, configuration: OwnerConfiguration) !void {
     try self.begin(.configure);
     defer self.busy = false;
@@ -179,13 +183,22 @@ fn replaceOptions(self: *Owner, io: std.Io, configuration: OwnerConfiguration) !
         errdefer replacement.deinit();
         try databases.append(self.allocator, replacement);
     }
-    for (self.sync_databases.items) |*db| db.deinit();
+    for (self.sync_databases.items, databases.items) |*old, *replacement| {
+        if (std.mem.eql(u8, old.path, replacement.path) and std.meta.eql(old.signature_policy, replacement.signature_policy) and optionalEqual(self.configuration.gpg_directory, owned.gpg_directory)) replacement.takeCache(old);
+        old.deinit();
+    }
     self.sync_databases.deinit(self.allocator);
     self.configuration_arena.deinit();
     self.configuration_arena = arena;
     self.configuration = owned;
     self.lock_file = lock_file;
     self.sync_databases = databases;
+    if (self.local) |*local| local.backend.local.mode = owned.local_database_mode;
+}
+
+fn optionalEqual(a: ?[]const u8, b: ?[]const u8) bool {
+    if (a) |first| return if (b) |second| std.mem.eql(u8, first, second) else false;
+    return b == null;
 }
 
 pub fn setList(self: *Owner, io: std.Io, comptime field: OwnerConfiguration.StringList, values: []const []const u8) !void {
@@ -230,12 +243,8 @@ pub fn loadDatabase(self: *Owner, io: std.Io, reference: DatabaseRef) !void {
 fn loadInternal(self: *Owner, io: std.Io, reference: DatabaseRef) !void {
     try self.checkCancelled();
     const db = try self.mutableDatabase(reference);
-    db.loadDatabase(io, self.configuration.gpg_directory) catch |err| {
-        if (err != error.FileNotFound or db.kind != .local or db.status.presence != .missing) return err;
-        db.status.markMissing();
-        db.status.package_cache_loaded = true;
-        db.status.group_cache_loaded = true;
-    };
+    if (db.status.package_cache_loaded) return error.DatabaseAlreadyLoaded;
+    try db.reloadWithVerification(io, self.verificationContext());
     try self.checkCancelled();
 }
 pub fn invalidateDatabase(self: *Owner, reference: DatabaseRef) !void {
@@ -267,10 +276,300 @@ pub fn package(self: *const Owner, reference: PackageRef) !*const Package {
     if (reference.generation != db.generation or !db.status.package_cache_loaded or @intFromEnum(reference.id) >= db.packages.packages.items.len) return error.StalePackageReference;
     return &db.packages.packages.items[@intFromEnum(reference.id)];
 }
-pub fn findGroup(self: *const Owner, reference: DatabaseRef, name: []const u8) !?*const Group {
-    const db = try self.loadedDatabase(reference);
+pub fn findGroup(self: *Owner, io: std.Io, reference: DatabaseRef, name: []const u8) !?*const Group {
+    try self.ensureDatabase(io, reference);
+    try self.begin(.query);
+    defer self.busy = false;
+    const db = try self.mutableDatabase(reference);
+    db.loadGroups(io) catch |err| return self.fail(.query, err, reference);
     const id = db.groups.by_name.get(name) orelse return null;
     return &db.groups.groups.items[@intFromEnum(id)];
+}
+
+/// Lazy query variants take Io explicitly; snapshot accessors never hide I/O.
+pub fn ensureDatabase(self: *Owner, io: std.Io, reference: DatabaseRef) !void {
+    try self.begin(.load_database);
+    defer self.busy = false;
+    self.ensureInternal(io, reference) catch |err| return self.fail(.load_database, err, reference);
+}
+fn ensureInternal(self: *Owner, io: std.Io, reference: DatabaseRef) !void {
+    try self.checkCancelled();
+    if (!(try self.resolveDatabase(reference)).status.package_cache_loaded) try self.loadInternal(io, reference);
+}
+pub fn reloadDatabase(self: *Owner, io: std.Io, reference: DatabaseRef) !void {
+    try self.begin(.load_database);
+    defer self.busy = false;
+    try self.checkCancelled();
+    const db = self.mutableDatabase(reference) catch |err| return self.fail(.load_database, err, reference);
+    db.reloadWithVerification(io, self.verificationContext()) catch |err| return self.fail(.load_database, err, reference);
+}
+
+pub const PackageSource = union(enum) { local_file, remote_file, repository: PackageRef };
+/// Every load, including a cache hit, applies the current effective policy.
+/// Returns an owned package retaining the verified bytes for future extraction.
+pub fn loadPackage(self: *Owner, io: std.Io, path: []const u8, source: PackageSource, load_options: Package.LoadOptions) !Package {
+    try self.begin(.load_package);
+    defer self.busy = false;
+    return self.loadPackageInternal(io, path, source, load_options) catch |err| return self.fail(.load_package, err, null);
+}
+fn loadPackageInternal(self: *Owner, io: std.Io, path: []const u8, source: PackageSource, load_options: Package.LoadOptions) !Package {
+    try self.checkCancelled();
+    Verification.clearReport(&self.last_verification);
+    const policy = switch (source) {
+        .local_file => self.configuration.effectiveLocalSignaturePolicy(),
+        .remote_file => self.configuration.effectiveRemoteSignaturePolicy(),
+        .repository => |reference| (try self.resolveDatabase(reference.database)).signature_policy,
+    };
+    var expected: ?*const Package = null;
+    if (source == .repository) {
+        const reference = source.repository;
+        const db = try self.resolveDatabase(reference.database);
+        if (db.kind != .sync) return error.UnsupportedPackageOrigin;
+        if (reference.generation != db.generation or !db.status.package_cache_loaded or @intFromEnum(reference.id) >= db.packages.packages.items.len) return error.StalePackageReference;
+        expected = &db.packages.packages.items[@intFromEnum(reference.id)];
+    }
+    var snapshot = try @import("ImmutableFile.zig").copy(io, path);
+    errdefer snapshot.deinit();
+    const validation = try Verification.check(self.allocator, io, self.verificationContext(), &snapshot, path, .{
+        .requirement = policy.package,
+        .trust = policy.package_trust,
+        .md5 = if (expected) |package_info| package_info.md5_sum else null,
+        .sha256 = if (expected) |package_info| package_info.sha256_sum else null,
+        .base64_signature = if (expected) |package_info| package_info.base64_signature else null,
+        .refresh_expired_keys = source != .repository,
+    }, &self.last_verification);
+    var loaded = try Package.loadArchive(self.allocator, snapshot.path(), load_options);
+    errdefer loaded.deinit();
+    if (expected) |package_info| {
+        if (!std.mem.eql(u8, loaded.name, package_info.name) or !std.mem.eql(u8, loaded.version.raw, package_info.version.raw)) return error.PackageIdentityMismatch;
+    }
+    loaded.archive_path = try loaded.archive_arena.?.allocator().dupe(u8, path);
+    loaded.validation = validation;
+    try self.checkCancelled();
+    loaded.verified_archive = snapshot;
+    return loaded;
+}
+fn verificationContext(self: *Owner) Verification.Context {
+    return .{ .gpg_directory = self.configuration.gpg_directory, .acquisition = self.configuration.key_acquisition, .question_context = self, .question = importQuestion, .check_cancelled = verificationCancellation };
+}
+fn importQuestion(context: ?*anyopaque, question: *Callbacks.Question) !void {
+    const self: *Owner = @ptrCast(@alignCast(context.?));
+    try self.askInternal(question);
+}
+fn verificationCancellation(context: ?*anyopaque) !void {
+    const self: *Owner = @ptrCast(@alignCast(context.?));
+    try self.checkCancelled();
+}
+pub fn queryPackage(self: *Owner, io: std.Io, reference: DatabaseRef, name: []const u8) !?PackageRef {
+    try self.ensureDatabase(io, reference);
+    return self.findPackage(reference, name);
+}
+pub fn packageMetadata(self: *Owner, io: std.Io, reference: PackageRef, request: Database.Metadata) !*const Package {
+    _ = try self.package(reference);
+    try self.begin(.query);
+    defer self.busy = false;
+    try self.checkCancelled();
+    const db = try self.mutableDatabase(reference.database);
+    db.loadMetadata(io, reference.id, request) catch |err| return self.fail(.query, err, reference.database);
+    return &db.packages.packages.items[@intFromEnum(reference.id)];
+}
+pub fn groupIds(self: *Owner, io: std.Io, reference: DatabaseRef) ![]const Database.GroupId {
+    try self.ensureDatabase(io, reference);
+    try self.begin(.query);
+    defer self.busy = false;
+    const db = try self.mutableDatabase(reference);
+    db.loadGroups(io) catch |err| return self.fail(.query, err, reference);
+    return db.groups.ordered.items;
+}
+pub const Usage = enum { sync, search, install, upgrade };
+/// Caller owns this list. Usage filtering is specific to candidate operations;
+/// direct exact/group queries remain visible regardless of these flags.
+pub fn repositoriesFor(self: *const Owner, allocator: std.mem.Allocator, usage: Usage) ![]DatabaseRef {
+    try self.checkIdle();
+    var result: std.ArrayList(DatabaseRef) = .empty;
+    errdefer result.deinit(allocator);
+    for (self.sync_databases.items) |db| if (allows(db, usage)) {
+        try result.append(allocator, db.identity.?);
+    };
+    return result.toOwnedSlice(allocator);
+}
+fn allows(db: Database, usage: Usage) bool {
+    return switch (usage) {
+        .sync => db.usage.sync,
+        .search => db.usage.search,
+        .install => db.usage.install,
+        .upgrade => db.usage.upgrade,
+    };
+}
+pub fn setDatabaseUsage(self: *Owner, reference: DatabaseRef, usage: @import("DatabaseUsage.zig")) !void {
+    try self.begin(.configure);
+    defer self.busy = false;
+    const db = self.mutableDatabase(reference) catch |err| return self.fail(.configure, err, reference);
+    db.usage = usage;
+}
+pub const ServerList = enum { servers, cache_servers };
+pub fn setServers(self: *Owner, reference: DatabaseRef, comptime list: ServerList, values: []const []const u8) !void {
+    try self.begin(.configure);
+    defer self.busy = false;
+    self.editServers(reference, list, .set, values) catch |err| return self.fail(.configure, err, reference);
+}
+pub fn addServer(self: *Owner, reference: DatabaseRef, comptime list: ServerList, value: []const u8) !void {
+    try self.begin(.configure);
+    defer self.busy = false;
+    self.editServers(reference, list, .append, &.{value}) catch |err| return self.fail(.configure, err, reference);
+}
+fn editServers(self: *Owner, reference: DatabaseRef, comptime list: ServerList, operation: enum { set, append }, values: []const []const u8) !void {
+    const db = try self.mutableDatabase(reference);
+    for (values) |value| try OwnerConfiguration.validateString(value, false);
+    var candidate = try db.copyRegistration(db.path, db.signature_policy);
+    errdefer candidate.deinit();
+    const target = &@field(candidate, @tagName(list));
+    if (operation == .set) target.clearRetainingCapacity();
+    for (values) |value| {
+        const normalized = if (std.mem.endsWith(u8, value, "/")) value[0 .. value.len - 1] else value;
+        try target.append(candidate.arena.allocator(), try candidate.arena.allocator().dupe(u8, normalized));
+    }
+    candidate.takeCache(db);
+    db.deinit();
+    db.* = candidate;
+}
+pub fn removeServer(self: *Owner, reference: DatabaseRef, comptime list: ServerList, value: []const u8) !bool {
+    try self.begin(.configure);
+    defer self.busy = false;
+    return self.removeServerInternal(reference, list, value) catch |err| return self.fail(.configure, err, reference);
+}
+fn removeServerInternal(self: *Owner, reference: DatabaseRef, comptime list: ServerList, value: []const u8) !bool {
+    try OwnerConfiguration.validateString(value, false);
+    const db = try self.mutableDatabase(reference);
+    const normalized = if (std.mem.endsWith(u8, value, "/")) value[0 .. value.len - 1] else value;
+    for (@field(db, @tagName(list)).items, 0..) |server, index| {
+        if (!std.mem.eql(u8, server, normalized)) continue;
+        var candidate = try db.copyRegistration(db.path, db.signature_policy);
+        _ = @field(candidate, @tagName(list)).orderedRemove(index);
+        candidate.takeCache(db);
+        db.deinit();
+        db.* = candidate;
+        return true;
+    }
+    return false;
+}
+pub fn findCandidate(self: *Owner, io: std.Io, name: []const u8, usage: Usage) !?PackageRef {
+    try self.checkIdle();
+    for (self.sync_databases.items) |db| {
+        if (!allows(db, usage)) continue;
+        if (try self.queryPackage(io, db.identity.?, name)) |found| return found;
+    }
+    return null;
+}
+/// The returned array is caller-owned; its generation-checked references are
+/// borrowed from this Owner. Repository priority wins duplicate package names.
+pub fn search(self: *Owner, io: std.Io, allocator: std.mem.Allocator, patterns: []const []const u8) ![]PackageRef {
+    try self.begin(.query);
+    defer self.busy = false;
+    return self.searchInternal(io, allocator, null, patterns) catch |err| return self.fail(.query, err, null);
+}
+pub fn searchDatabase(self: *Owner, io: std.Io, allocator: std.mem.Allocator, reference: DatabaseRef, patterns: []const []const u8) ![]PackageRef {
+    try self.begin(.query);
+    defer self.busy = false;
+    return self.searchInternal(io, allocator, reference, patterns) catch |err| return self.fail(.query, err, reference);
+}
+fn searchInternal(self: *Owner, io: std.Io, allocator: std.mem.Allocator, reference: ?DatabaseRef, patterns: []const []const u8) ![]PackageRef {
+    var result: std.ArrayList(PackageRef) = .empty;
+    errdefer result.deinit(allocator);
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    defer seen.deinit(allocator);
+    if (reference) |ref| {
+        const db = try self.mutableDatabase(ref);
+        if (db.usage.search) try self.searchOne(io, allocator, db, patterns, &result, &seen);
+    } else {
+        for (self.sync_databases.items) |*db| if (db.usage.search) {
+            try self.searchOne(io, allocator, db, patterns, &result, &seen);
+        };
+    }
+    return result.toOwnedSlice(allocator);
+}
+fn searchOne(self: *Owner, io: std.Io, allocator: std.mem.Allocator, db: *Database, patterns: []const []const u8, result: *std.ArrayList(PackageRef), seen: *std.StringHashMapUnmanaged(void)) !void {
+    try self.ensureInternal(io, db.identity.?);
+    try db.loadDescriptions(io);
+    var searcher = try @import("DatabaseSearch.zig").init(allocator, patterns);
+    defer searcher.deinit();
+    for (db.packages.ordered.items) |id| {
+        try self.checkCancelled();
+        const pkg = &db.packages.packages.items[@intFromEnum(id)];
+        if (seen.contains(pkg.name) or !try searcher.matches(pkg)) continue;
+        try seen.put(allocator, pkg.name, {});
+        try result.append(allocator, .{ .database = db.identity.?, .generation = db.generation, .id = id });
+    }
+}
+pub fn groupPackages(self: *Owner, io: std.Io, allocator: std.mem.Allocator, name: []const u8) ![]PackageRef {
+    try self.begin(.query);
+    defer self.busy = false;
+    return self.groupPackagesInternal(io, allocator, name) catch |err| return self.fail(.query, err, null);
+}
+fn groupPackagesInternal(self: *Owner, io: std.Io, allocator: std.mem.Allocator, name: []const u8) ![]PackageRef {
+    var result: std.ArrayList(PackageRef) = .empty;
+    errdefer result.deinit(allocator);
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    defer seen.deinit(allocator);
+    for (self.sync_databases.items) |*db| {
+        try self.ensureInternal(io, db.identity.?);
+        try db.loadGroups(io);
+        const group_id = db.groups.by_name.get(name) orelse continue;
+        for (db.groups.groups.items[@intFromEnum(group_id)].packages.items) |id| {
+            const pkg = &db.packages.packages.items[@intFromEnum(id)];
+            if (seen.contains(pkg.name)) continue;
+            try seen.put(allocator, pkg.name, {});
+            try result.append(allocator, .{ .database = db.identity.?, .generation = db.generation, .id = id });
+        }
+    }
+    return result.toOwnedSlice(allocator);
+}
+pub fn requiredBy(self: *Owner, io: std.Io, allocator: std.mem.Allocator, reference: PackageRef) ![]PackageRef {
+    const target = try self.packageMetadata(io, reference, .{});
+    return self.reverseDependencies(io, allocator, target, false);
+}
+pub fn optionalFor(self: *Owner, io: std.Io, allocator: std.mem.Allocator, reference: PackageRef) ![]PackageRef {
+    const target = try self.packageMetadata(io, reference, .{});
+    return self.reverseDependencies(io, allocator, target, true);
+}
+/// Local/archive targets inspect the installed universe; sync targets inspect
+/// every registered sync database, independent of usage flags. Names are unique
+/// and sorted. An archive target can be supplied directly without registration.
+pub fn reverseDependencies(self: *Owner, io: std.Io, allocator: std.mem.Allocator, target: *const Package, optional: bool) ![]PackageRef {
+    try self.begin(.query);
+    defer self.busy = false;
+    return self.reverseInternal(io, allocator, target, optional) catch |err| return self.fail(.query, err, null);
+}
+fn reverseInternal(self: *Owner, io: std.Io, allocator: std.mem.Allocator, target: *const Package, optional: bool) ![]PackageRef {
+    var result: std.ArrayList(PackageRef) = .empty;
+    errdefer result.deinit(allocator);
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    defer seen.deinit(allocator);
+    if (target.origin == .sync) {
+        for (self.sync_databases.items) |*db| try self.reverseOne(io, allocator, db, target, optional, &result, &seen);
+    } else if (self.local) |*db| try self.reverseOne(io, allocator, db, target, optional, &result, &seen);
+    std.mem.sort(PackageRef, result.items, self, struct {
+        fn less(owner: *Owner, a: PackageRef, b: PackageRef) bool {
+            const first = owner.resolveDatabase(a.database) catch unreachable;
+            const second = owner.resolveDatabase(b.database) catch unreachable;
+            return std.mem.lessThan(u8, first.packages.packages.items[@intFromEnum(a.id)].name, second.packages.packages.items[@intFromEnum(b.id)].name);
+        }
+    }.less);
+    return result.toOwnedSlice(allocator);
+}
+fn reverseOne(self: *Owner, io: std.Io, allocator: std.mem.Allocator, db: *Database, target: *const Package, optional: bool, result: *std.ArrayList(PackageRef), seen: *std.StringHashMapUnmanaged(void)) !void {
+    try self.ensureInternal(io, db.identity.?);
+    try db.loadDescriptions(io);
+    for (db.packages.ordered.items) |id| {
+        const pkg = &db.packages.packages.items[@intFromEnum(id)];
+        if (seen.contains(pkg.name)) continue;
+        for (if (optional) pkg.optional_depends else pkg.depends) |relation| {
+            if (!target.satisfies(relation)) continue;
+            try seen.put(allocator, pkg.name, {});
+            try result.append(allocator, .{ .database = db.identity.?, .generation = db.generation, .id = id });
+            break;
+        }
+    }
 }
 
 pub fn setCallbacks(self: *Owner, callbacks: Callbacks) !void {

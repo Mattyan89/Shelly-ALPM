@@ -1,7 +1,8 @@
 # Owner options and lifetimes
 
 `Owner.init(io, allocator, configuration, repositories)` copies configuration
-and registration inputs and loads a read-only snapshot of local descriptions.
+and registration inputs, validates/initializes the local format and loads local
+identities. Descriptions, files and groups load lazily; see [databases.md](databases.md).
 `OwnerConfiguration` and `DatabaseConfiguration` are borrowed input values;
 the owner and each database retain their own arena storage. No allocator pointer
 or owner back-pointer points into an initializer's temporary stack value.
@@ -20,7 +21,7 @@ var owner = try rlpm.Owner.init(io, allocator, .{
 defer owner.deinit() catch unreachable;
 const local = owner.localDatabase().?;
 if (try owner.findPackage(local, "example")) |reference| {
-    const package = try owner.package(reference);
+    const package = try owner.packageMetadata(io, reference, .{});
     // package is a borrowed view; use or copy it before another mutation.
     _ = package;
 }
@@ -51,11 +52,11 @@ default policy. A local installed database never receives a detached repository
 signature policy. Pacman.conf parsing, Include, `$repo`/`$arch` expansion, and
 frontend policy defaults stay in PackageManager.
 
-The pinned libalpm initializer creates a missing local database/version file.
-M1 deliberately provides read-only opening: absent local storage becomes an
-empty snapshot with `presence = missing`, and no directory or version file is
-created. M3 owns format validation/creation and production sync loading. The
-ledger keeps `alpm_initialize` partial until those effects are implemented.
+The default local mode creates absent storage or a version-9 marker in an empty
+directory, matching the pinned initializer. Unsupported formats and populated
+directories without a marker fail. `local_database_mode = .read_only` never writes;
+an absent local directory yields an empty missing snapshot. The example CLI uses
+this explicit mode. Repository archives are loaded lazily without downloads.
 
 ## Option inventory
 
@@ -65,29 +66,32 @@ these rows partial until the consuming milestones' fixtures pass.
 
 | Configuration field | Implemented now | Remaining consumer |
 | --- | --- | --- |
-| `root`, `database_path` | Independent canonical directory paths; immutable after initialization | M3 format validation; M8–M10 execution |
-| `database_extension` | Sync registration paths and replacement; rejects NUL/path separators | M3 database loading; M7 refresh |
+| `root`, `database_path` | Independent canonical directory paths; immutable after initialization | M8–M10 execution |
+| `local_database_mode` | Default creation/validation or explicit read-only local opening | — |
+| `database_extension` | Sync registration paths and replacement; rejects NUL/path separators | M7 refresh |
 | `cache_directories` | Owned ordered list and directory spelling | M7 cache selection, verification and downloads |
 | `hook_directories` | Owned ordered list and root-relative library default | M9 discovery, overrides and execution |
-| `gpg_directory` | Owned path | M4 verification/key policy |
+| `gpg_directory` | Explicit home for verification and consented key operations; null uses system pacman keyring | — |
+| `key_acquisition` | Owned single-key source paths, WKD/keyserver controls; import requires callback consent and reverification | Live server interoperability |
 | `log_file`, `use_syslog` | Owned setting | M6 operation logging/syslog |
 | `architectures` | Owned ordered list | M5 candidate validation; M11 frontend auto mapping |
 | `ignore_packages`, `ignore_groups` | Owned ordered lists | M5 candidate/future-state decisions |
 | `assume_installed` | Deep-copied typed relations, permissive raw versions and descriptions | M5 dependency checks |
 | `no_upgrade`, `no_extract`, `overwrite_files` | Owned patterns, including negation spelling | M8 matching/preflight; M10 file effects |
 | `check_space` | Boolean setting | M8 filesystem capacity checks |
-| `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Effective inheritance and marginal/unknown trust settings | M4 complete verification/trust enforcement |
+| `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Enforced inheritance, presence, crypto validity and trust; sealed package/database snapshots | M7/M8 integration with transfers and transactions |
 | `disable_download_timeout`, `parallel_downloads` | Validated settings; concurrency must be at least one | M7 existing PackageManager downloader/queue integration |
 | `sandbox_user` | Owned name; no account lookup during read-only initialization | M7 account validation and privilege separation |
 | `sandbox.disable_filesystem`, `sandbox.disable_syscalls` | Independent settings | M7 download sandbox |
 | `sandbox.disable_network` | CachyOS setting; global `setDisabled` updates all three switches | M9 hook/scriptlet/ldconfig behavior |
 | `callbacks` | Typed callbacks and independent borrowed contexts; guarded event/question dispatch | M6 transaction ordering, logging/progress; M7 download/fetch integration |
-| Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned ordered lists, usage flags, inherited/explicit policy | M3 queries; M4 verification; M5 selection; M7 transfer |
+| Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned ordered lists and mutation, operation-specific usage, enforced inherited/explicit signature policy | M5 selection; M7 transfer |
 
 `setOptions` constructs a complete replacement before publishing it. Failed
 allocation or validation leaves the old configuration and registrations intact.
-It preserves database IDs, invalidates sync cache generations, and retains local
-metadata. `setList`, `addListValue`, and `removeListValue` provide typed list
+It preserves database IDs and local metadata. Sync generations change only for
+changed paths/effective signature policies/GPG directories; unrelated options
+retain cached package/group data. `setList`, `addListValue`, and `removeListValue` provide typed list
 updates; duplicates remain ordered and removal affects the first match. Directory
 removal uses the same terminal-slash normalization as insertion. To update typed
 assumed-installed relations, supply a replacement list through `setOptions`.
@@ -116,14 +120,16 @@ database can also be unregistered, matching the public reference operation.
 Package references additionally contain cache generation and package ID.
 `invalidateDatabase` discards metadata and changes its generation; old package
 references fail before and after reload. Group membership stores IDs rather than
-pointers into a growable array. Local enumeration and group membership follow
-package-name order. Borrowed strings, database/group views and slices must not
+pointers into a growable array. Package enumeration and group membership follow
+package-name order; groups are enumerated in first-encounter order. Borrowed strings, database/group views and slices must not
 be retained across mutations or owner release. Resolve references again instead.
 These IDs are not persistent identifiers to serialize across process runs.
 
-Configuration and metadata use separate arenas. An unsuccessful local load
-releases its candidate storage, clears partial indexes, propagates OOM and can
-be retried. Complete corrupt-database/format compatibility remains M3.
+Configuration and metadata use separate arenas. Reloads publish a complete
+generation only on success; failure retains any previous usable generation.
+Initial failures leave a clearly unloaded cache and propagate operational/OOM
+errors. Local metadata and group loads also publish through candidate arenas.
+See [database corruption and lifetime rules](databases.md).
 
 Callbacks run synchronously on the owner's thread. Their payloads and contexts
 are borrowed; callers own context lifetimes. They must not reenter owner

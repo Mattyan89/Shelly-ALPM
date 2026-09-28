@@ -234,7 +234,7 @@ jobs:
     steps:
       - run: |
           pacman -Syu --noconfirm
-          pacman -S --needed --noconfirm zig base-devel glibc git libarchive gnupg
+          pacman -S --needed --noconfirm zig base-devel glibc git libarchive sqlite gnupg
       - uses: actions/checkout@v6
       - name: Build and run hermetic RLPM tests
         working-directory: Shelly.Rlpm
@@ -242,7 +242,7 @@ jobs:
           zig version
           zig build -Doptimize=${{ matrix.optimize }}
           zig build test -Doptimize=${{ matrix.optimize }} --summary all
-      - name: Verify detached signatures with isolated GPG homes
+      - name: Verify GPG trust, key imports and signed archives
         if: ${{ matrix.optimize == 'Debug' }}
         working-directory: Shelly.Rlpm
         run: zig build test-signature --summary all

@@ -12,7 +12,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (args.len != 3) {
         return error.InvalidArguments;
     } else {
-        var owner = try rlpm.Owner.init(init.io, init.gpa, .{ .root = args[1], .database_path = args[2] }, &.{});
+        var owner = try rlpm.Owner.init(init.io, init.gpa, .{ .root = args[1], .database_path = args[2], .local_database_mode = .read_only }, &.{});
         defer owner.deinit() catch unreachable;
         const local = owner.localDatabase().?;
         for (try owner.packageIds(local)) |id| {

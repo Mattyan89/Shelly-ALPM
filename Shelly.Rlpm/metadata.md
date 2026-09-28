@@ -1,10 +1,8 @@
 # Package metadata and relations
 
-M2 adds a shared metadata model for local, repository and archive inputs. The
-production local/sync backends, including CachyOS SQLite repositories, remain M3.
-The existing local reader now uses the shared description parser. It still reads
-`desc` only; M3 will correlate the separate `files`, install, changelog and mtree
-files and provide installed-package streams.
+M2 supplies the shared metadata model and archive/relation primitives. M3's
+[database backends](databases.md) add local format validation, lazy descriptions,
+files/backup/member correlation, and tar/CachyOS SQLite ingestion.
 
 ## Sources, sizes and ownership
 
@@ -20,9 +18,9 @@ repository's `%FILENAME%` value. Neither overwrites the other.
 | `compressed_size` | Repository `%CSIZE%`, or the archive's file size |
 | `installed_size` | `%SIZE%`/`%ISIZE%`, or `.PKGINFO`'s installed size |
 | `download_size` | Remaining transfer after cache planning; null for unplanned sync metadata, zero for local/archive metadata; M7 computes cache effects |
-| `md5_sum`, `sha256_sum` | Recorded digest strings; verification remains M4 |
+| `md5_sum`, `sha256_sum` | Recorded digest strings; checked by `Owner.loadPackage` using repository metadata |
 | `base64_signature` | Recorded encoded signature; `decodeSignature(allocator)` returns caller-owned bytes or null when absent |
-| `validation` | Recorded none/MD5/SHA-256/PGP flags; all false represents unknown; archive metadata loading sets `none` |
+| `validation` | Performed checks for `Owner.loadPackage`, historical flags for local packages; unverified archive/sync metadata sets `none`; sync promises use `availableValidation()` |
 | `install_reason` | Explicit, dependency or unknown; missing metadata defaults to explicit, matching the reference |
 | `files` | Sorted file records: name, optional size/mode, kind and link target |
 | `backups` | File names and optional installed-content hashes; archive backup declarations have no hash yet |
@@ -33,6 +31,8 @@ invented zero values. File inventories retain directory terminal slashes.
 `files_loaded` distinguishes an empty inventory from one not loaded, while
 `files_source` records database, archive or mtree provenance. Stored validation
 flags, digests and decoded signatures do not establish current file integrity.
+The [verification guide](verification.md) describes policy-aware loading and
+retained immutable archive readers.
 
 Description parsing borrows input strings and owns only temporary list storage.
 Conversion now explicitly requires an enclosing arena and a source:
@@ -135,8 +135,13 @@ and `deinit` always releases the reader.
 plain and compressed mtree data. Each `next` result borrows name/link strings
 until the next call or iterator release. Iterator names remove leading `./`;
 unlike the sorted package inventory, their directory spelling comes from mtree.
-Only archive member streams are implemented in M2; other origins report
-`UnsupportedPackageOrigin` until their M3 backend exists.
+Archive and local member streams are implemented. Local streams use the owned
+`metadata_directory` source path and return verbatim bytes; `openMtree` handles
+compressed local mtree data. Sync packages report `UnsupportedPackageOrigin`.
+The returned `MemberReader` owns its file/archive stream independently of the
+package or Owner. Local metadata fields are requested through
+`Owner.packageMetadata(io, ref, .{ .files = true, .members = true })`; bare
+`Owner.package` is an I/O-free snapshot accessor.
 
 Metadata has explicit bounds: 1 MiB per `.PKGINFO`, 512 KiB per metadata line and
 32 MiB for an encoded `.MTREE` member. Invalid initial mtree data falls back to

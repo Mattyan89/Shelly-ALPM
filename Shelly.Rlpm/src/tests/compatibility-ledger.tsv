@@ -129,11 +129,11 @@ ALPM_PKG_FROM_SYNCDB	constant	upstream	M2	Package.Origin.sync	partial	metadata-m
 ALPM_PKG_REASON_DEPEND	constant	upstream	M2	Package.InstallReason.dependency	partial	metadata-m2-reference	M2/ALPM_PKG_REASON_DEPEND	downstream-alpm.h:2389
 ALPM_PKG_REASON_EXPLICIT	constant	upstream	M2	Package.InstallReason.explicit	partial	metadata-m2-reference	M2/ALPM_PKG_REASON_EXPLICIT	downstream-alpm.h:2387
 ALPM_PKG_REASON_UNKNOWN	constant	upstream	M2	Package.InstallReason.unknown	partial	metadata-m2-reference	M2/ALPM_PKG_REASON_UNKNOWN	downstream-alpm.h:2391
-ALPM_PKG_VALIDATION_MD5SUM	constant	upstream	M2	Package.Validation: md5; enforcement remains M4	partial	metadata-m2-reference	M2/ALPM_PKG_VALIDATION_MD5SUM	downstream-alpm.h:2412
-ALPM_PKG_VALIDATION_NONE	constant	upstream	M2	Package.Validation: none; enforcement remains M4	partial	metadata-m2-reference	M2/ALPM_PKG_VALIDATION_NONE	downstream-alpm.h:2410
-ALPM_PKG_VALIDATION_SHA256SUM	constant	upstream	M2	Package.Validation: sha256; enforcement remains M4	partial	metadata-m2-reference	M2/ALPM_PKG_VALIDATION_SHA256SUM	downstream-alpm.h:2414
-ALPM_PKG_VALIDATION_SIGNATURE	constant	upstream	M2	Package.Validation: pgp; enforcement remains M4	partial	metadata-m2-reference	M2/ALPM_PKG_VALIDATION_SIGNATURE	downstream-alpm.h:2416
-ALPM_PKG_VALIDATION_UNKNOWN	constant	upstream	M2	Package.Validation: all flags false; enforcement remains M4	partial	metadata-m2-reference	M2/ALPM_PKG_VALIDATION_UNKNOWN	downstream-alpm.h:2408
+ALPM_PKG_VALIDATION_MD5SUM	constant	upstream	M2	Package.Validation: md5; performed by Owner.loadPackage; availableValidation separates sync metadata	partial	verification-m4-unit	M2/ALPM_PKG_VALIDATION_MD5SUM	downstream-alpm.h:2412
+ALPM_PKG_VALIDATION_NONE	constant	upstream	M2	Package.Validation: none; performed by Owner.loadPackage; availableValidation separates sync metadata	partial	verification-m4-unit	M2/ALPM_PKG_VALIDATION_NONE	downstream-alpm.h:2410
+ALPM_PKG_VALIDATION_SHA256SUM	constant	upstream	M2	Package.Validation: sha256; performed by Owner.loadPackage; availableValidation separates sync metadata	partial	verification-m4-unit	M2/ALPM_PKG_VALIDATION_SHA256SUM	downstream-alpm.h:2414
+ALPM_PKG_VALIDATION_SIGNATURE	constant	upstream	M2	Package.Validation: pgp; performed by Owner.loadPackage; availableValidation separates sync metadata	partial	verification-m4-unit	M2/ALPM_PKG_VALIDATION_SIGNATURE	downstream-alpm.h:2416
+ALPM_PKG_VALIDATION_UNKNOWN	constant	upstream	M2	Package.Validation: all flags false; performed by Owner.loadPackage; availableValidation separates sync metadata	partial	verification-m4-unit	M2/ALPM_PKG_VALIDATION_UNKNOWN	downstream-alpm.h:2408
 ALPM_PROGRESS_ADD_START	constant	upstream	M6	Callbacks.ALPM_PROGRESS_ADD_START typed payload and meaningful event order	missing	-	M6/ALPM_PROGRESS_ADD_START	downstream-alpm.h:1119
 ALPM_PROGRESS_CONFLICTS_START	constant	upstream	M6	Callbacks.ALPM_PROGRESS_CONFLICTS_START typed payload and meaningful event order	missing	-	M6/ALPM_PROGRESS_CONFLICTS_START	downstream-alpm.h:1129
 ALPM_PROGRESS_DISKSPACE_START	constant	upstream	M6	Callbacks.ALPM_PROGRESS_DISKSPACE_START typed payload and meaningful event order	missing	-	M6/ALPM_PROGRESS_DISKSPACE_START	downstream-alpm.h:1131
@@ -146,30 +146,30 @@ ALPM_PROGRESS_REMOVE_START	constant	upstream	M6	Callbacks.ALPM_PROGRESS_REMOVE_S
 ALPM_PROGRESS_UPGRADE_START	constant	upstream	M6	Callbacks.ALPM_PROGRESS_UPGRADE_START typed payload and meaningful event order	missing	-	M6/ALPM_PROGRESS_UPGRADE_START	downstream-alpm.h:1121
 ALPM_QUESTION_CONFLICT_PKG	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_CONFLICT_PKG typed payload and answer effect	missing	-	M6/ALPM_QUESTION_CONFLICT_PKG	downstream-alpm.h:981
 ALPM_QUESTION_CORRUPTED_PKG	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_CORRUPTED_PKG typed payload and answer effect	missing	-	M6/ALPM_QUESTION_CORRUPTED_PKG	downstream-alpm.h:983
-ALPM_QUESTION_IMPORT_KEY	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_IMPORT_KEY typed payload and answer effect	missing	-	M6/ALPM_QUESTION_IMPORT_KEY	downstream-alpm.h:989
+ALPM_QUESTION_IMPORT_KEY	constant	upstream	M6	Callbacks.Question.import_key: deny default, reentry/cancellation guard, explicit import and reverification	partial	verification-m4-integration	M6/ALPM_QUESTION_IMPORT_KEY	downstream-alpm.h:989
 ALPM_QUESTION_INSTALL_IGNOREPKG	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_INSTALL_IGNOREPKG typed payload and answer effect	missing	-	M6/ALPM_QUESTION_INSTALL_IGNOREPKG	downstream-alpm.h:977
 ALPM_QUESTION_REMOVE_PKGS	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_REMOVE_PKGS typed payload and answer effect	missing	-	M6/ALPM_QUESTION_REMOVE_PKGS	downstream-alpm.h:985
 ALPM_QUESTION_REPLACE_PKG	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_REPLACE_PKG typed payload and answer effect	missing	-	M6/ALPM_QUESTION_REPLACE_PKG	downstream-alpm.h:979
 ALPM_QUESTION_SELECT_PROVIDER	constant	upstream	M6	Callbacks.Question.ALPM_QUESTION_SELECT_PROVIDER typed payload and answer effect	missing	-	M6/ALPM_QUESTION_SELECT_PROVIDER	downstream-alpm.h:987
-ALPM_SIGSTATUS_INVALID	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGSTATUS_INVALID trust/status/ownership contract	missing	-	M4/ALPM_SIGSTATUS_INVALID	downstream-alpm.h:420
-ALPM_SIGSTATUS_KEY_DISABLED	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGSTATUS_KEY_DISABLED trust/status/ownership contract	missing	-	M4/ALPM_SIGSTATUS_KEY_DISABLED	downstream-alpm.h:418
-ALPM_SIGSTATUS_KEY_EXPIRED	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGSTATUS_KEY_EXPIRED trust/status/ownership contract	missing	-	M4/ALPM_SIGSTATUS_KEY_EXPIRED	downstream-alpm.h:412
-ALPM_SIGSTATUS_KEY_UNKNOWN	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGSTATUS_KEY_UNKNOWN trust/status/ownership contract	missing	-	M4/ALPM_SIGSTATUS_KEY_UNKNOWN	downstream-alpm.h:416
-ALPM_SIGSTATUS_SIG_EXPIRED	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGSTATUS_SIG_EXPIRED trust/status/ownership contract	missing	-	M4/ALPM_SIGSTATUS_SIG_EXPIRED	downstream-alpm.h:414
-ALPM_SIGSTATUS_VALID	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGSTATUS_VALID trust/status/ownership contract	missing	-	M4/ALPM_SIGSTATUS_VALID	downstream-alpm.h:410
-ALPM_SIGVALIDITY_FULL	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGVALIDITY_FULL trust/status/ownership contract	missing	-	M4/ALPM_SIGVALIDITY_FULL	downstream-alpm.h:427
-ALPM_SIGVALIDITY_MARGINAL	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGVALIDITY_MARGINAL trust/status/ownership contract	missing	-	M4/ALPM_SIGVALIDITY_MARGINAL	downstream-alpm.h:429
-ALPM_SIGVALIDITY_NEVER	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGVALIDITY_NEVER trust/status/ownership contract	missing	-	M4/ALPM_SIGVALIDITY_NEVER	downstream-alpm.h:431
-ALPM_SIGVALIDITY_UNKNOWN	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIGVALIDITY_UNKNOWN trust/status/ownership contract	missing	-	M4/ALPM_SIGVALIDITY_UNKNOWN	downstream-alpm.h:433
-ALPM_SIG_DATABASE	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIG_DATABASE trust/status/ownership contract	missing	-	M4/ALPM_SIG_DATABASE	downstream-alpm.h:394
-ALPM_SIG_DATABASE_MARGINAL_OK	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIG_DATABASE_MARGINAL_OK trust/status/ownership contract	missing	-	M4/ALPM_SIG_DATABASE_MARGINAL_OK	downstream-alpm.h:399
-ALPM_SIG_DATABASE_OPTIONAL	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIG_DATABASE_OPTIONAL trust/status/ownership contract	missing	-	M4/ALPM_SIG_DATABASE_OPTIONAL	downstream-alpm.h:397
-ALPM_SIG_DATABASE_UNKNOWN_OK	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIG_DATABASE_UNKNOWN_OK trust/status/ownership contract	missing	-	M4/ALPM_SIG_DATABASE_UNKNOWN_OK	downstream-alpm.h:401
-ALPM_SIG_PACKAGE	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIG_PACKAGE trust/status/ownership contract	missing	-	M4/ALPM_SIG_PACKAGE	downstream-alpm.h:384
-ALPM_SIG_PACKAGE_MARGINAL_OK	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIG_PACKAGE_MARGINAL_OK trust/status/ownership contract	missing	-	M4/ALPM_SIG_PACKAGE_MARGINAL_OK	downstream-alpm.h:389
-ALPM_SIG_PACKAGE_OPTIONAL	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIG_PACKAGE_OPTIONAL trust/status/ownership contract	missing	-	M4/ALPM_SIG_PACKAGE_OPTIONAL	downstream-alpm.h:387
-ALPM_SIG_PACKAGE_UNKNOWN_OK	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIG_PACKAGE_UNKNOWN_OK trust/status/ownership contract	missing	-	M4/ALPM_SIG_PACKAGE_UNKNOWN_OK	downstream-alpm.h:391
-ALPM_SIG_USE_DEFAULT	constant	upstream	M4	SignaturePolicy/SignatureResult.ALPM_SIG_USE_DEFAULT trust/status/ownership contract	missing	-	M4/ALPM_SIG_USE_DEFAULT	downstream-alpm.h:404
+ALPM_SIGSTATUS_INVALID	constant	upstream	M4	SignatureResult.Status: invalid	partial	verification-m4-unit	M4/ALPM_SIGSTATUS_INVALID	downstream-alpm.h:420
+ALPM_SIGSTATUS_KEY_DISABLED	constant	upstream	M4	SignatureResult.Status: key_disabled	partial	verification-m4-unit	M4/ALPM_SIGSTATUS_KEY_DISABLED	downstream-alpm.h:418
+ALPM_SIGSTATUS_KEY_EXPIRED	constant	upstream	M4	SignatureResult.Status: key_expired	partial	verification-m4-unit	M4/ALPM_SIGSTATUS_KEY_EXPIRED	downstream-alpm.h:412
+ALPM_SIGSTATUS_KEY_UNKNOWN	constant	upstream	M4	SignatureResult.Status: key_unknown	partial	verification-m4-unit	M4/ALPM_SIGSTATUS_KEY_UNKNOWN	downstream-alpm.h:416
+ALPM_SIGSTATUS_SIG_EXPIRED	constant	upstream	M4	SignatureResult.Status: sig_expired	partial	verification-m4-unit	M4/ALPM_SIGSTATUS_SIG_EXPIRED	downstream-alpm.h:414
+ALPM_SIGSTATUS_VALID	constant	upstream	M4	SignatureResult.Status: valid	partial	verification-m4-unit	M4/ALPM_SIGSTATUS_VALID	downstream-alpm.h:410
+ALPM_SIGVALIDITY_FULL	constant	upstream	M4	SignatureResult.Trust: full	partial	verification-m4-unit	M4/ALPM_SIGVALIDITY_FULL	downstream-alpm.h:427
+ALPM_SIGVALIDITY_MARGINAL	constant	upstream	M4	SignatureResult.Trust: marginal	partial	verification-m4-unit	M4/ALPM_SIGVALIDITY_MARGINAL	downstream-alpm.h:429
+ALPM_SIGVALIDITY_NEVER	constant	upstream	M4	SignatureResult.Trust: never	partial	verification-m4-unit	M4/ALPM_SIGVALIDITY_NEVER	downstream-alpm.h:431
+ALPM_SIGVALIDITY_UNKNOWN	constant	upstream	M4	SignatureResult.Trust: unknown	partial	verification-m4-unit	M4/ALPM_SIGVALIDITY_UNKNOWN	downstream-alpm.h:433
+ALPM_SIG_DATABASE	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_DATABASE	downstream-alpm.h:394
+ALPM_SIG_DATABASE_MARGINAL_OK	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_DATABASE_MARGINAL_OK	downstream-alpm.h:399
+ALPM_SIG_DATABASE_OPTIONAL	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_DATABASE_OPTIONAL	downstream-alpm.h:397
+ALPM_SIG_DATABASE_UNKNOWN_OK	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_DATABASE_UNKNOWN_OK	downstream-alpm.h:401
+ALPM_SIG_PACKAGE	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_PACKAGE	downstream-alpm.h:384
+ALPM_SIG_PACKAGE_MARGINAL_OK	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_PACKAGE_MARGINAL_OK	downstream-alpm.h:389
+ALPM_SIG_PACKAGE_OPTIONAL	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_PACKAGE_OPTIONAL	downstream-alpm.h:387
+ALPM_SIG_PACKAGE_UNKNOWN_OK	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_PACKAGE_UNKNOWN_OK	downstream-alpm.h:391
+ALPM_SIG_USE_DEFAULT	constant	upstream	M4	SignaturePolicy effective requirement/trust and null inheritance	partial	verification-m4-unit	M4/ALPM_SIG_USE_DEFAULT	downstream-alpm.h:404
 ALPM_TRANS_FLAG_ALLDEPS	constant	upstream	M5	TransactionFlags.alldeps operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_ALLDEPS	downstream-alpm.h:2869
 ALPM_TRANS_FLAG_ALLEXPLICIT	constant	upstream	M5	TransactionFlags.allexplicit operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_ALLEXPLICIT	downstream-alpm.h:2880
 ALPM_TRANS_FLAG_CASCADE	constant	upstream	M5	TransactionFlags.cascade operational behavior and flag interactions	missing	-	M5/ALPM_TRANS_FLAG_CASCADE	downstream-alpm.h:2861
@@ -199,35 +199,35 @@ alpm_cb_progress	type	upstream	M6	Callbacks.alpm_cb_progress typed payload and m
 alpm_cb_question	type	upstream	M6	Callbacks.Question.alpm_cb_question typed payload and answer effect	partial	owner-unit	M6/alpm_cb_question	downstream-alpm.h:1114
 alpm_checkconflicts	function	upstream	M5	Resolver package conflict checks	missing	-	M5/alpm_checkconflicts	downstream-alpm.h:664
 alpm_checkdeps	function	upstream	M5	Resolver future-state dependency checks with reverse dependencies	missing	-	M5/alpm_checkdeps	downstream-alpm.h:631
-alpm_compute_md5sum	function	upstream	M4	Integrity file MD5 helper	missing	-	M4/alpm_compute_md5sum	downstream-alpm.h:2996
-alpm_compute_sha256sum	function	upstream	M4	Integrity file SHA-256 helper	missing	-	M4/alpm_compute_sha256sum	downstream-alpm.h:3002
+alpm_compute_md5sum	function	upstream	M4	Checksum.file(.md5) streaming lowercase hex	partial	verification-m4-reference	M4/alpm_compute_md5sum	downstream-alpm.h:2996
+alpm_compute_sha256sum	function	upstream	M4	Checksum.file(.sha256) streaming lowercase hex	partial	verification-m4-reference	M4/alpm_compute_sha256sum	downstream-alpm.h:3002
 alpm_conflict_free	function	upstream	M5	Resolver conflict diagnostic ownership	missing	-	M5/alpm_conflict_free	downstream-alpm.h:698
 alpm_conflict_t	type	upstream	M5	Resolver diagnostic alpm_conflict_t	missing	-	M5/alpm_conflict_t	downstream-alpm.h:604
-alpm_db_add_cache_server	function	upstream	M3	DatabaseConfiguration copied at registration; in-place server list editing and transfer semantics remain M3/M7	partial	owner-unit	M3/alpm_db_add_cache_server	downstream-alpm.h:1359
-alpm_db_add_server	function	upstream	M3	DatabaseConfiguration copied at registration; in-place server list editing and transfer semantics remain M3/M7	partial	owner-unit	M3/alpm_db_add_server	downstream-alpm.h:1331
-alpm_db_check_pgp_signature	function	upstream	M4	Database signature verification with structured results	partial	signature-integration	M4/alpm_db_check_pgp_signature	downstream-alpm.h:496
+alpm_db_add_cache_server	function	upstream	M3	Owner.addServer: copied ordered list, one terminal slash, first-match removal; transfer remains M7	partial	database-m3-unit	M3/alpm_db_add_cache_server	downstream-alpm.h:1359
+alpm_db_add_server	function	upstream	M3	Owner.addServer: copied ordered list, one terminal slash, first-match removal; transfer remains M7	partial	database-m3-unit	M3/alpm_db_add_server	downstream-alpm.h:1331
+alpm_db_check_pgp_signature	function	upstream	M4	Verification.verify structured results; Database.last_verification on policy-checked loads	partial	verification-m4-integration	M4/alpm_db_check_pgp_signature	downstream-alpm.h:496
 alpm_db_get_cache_servers	function	upstream	M3	DatabaseConfiguration.cache_servers; ordered lists and effective policy	partial	owner-unit	M3/alpm_db_get_cache_servers	downstream-alpm.h:1345
-alpm_db_get_group	function	upstream	M3	Database group lookup by name	partial	database-unit	M3/alpm_db_get_group	downstream-alpm.h:1425
-alpm_db_get_groupcache	function	upstream	M3	Database ordered group views	partial	database-unit	M3/alpm_db_get_groupcache	downstream-alpm.h:1431
+alpm_db_get_group	function	upstream	M3	Owner.findGroup with lazy local descriptions and group cache	partial	database-m3-reference	M3/alpm_db_get_group	downstream-alpm.h:1425
+alpm_db_get_groupcache	function	upstream	M3	Owner.groupIds with reference first-encounter group ordering	partial	database-m3-reference	M3/alpm_db_get_groupcache	downstream-alpm.h:1431
 alpm_db_get_handle	function	upstream	M1	Database owner identity	partial	owner-unit	M1/alpm_db_get_handle	downstream-alpm.h:1285
 alpm_db_get_name	function	upstream	M3	Database.name	partial	database-unit	M3/alpm_db_get_name	downstream-alpm.h:1291
-alpm_db_get_pkg	function	upstream	M3	Database package lookup by name	partial	database-unit	M3/alpm_db_get_pkg	downstream-alpm.h:1409
-alpm_db_get_pkgcache	function	upstream	M3	Database ordered package views	partial	database-unit	M3/alpm_db_get_pkgcache	downstream-alpm.h:1416
+alpm_db_get_pkg	function	upstream	M3	Owner.queryPackage / findPackage: lazy exact identity lookup independent of usage	partial	database-m3-reference	M3/alpm_db_get_pkg	downstream-alpm.h:1409
+alpm_db_get_pkgcache	function	upstream	M3	Owner.ensureDatabase / packageIds: lazy package cache in name order	partial	database-m3-reference	M3/alpm_db_get_pkgcache	downstream-alpm.h:1416
 alpm_db_get_servers	function	upstream	M3	DatabaseConfiguration.servers; ordered lists and effective policy	partial	owner-reference	M3/alpm_db_get_servers	downstream-alpm.h:1317
 alpm_db_get_siglevel	function	upstream	M3	DatabaseConfiguration.siglevel; ordered lists and effective policy	partial	owner-unit	M3/alpm_db_get_siglevel	downstream-alpm.h:1299
-alpm_db_get_usage	function	upstream	M3	DatabaseConfiguration.usage; ordered lists and effective policy	partial	owner-unit	M3/alpm_db_get_usage	downstream-alpm.h:1473
-alpm_db_get_valid	function	upstream	M3	Database.validate and cached validity	missing	-	M3/alpm_db_get_valid	downstream-alpm.h:1307
-alpm_db_remove_cache_server	function	upstream	M3	DatabaseConfiguration copied at registration; in-place server list editing and transfer semantics remain M3/M7	partial	owner-unit	M3/alpm_db_remove_cache_server	downstream-alpm.h:1367
-alpm_db_remove_server	function	upstream	M3	DatabaseConfiguration copied at registration; in-place server list editing and transfer semantics remain M3/M7	partial	owner-unit	M3/alpm_db_remove_server	downstream-alpm.h:1339
-alpm_db_search	function	upstream	M3	Database regex search	missing	-	M3/alpm_db_search	downstream-alpm.h:1440
-alpm_db_set_cache_servers	function	upstream	M3	DatabaseConfiguration copied at registration; in-place server list editing and transfer semantics remain M3/M7	partial	owner-unit	M3/alpm_db_set_cache_servers	downstream-alpm.h:1352
-alpm_db_set_servers	function	upstream	M3	DatabaseConfiguration copied at registration; in-place server list editing and transfer semantics remain M3/M7	partial	owner-unit	M3/alpm_db_set_servers	downstream-alpm.h:1324
-alpm_db_set_usage	function	upstream	M3	DatabaseConfiguration.usage; ordered lists and effective policy	partial	owner-unit	M3/alpm_db_set_usage	downstream-alpm.h:1466
-alpm_db_t	type	upstream	M3	Database with local/sync Backend and indexes	missing	-	M3/alpm_db_t	downstream-alpm.h:102
+alpm_db_get_usage	function	upstream	M3	Database.usage and Owner.repositoriesFor operation-specific flags	partial	database-m3-unit	M3/alpm_db_get_usage	downstream-alpm.h:1473
+alpm_db_get_valid	function	upstream	M3	DatabaseStatus validity after structural loading and effective signature policy; report retained on rejected reload	partial	verification-m4-integration	M3/alpm_db_get_valid	downstream-alpm.h:1307
+alpm_db_remove_cache_server	function	upstream	M3	Owner.removeServer: copied ordered list, one terminal slash, first-match removal; transfer remains M7	partial	database-m3-unit	M3/alpm_db_remove_cache_server	downstream-alpm.h:1367
+alpm_db_remove_server	function	upstream	M3	Owner.removeServer: copied ordered list, one terminal slash, first-match removal; transfer remains M7	partial	database-m3-unit	M3/alpm_db_remove_server	downstream-alpm.h:1339
+alpm_db_search	function	upstream	M3	Owner.searchDatabase: POSIX regex/AND/name literal fallback, usage and errors	partial	database-m3-reference	M3/alpm_db_search	downstream-alpm.h:1440
+alpm_db_set_cache_servers	function	upstream	M3	Owner.setServers: copied ordered list, one terminal slash, first-match removal; transfer remains M7	partial	database-m3-unit	M3/alpm_db_set_cache_servers	downstream-alpm.h:1352
+alpm_db_set_servers	function	upstream	M3	Owner.setServers: copied ordered list, one terminal slash, first-match removal; transfer remains M7	partial	database-m3-unit	M3/alpm_db_set_servers	downstream-alpm.h:1324
+alpm_db_set_usage	function	upstream	M3	Owner.setDatabaseUsage; direct queries versus operation-specific visibility	partial	database-m3-unit	M3/alpm_db_set_usage	downstream-alpm.h:1466
+alpm_db_t	type	upstream	M3	Database facade with local/sync Backend, arenas, generations and indexes	partial	database-m3-unit	M3/alpm_db_t	downstream-alpm.h:102
 alpm_db_unregister	function	upstream	M1	Owner.unregisterDatabase with stale reference invalidation	partial	owner-unit	M1/alpm_db_unregister	downstream-alpm.h:1279
 alpm_db_update	function	upstream	M7	Owner refresh and atomic cache replacement	missing	-	M7/alpm_db_update	downstream-alpm.h:1400
-alpm_db_usage_t	type	upstream	M3	DatabaseUsage.alpm_db_usage_t sync/search/install/upgrade behavior	partial	owner-unit	M3/alpm_db_usage_t	downstream-alpm.h:1455
-alpm_decode_signature	function	upstream	M4	Package.base64_signature / decodeSignature; embedded base64 bytes only; detached cache lookup and verification remain M4/M7	partial	metadata-m2-reference	M4/alpm_decode_signature	downstream-alpm.h:514
+alpm_db_usage_t	type	upstream	M3	DatabaseUsage independent sync/search/install/upgrade visibility	partial	database-m3-unit	M3/alpm_db_usage_t	downstream-alpm.h:1455
+alpm_decode_signature	function	upstream	M4	OpenPgp.decode and Package.decodeSignature: owned base64 bytes, 16 KiB bound	partial	verification-m4-unit	M4/alpm_decode_signature	downstream-alpm.h:514
 alpm_dep_compute_string	function	upstream	M2	PackageRelation.format / formatAlloc	partial	metadata-m2-reference	M2/alpm_dep_compute_string	downstream-alpm.h:670
 alpm_dep_free	function	upstream	M2	PackageRelation.deinit for clone-owned values; borrowed parse values need no release	partial	metadata-m2-unit	M2/alpm_dep_free	downstream-alpm.h:682
 alpm_dep_from_string	function	upstream	M2	PackageRelation.parse: borrowed NUL-free input; comparator precedence, descriptions and raw versions	partial	metadata-m2-reference	M2/alpm_dep_from_string	downstream-alpm.h:677
@@ -255,7 +255,7 @@ alpm_event_pkgdownload_t	type	upstream	M6	Callbacks.alpm_event_pkgdownload_t typ
 alpm_event_scriptlet_info_t	type	upstream	M6	Callbacks.alpm_event_scriptlet_info_t typed payload and meaningful event order	missing	-	M6/alpm_event_scriptlet_info_t	downstream-alpm.h:844
 alpm_event_t	type	upstream	M6	Callbacks.alpm_event_t typed payload and meaningful event order	partial	owner-unit	M6/alpm_event_t	downstream-alpm.h:960
 alpm_event_type_t	type	upstream	M6	Callbacks.alpm_event_type_t typed payload and meaningful event order	missing	-	M6/alpm_event_type_t	downstream-alpm.h:794
-alpm_extract_keyid	function	upstream	M4	SignatureResult key ID extraction	missing	-	M4/alpm_extract_keyid	downstream-alpm.h:527
+alpm_extract_keyid	function	upstream	M4	OpenPgp.extractIssuers: bounded v4 issuer IDs/fingerprints; binary packets only	partial	verification-m4-reference	M4/alpm_extract_keyid	downstream-alpm.h:527
 alpm_fetch_pkgurl	function	upstream	M7	Owner.fetchPackageUrls using shared PackageManager downloader core with cache and signature policy	missing	-	M7/alpm_fetch_pkgurl	downstream-alpm.h:2445
 alpm_file_t	type	upstream	M2	PackageFile: name, optional size/mode, kind and link target	partial	metadata-m2-reference	M2/alpm_file_t	downstream-alpm.h:142
 alpm_fileconflict_free	function	upstream	M8	FileConflict diagnostic ownership	missing	-	M8/alpm_fileconflict_free	downstream-alpm.h:687
@@ -264,14 +264,14 @@ alpm_fileconflicttype_t	type	upstream	M8	FileConflict.alpm_fileconflicttype_t ta
 alpm_filelist_contains	function	upstream	M2	Package.findFile: exact sorted name lookup	partial	metadata-m2-reference	M2/alpm_filelist_contains	downstream-alpm.h:168
 alpm_filelist_t	type	upstream	M2	Package.files: sorted arena-owned PackageFile slice	partial	metadata-m2-reference	M2/alpm_filelist_t	downstream-alpm.h:150
 alpm_find_dbs_satisfier	function	upstream	M5	Resolver dependency/provider lookup across ordered databases	missing	-	M5/alpm_find_dbs_satisfier	downstream-alpm.h:654
-alpm_find_group_pkgs	function	upstream	M3	Owner group lookup across ordered repositories	missing	-	M3/alpm_find_group_pkgs	downstream-alpm.h:194
+alpm_find_group_pkgs	function	upstream	M3	Owner.groupPackages: raw ordered deduplicated group membership; ignore questions/NEEDED remain M5/M6	partial	database-m3-unit	M3/alpm_find_group_pkgs	downstream-alpm.h:194
 alpm_find_satisfier	function	upstream	M5	Package.satisfies / PackageRelation.satisfiedBy literal and versioned provisions; ordered package-universe selection remains M5	partial	metadata-m2-reference	M5/alpm_find_satisfier	downstream-alpm.h:640
 alpm_get_localdb	function	upstream	M1	Owner.local borrowed database view	partial	owner-unit	M1/alpm_get_localdb	downstream-alpm.h:1242
 alpm_get_syncdbs	function	upstream	M1	Owner.sync_databases in registration order	partial	owner-reference	M1/alpm_get_syncdbs	downstream-alpm.h:1251
-alpm_group_t	type	upstream	M3	Group with stable package IDs	missing	-	M3/alpm_group_t	downstream-alpm.h:185
+alpm_group_t	type	upstream	M3	Group with typed package IDs and lazy cache	partial	database-m3-reference	M3/alpm_group_t	downstream-alpm.h:185
 alpm_handle_t	type	upstream	M1	Owner owned handle	partial	owner-unit	M1/alpm_handle_t	downstream-alpm.h:82
 alpm_hook_when_t	type	upstream	M9	Hook execution phase alpm_hook_when_t	missing	-	M9/alpm_hook_when_t	downstream-alpm.h:896
-alpm_initialize	function	upstream	M1	Owner.init with copied options and read-only local snapshot; local format creation/validation remains M3	partial	owner-unit	M1/alpm_initialize	downstream-alpm.h:359
+alpm_initialize	function	upstream	M1	Owner.init: owned configuration and local version 9 validation/creation; explicit read_only mode	partial	database-m3-reference	M1/alpm_initialize	downstream-alpm.h:359
 alpm_list_add	function	upstream	M1	Zig slices/ArrayList with explicit allocator ownership and stable iteration	representation_only	-	M1/alpm_list_add	alpm_list.h:95
 alpm_list_add_sorted	function	upstream	M1	Zig slices/ArrayList with explicit allocator ownership and stable iteration	representation_only	-	M1/alpm_list_add_sorted	alpm_list.h:126
 alpm_list_append	function	upstream	M1	Zig slices/ArrayList with explicit allocator ownership and stable iteration	representation_only	-	M1/alpm_list_append	alpm_list.h:105
@@ -321,7 +321,7 @@ alpm_option_get_cachedirs	function	upstream	M7	OwnerConfiguration.cache_director
 alpm_option_get_checkspace	function	upstream	M8	OwnerConfiguration.check_space; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-reference	M8/alpm_option_get_checkspace	downstream-alpm.h:2175
 alpm_option_get_dbext	function	upstream	M1	OwnerConfiguration.database_extension; M1 configuration coverage is partial compatibility	partial	owner-reference	M1/alpm_option_get_dbext	downstream-alpm.h:2204
 alpm_option_get_dbpath	function	upstream	M1	OwnerConfiguration.database_path; M1 configuration coverage is partial compatibility	partial	owner-reference	M1/alpm_option_get_dbpath	downstream-alpm.h:1684
-alpm_option_get_default_siglevel	function	upstream	M4	OwnerConfiguration.default_signature_policy; operational consumer remains M4; M1 configuration coverage is partial compatibility	partial	owner-reference	M4/alpm_option_get_default_siglevel	downstream-alpm.h:2224
+alpm_option_get_default_siglevel	function	upstream	M4	OwnerConfiguration.default_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_get_default_siglevel	downstream-alpm.h:2224
 alpm_option_get_disable_dl_timeout	function	upstream	M7	OwnerConfiguration.disable_download_timeout; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-reference	M7/alpm_option_get_disable_dl_timeout	downstream-alpm.h:2273
 alpm_option_get_disable_sandbox	function	upstream	M7	OwnerConfiguration.Sandbox.legacyDisabledState; pinned legacy functions are header-declared but not binary-exported; source-derived semantics; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_get_disable_sandbox	downstream-alpm.h:2321
 alpm_option_get_disable_sandbox_filesystem	function	upstream	M7	OwnerConfiguration.sandbox.disable_filesystem; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-reference	M7/alpm_option_get_disable_sandbox_filesystem	downstream-alpm.h:2334
@@ -333,11 +333,11 @@ alpm_option_get_eventcb	function	upstream	M6	OwnerConfiguration.callbacks.event;
 alpm_option_get_eventcb_ctx	function	upstream	M6	OwnerConfiguration.callbacks.event_context; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_eventcb_ctx	downstream-alpm.h:1605
 alpm_option_get_fetchcb	function	upstream	M6	OwnerConfiguration.callbacks.fetch; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_fetchcb	downstream-alpm.h:1579
 alpm_option_get_fetchcb_ctx	function	upstream	M6	OwnerConfiguration.callbacks.fetch_context; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_fetchcb_ctx	downstream-alpm.h:1585
-alpm_option_get_gpgdir	function	upstream	M4	OwnerConfiguration.gpg_directory; operational consumer remains M4; M1 configuration coverage is partial compatibility	partial	owner-reference	M4/alpm_option_get_gpgdir	downstream-alpm.h:1857
+alpm_option_get_gpgdir	function	upstream	M4	OwnerConfiguration.gpg_directory; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_get_gpgdir	downstream-alpm.h:1857
 alpm_option_get_hookdirs	function	upstream	M9	OwnerConfiguration.hook_directories; operational consumer remains M9; M1 configuration coverage is partial compatibility	partial	owner-reference	M9/alpm_option_get_hookdirs	downstream-alpm.h:1755
 alpm_option_get_ignoregroups	function	upstream	M5	OwnerConfiguration.ignore_groups; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-reference	M5/alpm_option_get_ignoregroups	downstream-alpm.h:2055
 alpm_option_get_ignorepkgs	function	upstream	M5	OwnerConfiguration.ignore_packages; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-reference	M5/alpm_option_get_ignorepkgs	downstream-alpm.h:2016
-alpm_option_get_local_file_siglevel	function	upstream	M4	OwnerConfiguration.local_file_signature_policy; operational consumer remains M4; M1 configuration coverage is partial compatibility	partial	owner-reference	M4/alpm_option_get_local_file_siglevel	downstream-alpm.h:2237
+alpm_option_get_local_file_siglevel	function	upstream	M4	OwnerConfiguration.local_file_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_get_local_file_siglevel	downstream-alpm.h:2237
 alpm_option_get_lockfile	function	upstream	M6	Owner.lock_file; locking remains M6; M1 configuration coverage is partial compatibility	partial	owner-reference	M6/alpm_option_get_lockfile	downstream-alpm.h:1703
 alpm_option_get_logcb	function	upstream	M6	OwnerConfiguration.callbacks.log; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_logcb	downstream-alpm.h:1539
 alpm_option_get_logcb_ctx	function	upstream	M6	OwnerConfiguration.callbacks.log_context; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_logcb_ctx	downstream-alpm.h:1545
@@ -351,7 +351,7 @@ alpm_option_get_progresscb	function	upstream	M6	OwnerConfiguration.callbacks.pro
 alpm_option_get_progresscb_ctx	function	upstream	M6	OwnerConfiguration.callbacks.progress_context; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_progresscb_ctx	downstream-alpm.h:1645
 alpm_option_get_questioncb	function	upstream	M6	OwnerConfiguration.callbacks.question; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_questioncb	downstream-alpm.h:1619
 alpm_option_get_questioncb_ctx	function	upstream	M6	OwnerConfiguration.callbacks.question_context; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_get_questioncb_ctx	downstream-alpm.h:1625
-alpm_option_get_remote_file_siglevel	function	upstream	M4	OwnerConfiguration.remote_file_signature_policy; operational consumer remains M4; M1 configuration coverage is partial compatibility	partial	owner-reference	M4/alpm_option_get_remote_file_siglevel	downstream-alpm.h:2250
+alpm_option_get_remote_file_siglevel	function	upstream	M4	OwnerConfiguration.remote_file_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_get_remote_file_siglevel	downstream-alpm.h:2250
 alpm_option_get_root	function	upstream	M1	OwnerConfiguration.root; M1 configuration coverage is partial compatibility	partial	owner-reference	M1/alpm_option_get_root	downstream-alpm.h:1669
 alpm_option_get_sandboxuser	function	upstream	M7	OwnerConfiguration.sandbox_user; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-reference	M7/alpm_option_get_sandboxuser	downstream-alpm.h:1878
 alpm_option_get_usesyslog	function	upstream	M6	OwnerConfiguration.use_syslog; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-reference	M6/alpm_option_get_usesyslog	downstream-alpm.h:1901
@@ -371,7 +371,7 @@ alpm_option_set_assumeinstalled	function	upstream	M5	OwnerConfiguration.assume_i
 alpm_option_set_cachedirs	function	upstream	M7	OwnerConfiguration.cache_directories; Owner.setList; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_set_cachedirs	downstream-alpm.h:1725
 alpm_option_set_checkspace	function	upstream	M8	OwnerConfiguration.check_space; Owner.setOptions; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_set_checkspace	downstream-alpm.h:2181
 alpm_option_set_dbext	function	upstream	M1	OwnerConfiguration.database_extension; Owner.setOptions; M1 configuration coverage is partial compatibility	partial	owner-unit	M1/alpm_option_set_dbext	downstream-alpm.h:2211
-alpm_option_set_default_siglevel	function	upstream	M4	OwnerConfiguration.default_signature_policy; Owner.setOptions; operational consumer remains M4; M1 configuration coverage is partial compatibility	partial	owner-unit	M4/alpm_option_set_default_siglevel	downstream-alpm.h:2231
+alpm_option_set_default_siglevel	function	upstream	M4	OwnerConfiguration.default_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_set_default_siglevel	downstream-alpm.h:2231
 alpm_option_set_disable_dl_timeout	function	upstream	M7	OwnerConfiguration.disable_download_timeout; Owner.setOptions; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_set_disable_dl_timeout	downstream-alpm.h:2280
 alpm_option_set_disable_sandbox	function	upstream	M7	OwnerConfiguration.Sandbox.setDisabled; pinned legacy functions are header-declared but not binary-exported; source-derived semantics; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_set_disable_sandbox	downstream-alpm.h:2328
 alpm_option_set_disable_sandbox_filesystem	function	upstream	M7	OwnerConfiguration.sandbox.disable_filesystem; Owner.setOptions; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-reference	M7/alpm_option_set_disable_sandbox_filesystem	downstream-alpm.h:2341
@@ -380,11 +380,11 @@ alpm_option_set_disable_sandbox_syscalls	function	upstream	M7	OwnerConfiguration
 alpm_option_set_dlcb	function	upstream	M6	OwnerConfiguration.callbacks.download; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_dlcb	downstream-alpm.h:1573
 alpm_option_set_eventcb	function	upstream	M6	OwnerConfiguration.callbacks.event; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_eventcb	downstream-alpm.h:1613
 alpm_option_set_fetchcb	function	upstream	M6	OwnerConfiguration.callbacks.fetch; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_fetchcb	downstream-alpm.h:1593
-alpm_option_set_gpgdir	function	upstream	M4	OwnerConfiguration.gpg_directory; Owner.setOptions; operational consumer remains M4; M1 configuration coverage is partial compatibility	partial	owner-unit	M4/alpm_option_set_gpgdir	downstream-alpm.h:1863
+alpm_option_set_gpgdir	function	upstream	M4	OwnerConfiguration.gpg_directory; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_set_gpgdir	downstream-alpm.h:1863
 alpm_option_set_hookdirs	function	upstream	M9	OwnerConfiguration.hook_directories; Owner.setList; operational consumer remains M9; M1 configuration coverage is partial compatibility	partial	owner-unit	M9/alpm_option_set_hookdirs	downstream-alpm.h:1763
 alpm_option_set_ignoregroups	function	upstream	M5	OwnerConfiguration.ignore_groups; Owner.setList; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_set_ignoregroups	downstream-alpm.h:2070
 alpm_option_set_ignorepkgs	function	upstream	M5	OwnerConfiguration.ignore_packages; Owner.setList; operational consumer remains M5; M1 configuration coverage is partial compatibility	partial	owner-unit	M5/alpm_option_set_ignorepkgs	downstream-alpm.h:2031
-alpm_option_set_local_file_siglevel	function	upstream	M4	OwnerConfiguration.local_file_signature_policy; Owner.setOptions; operational consumer remains M4; M1 configuration coverage is partial compatibility	partial	owner-unit	M4/alpm_option_set_local_file_siglevel	downstream-alpm.h:2244
+alpm_option_set_local_file_siglevel	function	upstream	M4	OwnerConfiguration.local_file_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_set_local_file_siglevel	downstream-alpm.h:2244
 alpm_option_set_logcb	function	upstream	M6	OwnerConfiguration.callbacks.log; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_logcb	downstream-alpm.h:1553
 alpm_option_set_logfile	function	upstream	M6	OwnerConfiguration.log_file; Owner.setOptions; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_logfile	downstream-alpm.h:1842
 alpm_option_set_noextracts	function	upstream	M8	OwnerConfiguration.no_extract; Owner.setList; operational consumer remains M8; M1 configuration coverage is partial compatibility	partial	owner-unit	M8/alpm_option_set_noextracts	downstream-alpm.h:1983
@@ -393,60 +393,60 @@ alpm_option_set_overwrite_files	function	upstream	M8	OwnerConfiguration.overwrit
 alpm_option_set_parallel_downloads	function	upstream	M7	OwnerConfiguration.parallel_downloads; Owner.setOptions; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_set_parallel_downloads	downstream-alpm.h:2307
 alpm_option_set_progresscb	function	upstream	M6	OwnerConfiguration.callbacks.progress; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_progresscb	downstream-alpm.h:1653
 alpm_option_set_questioncb	function	upstream	M6	OwnerConfiguration.callbacks.question; Owner.setCallbacks; contexts remain borrowed; operational dispatch remains M6/M7; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_questioncb	downstream-alpm.h:1633
-alpm_option_set_remote_file_siglevel	function	upstream	M4	OwnerConfiguration.remote_file_signature_policy; Owner.setOptions; operational consumer remains M4; M1 configuration coverage is partial compatibility	partial	owner-unit	M4/alpm_option_set_remote_file_siglevel	downstream-alpm.h:2257
+alpm_option_set_remote_file_siglevel	function	upstream	M4	OwnerConfiguration.remote_file_signature_policy; enforced by Owner database/package loading	partial	verification-m4-unit	M4/alpm_option_set_remote_file_siglevel	downstream-alpm.h:2257
 alpm_option_set_sandboxuser	function	upstream	M7	OwnerConfiguration.sandbox_user; Owner.setOptions; operational consumer remains M7; M1 configuration coverage is partial compatibility	partial	owner-unit	M7/alpm_option_set_sandboxuser	downstream-alpm.h:1884
 alpm_option_set_usesyslog	function	upstream	M6	OwnerConfiguration.use_syslog; Owner.setOptions; operational consumer remains M6; M1 configuration coverage is partial compatibility	partial	owner-unit	M6/alpm_option_set_usesyslog	downstream-alpm.h:1907
 alpm_package_operation_t	type	upstream	M6	Callbacks.alpm_package_operation_t typed payload and meaningful event order	missing	-	M6/alpm_package_operation_t	downstream-alpm.h:814
-alpm_pgpkey_t	type	upstream	M4	SignaturePolicy/SignatureResult.alpm_pgpkey_t trust/status/ownership contract	missing	-	M4/alpm_pgpkey_t	downstream-alpm.h:456
+alpm_pgpkey_t	type	upstream	M4	SignatureResult.Signature: signing/primary fingerprints, UID/name/email, key dates/length/revocation	partial	verification-m4-integration	M4/alpm_pgpkey_t	downstream-alpm.h:456
 alpm_pkg_changelog_close	function	upstream	M2	ArchiveReader.finish / deinit	partial	metadata-m2-reference	M2/alpm_pkg_changelog_close	downstream-alpm.h:2794
-alpm_pkg_changelog_open	function	upstream	M2	Package.openMember(.changelog); installed changelog access remains M3	partial	metadata-m2-reference	M2/alpm_pkg_changelog_open	downstream-alpm.h:2774
+alpm_pkg_changelog_open	function	upstream	M2	Package.openMember(.changelog); archive/local member streams	partial	metadata-m2-reference	M2/alpm_pkg_changelog_open	downstream-alpm.h:2774
 alpm_pkg_changelog_read	function	upstream	M2	ArchiveReader.read / readAll: independent owned stream	partial	metadata-m2-reference	M2/alpm_pkg_changelog_read	downstream-alpm.h:2786
-alpm_pkg_check_pgp_signature	function	upstream	M4	Package signature verification with structured results	missing	-	M4/alpm_pkg_check_pgp_signature	downstream-alpm.h:488
-alpm_pkg_checkmd5sum	function	upstream	M4	Package cached archive MD5 verification	missing	-	M4/alpm_pkg_checkmd5sum	downstream-alpm.h:2467
-alpm_pkg_compute_optionalfor	function	upstream	M5	Resolver reverse optional dependency query	missing	-	M5/alpm_pkg_compute_optionalfor	downstream-alpm.h:2499
-alpm_pkg_compute_requiredby	function	upstream	M5	Resolver reverse required dependency query	missing	-	M5/alpm_pkg_compute_requiredby	downstream-alpm.h:2491
+alpm_pkg_check_pgp_signature	function	upstream	M4	Verification.verify structured results; Owner.last_verification on package loads	partial	verification-m4-integration	M4/alpm_pkg_check_pgp_signature	downstream-alpm.h:488
+alpm_pkg_checkmd5sum	function	upstream	M4	Package.checkMd5sum using explicit cache path; cache-directory discovery remains M7	partial	verification-m4-unit	M4/alpm_pkg_checkmd5sum	downstream-alpm.h:2467
+alpm_pkg_compute_optionalfor	function	upstream	M5	Owner.optionalFor / reverseDependencies: optional relations and versioned provides	partial	database-m3-reference	M5/alpm_pkg_compute_optionalfor	downstream-alpm.h:2499
+alpm_pkg_compute_requiredby	function	upstream	M5	Owner.requiredBy / reverseDependencies: local/archive versus sync universe, sorted unique names	partial	database-m3-reference	M5/alpm_pkg_compute_requiredby	downstream-alpm.h:2491
 alpm_pkg_download_size	function	upstream	M7	Package.download_size: null before sync cache planning, zero for local/archive metadata; M7 must compute actual remaining transfer	partial	metadata-m2-unit	M7/alpm_pkg_download_size	downstream-alpm.h:2747
-alpm_pkg_find	function	upstream	M3	Package name lookup in ordered borrowed views	missing	-	M3/alpm_pkg_find	downstream-alpm.h:2453
+alpm_pkg_find	function	upstream	M3	Owner.findPackage / queryPackage exact name lookup	partial	database-m3-unit	M3/alpm_pkg_find	downstream-alpm.h:2453
 alpm_pkg_free	function	upstream	M2	Package.deinit: archive ownership; enclosing arena owns normalized database metadata	partial	metadata-m2-unit	M2/alpm_pkg_free	downstream-alpm.h:2461
-alpm_pkg_get_arch	function	upstream	M2	Package.architecture; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_arch	downstream-alpm.h:2610
-alpm_pkg_get_backup	function	upstream	M2	Package.backups; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_backup	downstream-alpm.h:2698
-alpm_pkg_get_base	function	upstream	M2	Package.base; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_base	downstream-alpm.h:2536
-alpm_pkg_get_base64_sig	function	upstream	M4	Package.base64_signature / decodeSignature; embedded base64 bytes only; detached cache lookup and verification remain M4/M7	partial	metadata-m2-reference	M4/alpm_pkg_get_base64_sig	downstream-alpm.h:2712
-alpm_pkg_get_builddate	function	upstream	M2	Package.build_date; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_builddate	downstream-alpm.h:2578
-alpm_pkg_get_checkdepends	function	upstream	M2	Package.check_depends; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_checkdepends	downstream-alpm.h:2659
-alpm_pkg_get_conflicts	function	upstream	M2	Package.conflicts; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_conflicts	downstream-alpm.h:2671
-alpm_pkg_get_db	function	upstream	M2	Package.database_name; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_db	downstream-alpm.h:2706
-alpm_pkg_get_depends	function	upstream	M2	Package.depends; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_depends	downstream-alpm.h:2647
-alpm_pkg_get_desc	function	upstream	M2	Package.description; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_desc	downstream-alpm.h:2566
-alpm_pkg_get_filename	function	upstream	M2	Package.archive_path / repository_filename; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_filename	downstream-alpm.h:2530
-alpm_pkg_get_files	function	upstream	M2	Package.files; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_files	downstream-alpm.h:2692
-alpm_pkg_get_groups	function	upstream	M2	Package.groups; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_groups	downstream-alpm.h:2641
+alpm_pkg_get_arch	function	upstream	M2	Package.architecture; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_arch	downstream-alpm.h:2610
+alpm_pkg_get_backup	function	upstream	M2	Package.backups; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_backup	downstream-alpm.h:2698
+alpm_pkg_get_base	function	upstream	M2	Package.base; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_base	downstream-alpm.h:2536
+alpm_pkg_get_base64_sig	function	upstream	M4	Package.base64_signature metadata plus bounded decodeSignature	partial	verification-m4-unit	M4/alpm_pkg_get_base64_sig	downstream-alpm.h:2712
+alpm_pkg_get_builddate	function	upstream	M2	Package.build_date; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_builddate	downstream-alpm.h:2578
+alpm_pkg_get_checkdepends	function	upstream	M2	Package.check_depends; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_checkdepends	downstream-alpm.h:2659
+alpm_pkg_get_conflicts	function	upstream	M2	Package.conflicts; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_conflicts	downstream-alpm.h:2671
+alpm_pkg_get_db	function	upstream	M2	Package.database_name; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_db	downstream-alpm.h:2706
+alpm_pkg_get_depends	function	upstream	M2	Package.depends; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_depends	downstream-alpm.h:2647
+alpm_pkg_get_desc	function	upstream	M2	Package.description; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_desc	downstream-alpm.h:2566
+alpm_pkg_get_filename	function	upstream	M2	Package.archive_path / repository_filename; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_filename	downstream-alpm.h:2530
+alpm_pkg_get_files	function	upstream	M2	Package.files; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_files	downstream-alpm.h:2692
+alpm_pkg_get_groups	function	upstream	M2	Package.groups; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_groups	downstream-alpm.h:2641
 alpm_pkg_get_handle	function	upstream	M1	PackageRef owner identity and lifetime	partial	owner-unit	M1/alpm_pkg_get_handle	downstream-alpm.h:2524
-alpm_pkg_get_installdate	function	upstream	M2	Package.install_date; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_installdate	downstream-alpm.h:2584
-alpm_pkg_get_installed_db	function	cachyos	M2	Package.installed_database; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_installed_db	downstream-alpm.h:2560
-alpm_pkg_get_isize	function	upstream	M2	Package.installed_size; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_isize	downstream-alpm.h:2623
-alpm_pkg_get_licenses	function	upstream	M2	Package.licenses; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_licenses	downstream-alpm.h:2635
-alpm_pkg_get_makedepends	function	upstream	M2	Package.make_depends; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_makedepends	downstream-alpm.h:2665
-alpm_pkg_get_md5sum	function	upstream	M2	Package.md5_sum; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_md5sum	downstream-alpm.h:2597
-alpm_pkg_get_name	function	upstream	M2	Package.name; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_name	downstream-alpm.h:2542
-alpm_pkg_get_optdepends	function	upstream	M2	Package.optional_depends; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_optdepends	downstream-alpm.h:2653
-alpm_pkg_get_origin	function	upstream	M2	Package.origin; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_origin	downstream-alpm.h:2555
-alpm_pkg_get_packager	function	upstream	M2	Package.packager; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_packager	downstream-alpm.h:2590
-alpm_pkg_get_provides	function	upstream	M2	Package.provides; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_provides	downstream-alpm.h:2677
-alpm_pkg_get_reason	function	upstream	M2	Package.install_reason; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_reason	downstream-alpm.h:2629
-alpm_pkg_get_replaces	function	upstream	M2	Package.replaces; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_replaces	downstream-alpm.h:2683
-alpm_pkg_get_sha256sum	function	upstream	M2	Package.sha256_sum; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_sha256sum	downstream-alpm.h:2604
-alpm_pkg_get_sig	function	upstream	M4	Package.base64_signature / decodeSignature; embedded base64 bytes only; detached cache lookup and verification remain M4/M7	partial	metadata-m2-reference	M4/alpm_pkg_get_sig	downstream-alpm.h:2723
-alpm_pkg_get_size	function	upstream	M2	Package.compressed_size; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_size	downstream-alpm.h:2617
-alpm_pkg_get_url	function	upstream	M2	Package.url; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_url	downstream-alpm.h:2572
-alpm_pkg_get_validation	function	upstream	M2	Package.validation; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_validation	downstream-alpm.h:2729
-alpm_pkg_get_version	function	upstream	M2	Package.version; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_version	downstream-alpm.h:2550
-alpm_pkg_get_xdata	function	upstream	M2	Package.xdata; normalized metadata; backend loading remains M3	partial	metadata-m2-reference	M2/alpm_pkg_get_xdata	downstream-alpm.h:2735
-alpm_pkg_has_scriptlet	function	upstream	M2	Package.has_scriptlet and members.install; installed metadata discovery remains M3	partial	metadata-m2-reference	M2/alpm_pkg_has_scriptlet	downstream-alpm.h:2740
-alpm_pkg_load	function	upstream	M2	Package.loadArchive metadata/full modes; bounded metadata, mtree inventory; signature policy remains M4	partial	metadata-m2-reference	M2/alpm_pkg_load	downstream-alpm.h:2433
+alpm_pkg_get_installdate	function	upstream	M2	Package.install_date; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_installdate	downstream-alpm.h:2584
+alpm_pkg_get_installed_db	function	cachyos	M2	Package.installed_database; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_installed_db	downstream-alpm.h:2560
+alpm_pkg_get_isize	function	upstream	M2	Package.installed_size; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_isize	downstream-alpm.h:2623
+alpm_pkg_get_licenses	function	upstream	M2	Package.licenses; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_licenses	downstream-alpm.h:2635
+alpm_pkg_get_makedepends	function	upstream	M2	Package.make_depends; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_makedepends	downstream-alpm.h:2665
+alpm_pkg_get_md5sum	function	upstream	M2	Package.md5_sum; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_md5sum	downstream-alpm.h:2597
+alpm_pkg_get_name	function	upstream	M2	Package.name; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_name	downstream-alpm.h:2542
+alpm_pkg_get_optdepends	function	upstream	M2	Package.optional_depends; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_optdepends	downstream-alpm.h:2653
+alpm_pkg_get_origin	function	upstream	M2	Package.origin; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_origin	downstream-alpm.h:2555
+alpm_pkg_get_packager	function	upstream	M2	Package.packager; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_packager	downstream-alpm.h:2590
+alpm_pkg_get_provides	function	upstream	M2	Package.provides; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_provides	downstream-alpm.h:2677
+alpm_pkg_get_reason	function	upstream	M2	Package.install_reason; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_reason	downstream-alpm.h:2629
+alpm_pkg_get_replaces	function	upstream	M2	Package.replaces; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_replaces	downstream-alpm.h:2683
+alpm_pkg_get_sha256sum	function	upstream	M2	Package.sha256_sum; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_sha256sum	downstream-alpm.h:2604
+alpm_pkg_get_sig	function	upstream	M4	Package.getSignature: embedded bytes or explicit archive sidecar; cache selection remains M7	partial	verification-m4-unit	M4/alpm_pkg_get_sig	downstream-alpm.h:2723
+alpm_pkg_get_size	function	upstream	M2	Package.compressed_size; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_size	downstream-alpm.h:2617
+alpm_pkg_get_url	function	upstream	M2	Package.url; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_url	downstream-alpm.h:2572
+alpm_pkg_get_validation	function	upstream	M2	Package.Validation: performed checks on loaded archives, historical local flags; sync promises exposed by availableValidation	partial	verification-m4-unit	M2/alpm_pkg_get_validation	downstream-alpm.h:2729
+alpm_pkg_get_version	function	upstream	M2	Package.version; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_version	downstream-alpm.h:2550
+alpm_pkg_get_xdata	function	upstream	M2	Package.xdata; local/tar/SQLite metadata backend loading	partial	metadata-m2-reference	M2/alpm_pkg_get_xdata	downstream-alpm.h:2735
+alpm_pkg_has_scriptlet	function	upstream	M2	Package.has_scriptlet and members.install; lazy installed metadata discovery and archive member state	partial	database-m3-unit	M2/alpm_pkg_has_scriptlet	downstream-alpm.h:2740
+alpm_pkg_load	function	upstream	M2	Owner.loadPackage verifies effective policy and retains immutable bytes; Package.loadArchive remains metadata-only	partial	verification-m4-integration	M2/alpm_pkg_load	downstream-alpm.h:2433
 alpm_pkg_mtree_close	function	upstream	M2	MtreeIterator.deinit	partial	metadata-m2-reference	M2/alpm_pkg_mtree_close	downstream-alpm.h:2824
 alpm_pkg_mtree_next	function	upstream	M2	MtreeIterator.next: borrowed typed entries	partial	metadata-m2-reference	M2/alpm_pkg_mtree_next	downstream-alpm.h:2817
-alpm_pkg_mtree_open	function	upstream	M2	Package.openMtree: owned archive mtree iterator; installed mtree access remains M3	partial	metadata-m2-reference	M2/alpm_pkg_mtree_open	downstream-alpm.h:2809
+alpm_pkg_mtree_open	function	upstream	M2	Package.openMtree: owned archive mtree iterator; archive/local mtree iteration	partial	metadata-m2-reference	M2/alpm_pkg_mtree_open	downstream-alpm.h:2809
 alpm_pkg_set_reason	function	upstream	M10	Owner.setInstallReason with local database persistence	missing	-	M10/alpm_pkg_set_reason	downstream-alpm.h:2756
 alpm_pkg_should_ignore	function	upstream	M5	Resolver package and group ignore policy	missing	-	M5/alpm_pkg_should_ignore	downstream-alpm.h:2508
 alpm_pkg_t	type	upstream	M2	Package	partial	metadata-m2-reference	M2/alpm_pkg_t	downstream-alpm.h:115
@@ -454,12 +454,12 @@ alpm_pkg_vercmp	function	upstream	M2	Version.compareStrings / compareVersions; o
 alpm_pkg_xdata_t	type	upstream	M2	Package.XData	partial	metadata-m2-reference	M2/alpm_pkg_xdata_t	downstream-alpm.h:123
 alpm_pkgfrom_t	type	upstream	M2	Package.Origin	partial	metadata-m2-reference	M2/alpm_pkgfrom_t	downstream-alpm.h:2402
 alpm_pkgreason_t	type	upstream	M2	Package.InstallReason: explicit, dependency, unknown	partial	metadata-m2-reference	M2/alpm_pkgreason_t	downstream-alpm.h:2392
-alpm_pkgvalidation_t	type	upstream	M2	Package.Validation: none/md5/sha256/pgp; all false represents unknown	partial	metadata-m2-reference	M2/alpm_pkgvalidation_t	downstream-alpm.h:2417
+alpm_pkgvalidation_t	type	upstream	M2	Package.Validation: performed checks on loaded archives, historical local flags; sync promises exposed by availableValidation	partial	verification-m4-unit	M2/alpm_pkgvalidation_t	downstream-alpm.h:2417
 alpm_progress_t	type	upstream	M6	Callbacks.alpm_progress_t typed payload and meaningful event order	partial	owner-unit	M6/alpm_progress_t	downstream-alpm.h:1138
 alpm_question_any_t	type	upstream	M6	Callbacks.Question.alpm_question_any_t typed payload and answer effect	missing	-	M6/alpm_question_any_t	downstream-alpm.h:998
 alpm_question_conflict_t	type	upstream	M6	Callbacks.Question.alpm_question_conflict_t typed payload and answer effect	missing	-	M6/alpm_question_conflict_t	downstream-alpm.h:1032
 alpm_question_corrupted_t	type	upstream	M6	Callbacks.Question.alpm_question_corrupted_t typed payload and answer effect	missing	-	M6/alpm_question_corrupted_t	downstream-alpm.h:1044
-alpm_question_import_key_t	type	upstream	M6	Callbacks.Question.alpm_question_import_key_t typed payload and answer effect	missing	-	M6/alpm_question_import_key_t	downstream-alpm.h:1078
+alpm_question_import_key_t	type	upstream	M6	Callbacks.Question.import_key: deny default, reentry/cancellation guard, explicit import and reverification	partial	verification-m4-integration	M6/alpm_question_import_key_t	downstream-alpm.h:1078
 alpm_question_install_ignorepkg_t	type	upstream	M6	Callbacks.Question.alpm_question_install_ignorepkg_t typed payload and answer effect	missing	-	M6/alpm_question_install_ignorepkg_t	downstream-alpm.h:1008
 alpm_question_remove_pkgs_t	type	upstream	M6	Callbacks.Question.alpm_question_remove_pkgs_t typed payload and answer effect	missing	-	M6/alpm_question_remove_pkgs_t	downstream-alpm.h:1054
 alpm_question_replace_t	type	upstream	M6	Callbacks.Question.alpm_question_replace_t typed payload and answer effect	missing	-	M6/alpm_question_replace_t	downstream-alpm.h:1022
@@ -470,12 +470,12 @@ alpm_register_syncdb	function	upstream	M1	Owner.registerSyncDatabase	partial	own
 alpm_release	function	upstream	M1	Owner.deinit with callback/busy protection; active transaction and lock release remain M6	partial	owner-unit	M1/alpm_release	downstream-alpm.h:370
 alpm_remove_pkg	function	upstream	M6	Transaction.removePackage	missing	-	M6/alpm_remove_pkg	downstream-alpm.h:2968
 alpm_sandbox_setup_child	function	upstream	M7	Sandbox child credential/filesystem/syscall setup	missing	-	M7/alpm_sandbox_setup_child	downstream-alpm.h:3039
-alpm_siglevel_t	type	upstream	M4	SignaturePolicy/SignatureResult.alpm_siglevel_t trust/status/ownership contract	partial	owner-unit	M4/alpm_siglevel_t	downstream-alpm.h:405
-alpm_siglist_cleanup	function	upstream	M4	SignatureResult owned list teardown	missing	-	M4/alpm_siglist_cleanup	downstream-alpm.h:505
-alpm_siglist_t	type	upstream	M4	SignaturePolicy/SignatureResult.alpm_siglist_t trust/status/ownership contract	missing	-	M4/alpm_siglist_t	downstream-alpm.h:480
-alpm_sigresult_t	type	upstream	M4	SignaturePolicy/SignatureResult.alpm_sigresult_t trust/status/ownership contract	missing	-	M4/alpm_sigresult_t	downstream-alpm.h:469
-alpm_sigstatus_t	type	upstream	M4	SignaturePolicy/SignatureResult.alpm_sigstatus_t trust/status/ownership contract	missing	-	M4/alpm_sigstatus_t	downstream-alpm.h:421
-alpm_sigvalidity_t	type	upstream	M4	SignaturePolicy/SignatureResult.alpm_sigvalidity_t trust/status/ownership contract	missing	-	M4/alpm_sigvalidity_t	downstream-alpm.h:434
+alpm_siglevel_t	type	upstream	M4	SignaturePolicy: separate package/database requirement and trust, null override inheritance	partial	verification-m4-unit	M4/alpm_siglevel_t	downstream-alpm.h:405
+alpm_siglist_cleanup	function	upstream	M4	SignatureResult.deinit owns all signature, status and key-operation storage	partial	verification-m4-unit	M4/alpm_siglist_cleanup	downstream-alpm.h:505
+alpm_siglist_t	type	upstream	M4	SignatureResult owned multiple signatures, termination, status and stderr	partial	verification-m4-unit	M4/alpm_siglist_t	downstream-alpm.h:480
+alpm_sigresult_t	type	upstream	M4	SignatureResult.Signature: crypto validity separated from status and trust	partial	verification-m4-unit	M4/alpm_sigresult_t	downstream-alpm.h:469
+alpm_sigstatus_t	type	upstream	M4	SignatureResult.Status with explicit revoked status	partial	verification-m4-unit	M4/alpm_sigstatus_t	downstream-alpm.h:421
+alpm_sigvalidity_t	type	upstream	M4	SignatureResult.Trust: full, marginal, unknown, never	partial	verification-m4-unit	M4/alpm_sigvalidity_t	downstream-alpm.h:434
 alpm_strerror	function	upstream	M1	Diagnostic.format operation/category/cause; complete error mapping remains M6	partial	owner-unit	M1/alpm_strerror	downstream-alpm.h:340
 alpm_sync_get_new_version	function	upstream	M5	Resolver newest eligible repository candidate	missing	-	M5/alpm_sync_get_new_version	downstream-alpm.h:2990
 alpm_sync_sysupgrade	function	upstream	M5	Transaction system-upgrade target selection	missing	-	M5/alpm_sync_sysupgrade	downstream-alpm.h:2952
@@ -492,28 +492,28 @@ alpm_transflag_t	type	upstream	M6	TransactionFlags typed options	missing	-	M6/al
 alpm_unlock	function	upstream	M6	Owner explicit lock release	missing	-	M6/alpm_unlock	downstream-alpm.h:3010
 alpm_unregister_all_syncdbs	function	upstream	M1	Owner.unregisterSyncDatabases	partial	owner-unit	M1/alpm_unregister_all_syncdbs	downstream-alpm.h:1271
 alpm_version	function	upstream	M1	root version reporting	partial	owner-unit	M1/alpm_version	downstream-alpm.h:3025
-behavior.archive-streams	behavior	upstream	M2	Package.openMember / openMtree; independent owned readers; installed backend remains M3	partial	metadata-m2-reference	M2/behavior.archive-streams	upstream-source-tests.tar.gz!lib/libalpm/be_package.c
+behavior.archive-streams	behavior	upstream	M2	Package.openMember / openMtree: independently owned archive and local member streams	partial	database-m3-unit	M2/behavior.archive-streams	upstream-source-tests.tar.gz!lib/libalpm/be_package.c
 behavior.backup-pacnew-pacsave	behavior	upstream	M10	Original/local/new content three-way backup rules; NOSAVE; NoUpgrade/NoExtract	missing	-	M10/behavior.backup-pacnew-pacsave	upstream-source-tests.tar.gz!lib/libalpm/add.c
 behavior.cachyos-architecture-auto	behavior	cachyos	M11	PackageManager Architecture=auto retains physical architecture enumeration and configured list semantics	missing	-	M11/behavior.cachyos-architecture-auto	downstream-source-tests.tar.gz!src/pacman/conf.c
 behavior.cachyos-curl-child-cleanup	behavior	cachyos	M9	A chroot child after downloads cannot crash by cleaning inherited threaded resolver state	missing	-	M9/behavior.cachyos-curl-child-cleanup	packaging/21b8d8a21a03e0d44294626f7222adda6b48dfac.patch
 behavior.cachyos-disable-sandbox	behavior	cachyos	M9	Global DisableSandbox also disables network isolation; independent filesystem/syscall/network switches	missing	-	M9/behavior.cachyos-disable-sandbox	downstream-source-tests.tar.gz!lib/libalpm/handle.c
 behavior.cachyos-hook-network-access	behavior	cachyos	M9	Hook Action NetworkAccess=allowed opts out; invalid values reject; combine with NeedsTargets	missing	-	M9/behavior.cachyos-hook-network-access	downstream-source-tests.tar.gz!lib/libalpm/hook.c
-behavior.cachyos-installed-db-read	behavior	cachyos	M2	ParsedDescription and Package.installed_database retain absent or unknown repository provenance independently of Source	partial	metadata-m2-reference	M2/behavior.cachyos-installed-db-read	downstream-source-tests.tar.gz!lib/libalpm/be_local.c
+behavior.cachyos-installed-db-read	behavior	cachyos	M2	LocalBackend description loading retains removed/unknown installed repository provenance	partial	database-m3-unit	M2/behavior.cachyos-installed-db-read	downstream-source-tests.tar.gz!lib/libalpm/be_local.c
 behavior.cachyos-installed-db-write	behavior	cachyos	M10	Record selected repository on installation/upgrade; copy/free/persist INSTALLED_DB; archive-only and missing-origin cases	missing	-	M10/behavior.cachyos-installed-db-write	downstream-source-tests.tar.gz!lib/libalpm/add.c
 behavior.cachyos-ldconfig-network	behavior	cachyos	M9	ldconfig attempts network isolation but continues if namespace setup fails	missing	-	M9/behavior.cachyos-ldconfig-network	downstream-source-tests.tar.gz!lib/libalpm/util.c
 behavior.cachyos-network-isolation	behavior	cachyos	M9	Hooks/scriptlets get fresh loopback-only network namespace; isolation failure aborts command	missing	-	M9/behavior.cachyos-network-isolation	downstream-source-tests.tar.gz!lib/libalpm/util.c
 behavior.cachyos-physical-architectures	behavior	cachyos	M1	PhysicalArchitectures.init/deinit: runtime uname/CPUID/XCR0 and ordered CachyOS base/v2/v3/v4 rules	partial	physical-architecture-unit	M1/behavior.cachyos-physical-architectures	downstream-source-tests.tar.gz!lib/libalpm/cpu_capabilities.c
-behavior.cachyos-sqlite-sync	behavior	cachyos	M3	Read tar member pacman.db SQLite packages table including comma-separated relations/files; match queries and failures	missing	-	M3/behavior.cachyos-sqlite-sync	downstream-source-tests.tar.gz!lib/libalpm/be_sync.c
+behavior.cachyos-sqlite-sync	behavior	cachyos	M3	SyncBackend: read-only in-memory pacman.db packages rows and comma lists; malformed identity rejection documented	partial	database-m3-reference	M3/behavior.cachyos-sqlite-sync	downstream-source-tests.tar.gz!lib/libalpm/be_sync.c
 behavior.commit-persistence	behavior	upstream	M10	Files/modes/owners/links; DBONLY; database atomic writes; reason/date/provenance; reopen and partial failure	missing	-	M10/behavior.commit-persistence	upstream-source-tests.tar.gz!lib/libalpm/add.c
-behavior.database-cache-lifetime	behavior	upstream	M3	M1 separate cache arena, rollback on load failure, stable IDs/generations, group package IDs; complete sync/reload semantics M3	partial	owner-unit	M3/behavior.database-cache-lifetime	upstream-source-tests.tar.gz!lib/libalpm/db.c
+behavior.database-cache-lifetime	behavior	upstream	M3	Database candidate generations; failed reload retains old cache; explicit invalidation, lazy metadata/groups and allocation failures	partial	database-m3-unit	M3/behavior.database-cache-lifetime	upstream-source-tests.tar.gz!lib/libalpm/db.c
 behavior.fetch-refresh-failures	behavior	upstream	M7	Reuse PackageManager CoreDownloader/DownloadSession/queue/mirror flow; add CacheServer/resume and parity fixtures; corrupt cache; cancellation; atomic DB refresh	missing	-	M7/behavior.fetch-refresh-failures	upstream-source-tests.tar.gz!lib/libalpm/dload.c
 behavior.filesystem-conflicts	behavior	upstream	M8	Ownership conflicts; symlink ancestors; traversal; hardlinks; overwrite patterns; disk-space failures	missing	-	M8/behavior.filesystem-conflicts	upstream-source-tests.tar.gz!lib/libalpm/conflict.c
 behavior.hook-matching-order	behavior	upstream	M9	Package/path triggers; negation; directory override; Depends; NeedsTargets; AbortOnFail; deterministic order	missing	-	M9/behavior.hook-matching-order	upstream-source-tests.tar.gz!lib/libalpm/hook.c
-behavior.local-files-backup	behavior	upstream	M2	ParsedDescription.parse FILES/BACKUP; sorted Package.files and backups; local backend correlation remains M3	partial	metadata-m2-reference	M2/behavior.local-files-backup	upstream-source-tests.tar.gz!lib/libalpm/be_local.c
+behavior.local-files-backup	behavior	upstream	M2	LocalBackend correlates local files/backup hashes with lazy Package metadata	partial	database-m3-unit	M2/behavior.local-files-backup	upstream-source-tests.tar.gz!lib/libalpm/be_local.c
 behavior.remove-semantics	behavior	upstream	M10	Reverse ordering; recursive/cascade/unneeded; shared dirs; modified backup; missing files	missing	-	M10/behavior.remove-semantics	upstream-source-tests.tar.gz!lib/libalpm/remove.c
 behavior.scriptlet-order	behavior	upstream	M9	Install/upgrade/remove phases; versions; chroot/environment/output; suppression flags; failure effects	missing	-	M9/behavior.scriptlet-order	upstream-source-tests.tar.gz!lib/libalpm/trans.c
-behavior.signature-policy-matrix	behavior	upstream	M4	Required/optional/never; unknown/untrusted/expired/revoked keys; inheritance and multiple signatures	missing	-	M4/behavior.signature-policy-matrix	upstream-source-tests.tar.gz!lib/libalpm/signing.c
+behavior.signature-policy-matrix	behavior	upstream	M4	Effective policy; all signatures; consent/import/reverification; sealed package/database bytes; reference file-expired-key preflight	partial	verification-m4-reference	M4/behavior.signature-policy-matrix	upstream-source-tests.tar.gz!lib/libalpm/signing.c
 behavior.solver-selection	behavior	upstream	M5	Ordered providers; versioned provides; replacement/ignore decisions; future-state dependency graph	missing	-	M5/behavior.solver-selection	upstream-source-tests.tar.gz!lib/libalpm/deps.c
 behavior.solver-system-upgrade	behavior	upstream	M5	Repository precedence; upgrades/downgrades/reinstalls; ignored packages; dependency cycles	missing	-	M5/behavior.solver-system-upgrade	upstream-source-tests.tar.gz!lib/libalpm/sync.c
-behavior.sync-formats	behavior	upstream	M3	Plain/gzip/xz/zstd tar DB and files payloads; malformed/duplicate/unknown records	missing	-	M3/behavior.sync-formats	upstream-source-tests.tar.gz!lib/libalpm/be_sync.c
+behavior.sync-formats	behavior	upstream	M3	SyncBackend: libarchive plain/gzip/xz/zstd/bzip2 db/files, merged desc/depends/files, transactional failure	partial	database-m3-reference	M3/behavior.sync-formats	upstream-source-tests.tar.gz!lib/libalpm/be_sync.c
 behavior.transaction-lifecycle	behavior	upstream	M6	State transitions; lock contention; cancellation; question answers; deterministic event order	missing	-	M6/behavior.transaction-lifecycle	upstream-source-tests.tar.gz!lib/libalpm/trans.c

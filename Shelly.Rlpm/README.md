@@ -3,8 +3,8 @@
 RLPM is the native Zig package backend under development. The
 [completion plan](../docs/rlpm-libalpm-completion-plan.md) targets libalpm's
 functional behavior **including CachyOS extensions**, following the existing
-Owner/Database/Package design. M0 and M1 are accepted; M2 is implemented and
-awaiting acceptance before M3. RLPM is not yet a replacement for libalpm.
+Owner/Database/Package design. M0–M3 are accepted; M4 is implemented and
+awaiting acceptance before M5. RLPM is not yet a replacement for libalpm.
 
 M1 exports an owning `Owner` with copied options, ordered repository registration,
 read-only local queries, stable database identity, package cache generations,
@@ -21,14 +21,21 @@ remains available alongside permissive metadata ingestion.
 
 CachyOS physical architecture enumeration and independent network-sandbox
 configuration are available. Installed-repository provenance survives local
-queries. SQLite sync loading, full provenance handling and hook/scriptlet network
-isolation remain required later milestones. M7 will reuse PackageManager's
+queries. M3 adds local format validation, lazy metadata/streams, production
+tar and CachyOS SQLite repositories, transactional reloads and database queries.
+The [database guide](databases.md) documents the APIs and explicit compatibility
+boundaries. M4 adds checksum, signature and trust enforcement, consented key
+import, structured GPG results and sealed archive snapshots. The
+[verification guide](verification.md) documents policy, ownership and APIs.
+Provenance writes and hook/scriptlet network isolation remain required
+later milestones. M7 will reuse PackageManager's
 downloader, queue and mirror logic with its Shelly.Http transport, extracting
 a shared core with adapters for each caller.
 
 ## Build and tests
 
-Use Zig 0.16.0 and libarchive development headers/library. `Shelly.Key` is a local
+Use Linux with `/proc` and memfd sealing, Zig 0.16.0, libc, libarchive and SQLite development headers/libraries
+(SQLite must support `sqlite3_deserialize`). `Shelly.Key` is a local
 module dependency. From this directory:
 
 | Command | Scope |
@@ -38,11 +45,13 @@ module dependency. From this directory:
 | `zig build run -- --help` | Show example usage |
 | `zig build test` | Hermetic unit tests, external API consumer, reference/ledger checks, example compilation |
 | `zig build test-public-api` | External Owner and metadata API, ownership, references and failure cases |
+| `zig build test-database` | M3 local/tar/SQLite metadata, queries, reloads and allocation failures |
+| `zig build test-verification` | M4 policy/status, checksums, reference cases, imports and sealed-file tests |
 | `zig build test-metadata` | M2 relation, archive, metadata and independent reference fixtures |
 | `zig build test-compatibility` | Frozen reference integrity, complete API inventory and evidence schema |
 | `zig build test-version` | Existing fixed version expectations and ownership tests |
 | `zig build test-package` | Package archive/metadata tests, including imported unit tests |
-| `zig build test-signature` | Five real detached-signature GPG integration tests |
+| `zig build test-signature` | Twelve real GPG regression, trust, key and publication cases |
 | `zig build test-host-readonly` | Opt-in smoke reads of `/var/lib/pacman/local` and `sync` |
 
 All test modules honor `-Doptimize=ReleaseSafe` and the other standard optimize
@@ -51,32 +60,35 @@ Normal builds/tests do not link, load or call libalpm. Python is only required
 for optional reference recording.
 
 `test` uses temporary package/database fixtures; it neither reads the host
-package database nor launches GPG. It requires libarchive. GPG integration
+package database nor launches GPG. It requires libarchive and SQLite. GPG integration
 requires `gpg`, `gpgconf`, `gpg-agent` and Unix socket access. It uses private
 `/tmp/rlpm-gpg-*` homes, ephemeral keys, explicit verifier homes and cleanup of
 its own agents/files. Missing tools or blocked agents fail with
-`GpgIntegrationUnavailable`; skips cannot satisfy that gate. These five tests
-exercise boolean detached verification, not M4's complete trust/policy matrix.
+`GpgIntegrationUnavailable`; skips cannot satisfy that gate. The suite includes
+full/marginal/unknown trust, consented import and reverification, multiple
+signatures, expired/disabled/revoked keys and authenticated cache publication.
 
-The host smoke suite may skip absent data. Its legacy sync reader only covers
-plain/gzip description archives and skips Zstandard; it is not the production
-sync backend and is never a parity acceptance gate.
+The host smoke suite may skip absent data. It now uses the production local and
+sync backends, including all supported archive filters and CachyOS SQLite. Host
+smoke results are never a parity acceptance gate.
 
 ## Current limits and compatibility evidence
 
-Root and database directories must already exist. M1 opens local descriptions
-read-only; missing local storage is an empty snapshot. The pinned libalpm
-initializer creates a local version file, so format creation/validation remains
-an explicit M3 gap. Registered sync databases need not exist, but loading them
-returns `UnsupportedDatabaseBackend` until M3. Capability reporting keeps sync
-databases, full signature policy, downloads and transactions disabled.
+Root and database directories must already exist. Initialization creates missing
+local storage/version 9 by default; explicit `.read_only` mode never writes.
+Descriptions/files/groups load lazily. Registered sync databases need not exist;
+queries load their tar/SQLite archives under their effective signature policy.
+Signature policy enforcement is enabled in capability reporting; downloads and
+transactions remain disabled. Metadata-only `Package.loadArchive` is explicitly
+unverified; `Owner.loadPackage` performs policy checks and retains the verified
+bytes. Sealed snapshots require RAM/swap proportional to archive size.
 
 - The [manifest](src/tests/reference/manifest.json) pins the exact upstream,
   CachyOS and packaging revisions, headers, patches and binary identity.
   [Reference documentation](src/tests/reference/README.md) explains attribution,
   corpus provenance and optional capture on disposable roots.
 - The [ledger](src/tests/compatibility-ledger.tsv) tracks 493 public symbols and
-  25 behavioral contracts. There are 266 missing, 219 partial and 33
+  25 behavioral contracts. There are 223 missing, 262 partial and 33
   representation-only rows. No row claims verified full compatibility, and
   every CachyOS extension remains required.
 - [Owner reference fixtures](src/tests/fixtures/owner-reference.json) capture
@@ -89,11 +101,43 @@ databases, full signature policy, downloads and transactions disabled.
   cases and attach reviewed independent evidence.
 - [Metadata reference fixtures](src/tests/fixtures/metadata-reference.json) add
   independent relation, provision, byte-version, archive-mode, signature-decoding
-  and local file/provenance expectations. Archive streams are available now;
-  installed-package streams and file correlation remain M3. Metadata loading
+  and local file/provenance expectations. Archive and installed-package streams and file correlation are available. Metadata loading
   does not establish payload or signature integrity.
 
-M2 validation on 2026-09-27: `test` passed all 78 tests in Debug and ReleaseSafe
+- [Database reference fixtures](src/tests/fixtures/database-reference.json) capture
+  12 local and 16 tar/SQLite cases, including identity/corruption/scalar rules,
+  group ordering, regex/AND search, reverse relations and usage visibility.
+  Additional hermetic tests cover five filters, format switching, stale
+  references, local streams and allocation failures.
+
+- [Signature reference fixtures](src/tests/fixtures/signature-reference.json)
+  capture 144 file-policy decisions across twelve isolated libalpm cases, plus
+  digest/issuer expectations. Normal tests replay these offline without libalpm
+  or GPG. The original frozen corpus remains unchanged.
+
+M4 validation on 2026-09-28: `test` passes **105 tests** in Debug and ReleaseSafe
+(47 library, 54 external consumer, four ledger checks). The focused verification
+and standalone package targets pass 14 and 25 tests respectively, overlapping
+the normal suite. All **12 real GPG cases** pass; `Shelly.Key` passes its **147
+tests**. The reference matrix covers **144 file-policy decisions**. No live
+WKD/keyserver service was contacted. See the [verification guide](verification.md)
+for limits and ownership. CI is configured but was not run remotely.
+M4 is the current acceptance checkpoint; M5 has not started.
+
+Historical M3 validation on 2026-09-28: `test` passed **91 tests** in both Debug and
+ReleaseSafe (47 library, 40 external consumer, four ledger checks). This includes
+12 M3 consumer tests and every Zig allocation failure across tar and SQLite
+loading, metadata, regex/query, configuration/server editing and reload paths.
+All five real GPG regression cases and three host smoke/discovery cases passed;
+the production host reader saw 1,813 local packages and eight sync repositories.
+The installed ReleaseSafe example passed help, absent/populated DB and invalid
+format checks without changing fixture contents, modes or modification times.
+The example and cached test executables have no libalpm dynamic dependency.
+Private GPG/reference fixtures were cleaned up; formatting, recorder syntax,
+reference integrity, ledger schema and documentation links passed. CI was
+updated for SQLite but was not run remotely. M3 is accepted.
+
+Historical M2 validation on 2026-09-27: `test` passed all 78 tests in Debug and ReleaseSafe
 (47 library, 27 external consumer, four ledger tests). The focused metadata,
 version and package targets passed 9/13/25 tests respectively; these overlap the
 normal suite. All five real GPG cases and the three host smoke/discovery cases

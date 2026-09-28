@@ -8,10 +8,13 @@ const Callbacks = @import("Callbacks.zig");
 
 root: []const u8,
 database_path: []const u8,
+/// Create an absent/empty local database as libalpm does; read_only never writes.
+local_database_mode: @import("Backend.zig").Mode = .create,
 cache_directories: []const []const u8 = &.{},
 /// null selects <root>/usr/share/libalpm/hooks; an empty list disables discovery.
 hook_directories: ?[]const []const u8 = null,
 gpg_directory: ?[]const u8 = null,
+key_acquisition: @import("Verification.zig").KeyAcquisition = .{},
 log_file: ?[]const u8 = null,
 use_syslog: bool = false,
 architectures: []const []const u8 = &.{},
@@ -90,6 +93,8 @@ pub fn copy(self: OwnerConfiguration, allocator: std.mem.Allocator, io: std.Io) 
         break :blk paths;
     };
     result.gpg_directory = if (self.gpg_directory) |path| try directoryString(allocator, path) else null;
+    result.key_acquisition.key_files = try copyStrings(allocator, self.key_acquisition.key_files, false);
+    result.key_acquisition.keyserver = try copyOptional(allocator, self.key_acquisition.keyserver);
     result.log_file = try copyOptional(allocator, self.log_file);
     result.sandbox_user = try copyOptional(allocator, self.sandbox_user);
     const assumed = try allocator.alloc(PackageRelation, self.assume_installed.len);

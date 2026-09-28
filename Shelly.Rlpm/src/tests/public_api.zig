@@ -58,3 +58,8 @@ test {
 test {
     _ = @import("metadata.zig");
 }
+
+test {
+    _ = @import("database.zig");
+    _ = @import("verification.zig");
+}
