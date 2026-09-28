@@ -11,7 +11,7 @@ fn equalOptional(expected: Value, actual: ?[]const u8) !void {
     if (expected == .null) try std.testing.expect(actual == null) else try std.testing.expectEqualStrings(expected.string, actual.?);
 }
 
-test "M2 relations and formatting match independent libalpm fixtures" {
+test "relations and formatting match independent libalpm fixtures" {
     const recorded = try reference();
     defer recorded.deinit();
     for (recorded.value.object.get("relations").?.array.items) |item| {
@@ -41,7 +41,7 @@ test "M2 relations and formatting match independent libalpm fixtures" {
     }
 }
 
-test "M2 raw version comparisons preserve byte inputs under C locale" {
+test "raw version comparisons preserve byte inputs under C locale" {
     const recorded = try reference();
     defer recorded.deinit();
     for (recorded.value.object.get("byte_versions").?.array.items) |item| {
@@ -74,7 +74,7 @@ fn entriesFromJson(arena: *std.heap.ArenaAllocator, values: []const Value) ![]Fi
     return entries;
 }
 
-test "M2 archive modes, duplicate metadata, mtree inventory and provisions match libalpm" {
+test "archive modes, duplicate metadata, mtree inventory and provisions match libalpm" {
     const recorded = try reference();
     defer recorded.deinit();
     const manifest = try std.json.parseFromSlice(Value, allocator, @embedFile("reference/manifest.json"), .{});
@@ -159,7 +159,7 @@ test "M2 archive modes, duplicate metadata, mtree inventory and provisions match
 
 const desc = "%NAME%\ndemo\n\n%VERSION%\nalpha:1.0-\n\n%BASE%\ndemo-base\n\n%DESC%\nDescription\n\n%FILENAME%\ndemo.pkg.tar.zst\n\n%CSIZE%\n123\n\n%ISIZE%\n456\n\n%MD5SUM%\n0123456789abcdef0123456789abcdef\n\n%SHA256SUM%\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n\n%PGPSIG%\nAAECA/8=\n\n%VALIDATION%\nmd5\nsha256\npgp\n\n%INSTALLED_DB%\nremoved-cachyos-repo\n\n%FILES%\nzeta\netc/\netc/demo.conf\n\n%BACKUP%\netc/demo.conf\t00000000000000000000000000000000\n\n%DEPENDS%\nfoo>1<2: ordinary description\n\n%PROVIDES%\nvirtual=\n\n%XDATA%\ncustom=a=b\n\n";
 
-test "M2 normalized local and sync metadata own fields, files, hashes and CachyOS provenance" {
+test "normalized local and sync metadata own fields, files, hashes and CachyOS provenance" {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const package = blk: {
@@ -206,7 +206,7 @@ const stream_entries = [_]Fixture.Entry{
     .{ .path = "etc/demo.conf", .contents = "data" },
 };
 
-test "M2 compressed archive streams and mtree iterators own independent lifetimes" {
+test "compressed archive streams and mtree iterators own independent lifetimes" {
     for ([_]Fixture.Compression{ .none, .zstd, .gzip, .xz, .bzip2 }) |compression| {
         var fixture = try Fixture.init(&stream_entries, compression);
         defer fixture.deinit();
@@ -261,14 +261,14 @@ fn allocationArchive(failing: std.mem.Allocator, path: []const u8) !void {
     while (try mtree_iterator.next()) |_| {}
 }
 
-test "M2 conversion, full archive and stream operations clean up every failed allocation" {
+test "conversion, full archive and stream operations clean up every failed allocation" {
     try std.testing.checkAllAllocationFailures(allocator, allocationConversion, .{});
     var fixture = try Fixture.init(&stream_entries, .zstd);
     defer fixture.deinit();
     try std.testing.checkAllAllocationFailures(allocator, allocationArchive, .{fixture.path});
 }
 
-test "M2 signature decoding and local file metadata match independent captures" {
+test "signature decoding and local file metadata match independent captures" {
     const recorded = try reference();
     defer recorded.deinit();
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -321,7 +321,7 @@ test "M2 signature decoding and local file metadata match independent captures" 
     try std.testing.expectError(error.UnsupportedPackageOrigin, package.openMember(allocator, .changelog));
 }
 
-test "M2 compressed mtree data, absent streams and bounded metadata errors" {
+test "compressed mtree data, absent streams and bounded metadata errors" {
     const compressed = try Fixture.gzip(mtree);
     defer allocator.free(compressed);
     var entries = stream_entries;
@@ -359,7 +359,7 @@ test "M2 compressed mtree data, absent streams and bounded metadata errors" {
     try std.testing.expectError(error.InvalidBackup, rlpm.ParsedDescription.parse(allocator, "%BACKUP%\nmissing-tab\n"));
 }
 
-test "M2 Owner copies permissive assumed-installed relations and rejects embedded NUL" {
+test "Owner copies permissive assumed-installed relations and rejects embedded NUL" {
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
     const path = try temporary.dir.realPathFileAlloc(io, ".", allocator);
@@ -373,7 +373,7 @@ test "M2 Owner copies permissive assumed-installed relations and rejects embedde
     update.assume_installed = &.{.{ .name = "bad", .constraint = .{ .equal = "1\x00two" } }};
     try std.testing.expectError(error.InvalidPackageRelation, owner.setOptions(io, update));
     try std.testing.expectEqual(3, owner.options().assume_installed.len);
-    // M5 consumes assumed entries as provisions, so only ANY/EQ are legal.
+    // The resolver consumes assumed entries as provisions, so only ANY/EQ are legal.
     update.assume_installed = &.{try .parse("foo>=alpha:1.0")};
     try std.testing.expectError(error.InvalidOption, owner.setOptions(io, update));
     try std.testing.expectEqual(3, owner.options().assume_installed.len);

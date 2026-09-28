@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M9 native oracle, invoked inside `unshare --user --map-root-user --mount`.
+"""Native hook and scriptlet oracle, invoked inside `unshare --user --map-root-user --mount`.
 Only generated hooks/scripts and inert archives run, in private chroots. No host
 hook directory, service manager, ldconfig, or installed package DB is used.
 """
@@ -80,7 +80,7 @@ def main():
     libs = [Path(word) for word in subprocess.check_output(['/usr/bin/ldd', '/usr/bin/bash'], text=True).split() if word.startswith('/')]
     rows = []
     for case in CASES:
-        with tempfile.TemporaryDirectory(prefix='rlpm-m9-oracle-') as temp:
+        with tempfile.TemporaryDirectory(prefix='rlpm-actions-oracle-') as temp:
             base = Path(temp).resolve(); root = base / 'root'; db = base / 'db'
             root.mkdir(); (db / 'local').mkdir(parents=True)
             (db / 'local/ALPM_DB_VERSION').write_text('9\n')
@@ -112,7 +112,7 @@ def main():
                 data = ListPtr(); assert prepare(handle, c.byref(data)) == 0
                 # Immediately before commit, independently verify all effect roots.
                 assert Path(getroot(handle).decode()).resolve() == root and Path(getdb(handle).decode()).resolve() == db
-                assert base.name.startswith('rlpm-m9-oracle-') and root.parent == db.parent == base
+                assert base.name.startswith('rlpm-actions-oracle-') and root.parent == db.parent == base
                 assert not any(p.is_symlink() for p in base.rglob('*'))
                 cursor = gethooks(handle)
                 while cursor:

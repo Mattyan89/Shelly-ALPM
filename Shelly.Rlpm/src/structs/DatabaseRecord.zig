@@ -23,7 +23,8 @@ pub fn splitName(path: []const u8) !Identity {
 pub fn append(parsed: *Parsed, allocator: std.mem.Allocator, contents: []const u8, sync: bool, issues: *Issues) !void {
     if (std.mem.indexOfScalar(u8, contents, 0) != null) return error.InvalidDatabaseEntry;
     // libarchive's line reader supplies an empty last line after a terminal
-    // newline, so that newline can terminate the final list (recorded in M3).
+    // newline, so that newline can terminate the final list, as captured by the
+    // database reference fixtures.
     var lines = std.mem.splitScalar(u8, contents, '\n');
     while (lines.next()) |raw| {
         const header = std.mem.trimEnd(u8, raw, "\r");

@@ -53,16 +53,16 @@ inside a bundle. Symbols present upstream are labeled `upstream`; that label
 does not imply the downstream implementation is identical. Separate CachyOS
 behavior rows cover shared APIs, including:
 
-- SQLite repository metadata in the archive's `pacman.db` member (M3).
-- Physical architecture enumeration (M1) and `Architecture=auto` integration (M11).
-- Reading `%INSTALLED_DB%` (M2) and preserving repository provenance during
-  selection, install and upgrade (M5/M10).
+- SQLite repository metadata in the archive's `pacman.db` member.
+- Physical architecture enumeration and `Architecture=auto` integration.
+- Reading `%INSTALLED_DB%` and preserving repository provenance during
+  selection, install and upgrade.
 - Mandatory hook/scriptlet network isolation, `NetworkAccess=allowed`, the
-  global DisableSandbox interaction, and best-effort isolation for `ldconfig` (M9).
-- Safe chroot child cleanup after downloads, from the packaged curl fix (M9).
+  global DisableSandbox interaction, and best-effort isolation for `ldconfig`.
+- Safe chroot child cleanup after downloads, from the packaged curl fix.
 
 Each row gives the equivalent current/proposed Zig operation, responsible
-milestone, existing evidence and a **planned** fixture ID. A planned ID is an
+feature, existing evidence and a **planned** fixture ID. A planned ID is an
 acceptance obligation, not an existing test. `missing` and `partial` do not count
 as parity. `representation_only` is restricted to C linked-list mechanics
 represented by Zig containers and ownership; it cannot exclude an extension.
@@ -97,7 +97,7 @@ python3 src/tests/reference/record_identity.py \
 Compare its JSON with the frozen manifest; it never edits committed evidence.
 There is no live version comparison build target.
 
-M1 also provides an optional Owner recorder:
+The optional Owner recorder captures defaults and repository registration:
 
 ```sh
 python3 src/tests/reference/record_owner.py \
@@ -110,20 +110,20 @@ registration and independent sandbox controls. The reference initializer creates
 its local version file inside that temporary database; the recorder releases the
 handle and removes its own temporary tree. It does not open the host database.
 Its reviewed output is [../fixtures/owner-reference.json](../fixtures/owner-reference.json),
-consumed offline by the external Owner tests. It does not alter the frozen M0
+consumed offline by the external Owner tests. It does not alter the frozen
 source assets or their manifest.
 
 The deprecated aggregate sandbox getter/setter are declared in the pinned header
-but not exported by the installed binary. Their M1 behavior is derived from
+but not exported by the installed binary. Their behavior is derived from
 the pinned source; the fixture records execution of the independent filesystem,
-syscall and CachyOS network controls. M1 also records the remaining difference
-between M1's read-only initialization and libalpm's version-file creation; M3
-closes it with default creation and an explicit read-only mode.
+syscall and CachyOS network controls. The Owner fixture captures native
+version-file creation. Database tests cover default creation, format validation
+and explicit read-only initialization.
 Neither the fixture nor source-derived CPU feature tests establish full parity.
 Future operation recorders and pactest adaptations must likewise use dedicated
 disposable roots and reviewed independent expectations.
 
-M2's optional recorder captures metadata and relation behavior:
+The optional metadata recorder captures metadata and relation behavior:
 
 ```sh
 python3 src/tests/reference/record_metadata.py \
@@ -143,12 +143,12 @@ error, not reproduction of the native crash.
 The reviewed [metadata fixture](../fixtures/metadata-reference.json) retains
 25 relation cases, 13 satisfaction decisions, nine byte-version comparisons,
 18 archives in both modes, six signature-decoding inputs, five install reasons
-and local file/backup/CachyOS provenance. Original M0 reference assets and the
+and local file/backup/CachyOS provenance. Original reference assets and the
 54 existing version signs are unchanged. `test-metadata` consumes this output
 offline; it never regenerates expected results. The [metadata API guide](../../../metadata.md)
 documents coverage and remaining backend/verification work.
 
-M3's optional database recorder is separate from the frozen source corpus:
+The optional database recorder is separate from the frozen source corpus:
 
 ```sh
 python3 src/tests/reference/record_database.py \
@@ -169,7 +169,7 @@ reference size/error sentinels map to unavailable unsigned sizes with explicit
 issues. [The database guide](../../../databases.md) lists these boundaries,
 metadata limits, generation semantics and policy-aware verification.
 
-M4 records integrity and signature policy separately:
+The signature recorder captures integrity and signature policy:
 
 ```sh
 python3 src/tests/reference/record_signature.py \
@@ -192,7 +192,8 @@ All original manifest assets remain unchanged. See the
 [verification guide](../../../verification.md) for limits and remaining transfer/
 transaction integration.
 
-M5 records prepare-time resolution without performing a transaction commit:
+The resolver recorder captures prepare-time resolution without performing a
+transaction commit:
 
 ```sh
 python3 src/tests/reference/record_resolver.py \
@@ -217,7 +218,7 @@ commit source without committing any package. The [resolution guide](../../../re
 documents plan ownership, safety boundaries, evidence and deferred execution work.
 This is prepare coverage, not a complete run of pacman's installation test suite.
 
-M6 adds a lifecycle/event recorder:
+The transaction recorder captures lifecycle errors, locks and events:
 
 ```sh
 python3 src/tests/reference/record_transaction.py \
@@ -230,19 +231,20 @@ events, and empty commit. The recorder checks the binary hash and uses only
 private roots. It guards every commit by checking both native target lists;
 nonempty commits are permitted only with NOLOCK, which is rejected before work.
 It performs no downloads, refresh, package writes or host database operations.
-The production executor remains M7–M10. `test-transaction` replays the fixture;
-normal builds never load the reference library. See the
+`test-transaction` replays the lifecycle fixture; download, action and executor
+suites cover later phases. Normal builds never load the reference library. See the
 [transaction guide](../../../transactions.md) for representation and safety
 differences, independent process tests and deferred UI integration.
 
-M7 adds `record_download.py` and `download-oracle.jsonl`. The recorder checks the
+`record_download.py` captures acquisition and refresh outcomes in
+`download-oracle.jsonl`. The recorder checks the
 frozen library hash and uses private roots, caches and file mirrors. Its only
 nonempty commits independently require DOWNLOADONLY and an empty removal list.
 Six outcomes are replayed by `src/tests/download.zig`; rejected-file cache retention
 is an explicitly documented staging difference. These additions do not change
 any original frozen asset.
 
-M8 adds [record_preflight.py](record_preflight.py) and
+The preflight recorder captures conflict, backup and inventory decisions in
 [preflight.json](preflight.json):
 
 ```sh
@@ -260,7 +262,8 @@ they do not run an RLPM executor or load libalpm. The original frozen assets and
 manifest remain unchanged. See [preflight.md](../../../preflight.md) for safety
 differences and remaining executor/privileged-mount validation.
 
-M9 adds [record_actions.py](record_actions.py) and [actions.json](actions.json):
+The action recorder captures hook and scriptlet behavior in
+[actions.json](actions.json):
 
 ```sh
 unshare --user --map-root-user --mount \
@@ -278,13 +281,14 @@ blocks it makes native NeedsTargets input appear empty and invalidates capture.
 
 `zig build test-actions` compares the frozen decisions and traces with real RLPM
 stages. It uses a fixture executor to place the new local install member between
-pre/post stages; production file and DB mutation remains M10. The original frozen
-manifest/assets are unchanged. Source review additionally checked
+pre/post stages; executor tests cover production file and DB mutation. The
+original frozen manifest/assets are unchanged. Source review additionally checked
 `src/common/ini.c` and `util-common.c` from the exact downstream tarball identified
 by `manifest.json` (download SHA-256 verified), since they were not included in the
 original reduced source bundle. See [actions.md](../../../actions.md).
 
-M10 adds [record_executor.py](record_executor.py) and [executor.json](executor.json).
+[record_executor.py](record_executor.py) captures full transaction behavior in
+[executor.json](executor.json).
 The 26 guarded private-root commits capture complete native phase/package/backup
 ordering, inventories, contents, DBONLY/DOWNLOADONLY and suffix rotation. Regenerate:
 
@@ -301,7 +305,8 @@ test-only Zig driver. It alternates RLPM and the pinned binary in both direction
 comparing local records (normalizing install time), modes/owners/times/xattrs,
 hardlinks, backup preservation and native removal after an RLPM downgrade.
 It never uses a host database or runs hooks/scripts. The driver requires an
-explicit generated fixture marker under `/tmp/rlpm-m10-interop-*`. Ordinary
+explicit generated fixture marker under `/tmp/rlpm-executor-interop-*`. Ordinary
 builds/tests do not depend on libalpm; the pinned-binary test is an explicit gate.
-M10 also replays all 19 M9 traces through full commits in the namespace suite.
+The executor also replays all 19 action traces through full commits in the
+namespace suite.
 See [execution.md](../../../execution.md) for scope and failure differences.

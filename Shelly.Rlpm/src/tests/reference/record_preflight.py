@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M8 oracle: inert generated packages in private disposable roots only.
+"""Preflight oracle: inert generated packages in private disposable roots only.
 Native commit is required to observe its private preflight/backup routines.
 Hooks/scriptlets are disabled; packages contain only conf and root metadata.
 """
@@ -61,7 +61,7 @@ def main():
     errno = bind('alpm_errno', c.c_int, c.c_void_p)
     rows = []
     for case in CASES:
-        with tempfile.TemporaryDirectory(prefix='rlpm-m8-oracle-') as temp:
+        with tempfile.TemporaryDirectory(prefix='rlpm-preflight-oracle-') as temp:
             base = Path(temp).resolve(); root = base / 'root'; db = base / 'db'
             root.mkdir(); (db / 'local').mkdir(parents=True)
             (db / 'local/ALPM_DB_VERSION').write_text('9\n')
@@ -96,7 +96,7 @@ def main():
                 # Independent guard immediately before the only mutation call.
                 assert Path(getroot(handle).decode()).resolve() == root
                 assert Path(getdb(handle).decode()).resolve() == db
-                assert root.parent == db.parent == base and base.name.startswith('rlpm-m8-oracle-')
+                assert root.parent == db.parent == base and base.name.startswith('rlpm-preflight-oracle-')
                 assert flags(handle) & ((1 << 7) | (1 << 10)) == (1 << 7) | (1 << 10)
                 assert not any(p.is_symlink() for p in base.rglob('*'))
                 result = commit(handle, c.byref(data))

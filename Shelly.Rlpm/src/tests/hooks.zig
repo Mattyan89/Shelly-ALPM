@@ -7,7 +7,7 @@ const io = std.testing.io;
 const trigger = "[Trigger]\nOperation=Install\nType=Package\nTarget=*\n";
 const action = "[Action]\nWhen=PreTransaction\nExec=/usr/bin/bash -c 'exit 0'\n";
 
-test "M9 repeated actions override scalars while triggers and dependencies accumulate" {
+test "repeated actions override scalars while triggers and dependencies accumulate" {
     var hooks = rlpm.Hooks.init(a);
     defer hooks.deinit();
     try hooks.parse("a.hook", trigger ++ action ++ "[Action]\nWhen=PostTransaction\nDescription=old\nDescription=new\nExec=/new 'two words' \"\" x\\ y $literal\nDepends=virtual>=2\nDepends=base\nNeedsTargets=ignored\nAbortOnFail=false\nNetworkAccess=allowed\n" ++ trigger);
@@ -22,7 +22,7 @@ test "M9 repeated actions override scalars while triggers and dependencies accum
     try std.testing.expectEqual(4, hooks.issues.items.len);
 }
 
-test "M9 invalid hooks retain errors and line context; triggerless hooks mask" {
+test "invalid hooks retain errors and line context; triggerless hooks mask" {
     const invalid = [_][]const u8{
         "Exec=/x", "[Unknown]", "[Trigger]\nTarget=x", trigger ++ "[Action]\nWhen=PreTransaction", trigger ++ action ++ "NetworkAccess=denied", trigger ++ action ++ "Unknown=x", trigger ++ action ++ "Exec=/x 'unterminated", trigger ++ action ++ "When=Invalid", trigger ++ "Operation=Invalid\n" ++ action,
     };
@@ -42,7 +42,7 @@ test "M9 invalid hooks retain errors and line context; triggerless hooks mask" {
     try std.testing.expectEqual(2, hooks.hooks.items.len);
 }
 
-test "M9 directory precedence disabling missing directories and stem order" {
+test "directory precedence disabling missing directories and stem order" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.write("low/a.hook", trigger ++ action);
@@ -61,7 +61,7 @@ test "M9 directory precedence disabling missing directories and stem order" {
     const high = try f.tmp.dir.realPathFileAlloc(io, "high", alloc);
     var hooks = rlpm.Hooks.init(a);
     defer hooks.deinit();
-    try hooks.discover(io, &.{ low, "/nonexistent-rlpm-m9", high });
+    try hooks.discover(io, &.{ low, "/nonexistent-rlpm-hooks", high });
     try hooks.check();
     try std.testing.expectEqual(5, hooks.hooks.items.len);
     try std.testing.expectEqualStrings("a.hook", hooks.hooks.items[0].name);
@@ -70,7 +70,7 @@ test "M9 directory precedence disabling missing directories and stem order" {
     try std.testing.expectEqualStrings("high", hooks.hooks.items[4].description.?);
 }
 
-test "M9 any trigger matches and NeedsTargets unions sorts deduplicates and negates" {
+test "any trigger matches and NeedsTargets unions sorts deduplicates and negates" {
     var hooks = rlpm.Hooks.init(a);
     defer hooks.deinit();
     try hooks.parse("a.hook", trigger ++ action ++ "NeedsTargets\nTarget=invalid-in-action\n");
@@ -89,7 +89,7 @@ test "M9 any trigger matches and NeedsTargets unions sorts deduplicates and nega
     try std.testing.expectEqual(0, (try valid.match(.post_transaction, &.{})).len);
 }
 
-test "M9 inventory matching includes absent removals NoExtract and original pacnew paths" {
+test "inventory matching includes absent removals NoExtract and original pacnew paths" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.installed("demo", "1-1", "conf\nmissing\nskipped\nusr/", null);
@@ -117,7 +117,7 @@ test "M9 inventory matching includes absent removals NoExtract and original pacn
     try std.testing.expectEqual(.prepared, tx.state); // Read-only preflight boundary.
 }
 
-test "M9 scriptlet function discovery follows comments and native line chunks" {
+test "scriptlet function discovery follows comments and native line chunks" {
     try std.testing.expect(!rlpm.Scriptlets.contains("# pre_install() {}\npost_install() {}", .pre_install));
     try std.testing.expect(rlpm.Scriptlets.contains("echo pre_install\n", .pre_install));
     var bytes: [1040]u8 = @splat('x');
@@ -131,6 +131,6 @@ fn allocations(allocator: std.mem.Allocator) !void {
     try hooks.check();
     _ = try hooks.match(.pre_transaction, &.{.{ .kind = .package, .operation = .install, .target = "demo" }});
 }
-test "M9 parser and matcher release every allocation on failure" {
+test "parser and matcher release every allocation on failure" {
     try std.testing.checkAllAllocationFailures(a, allocations, .{});
 }

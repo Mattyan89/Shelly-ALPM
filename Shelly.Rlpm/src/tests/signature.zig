@@ -271,7 +271,7 @@ test "signature: validateSignature rejects an unknown signing key" {
     try std.testing.expect(!try database.validateSignature(std.testing.io, fixture.unknown_home));
 }
 
-test "M4 real GPG separates full and unknown trust and parses binary issuers" {
+test "real GPG separates full and unknown trust and parses binary issuers" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     const path = try fixture.dataPath("test.db");
@@ -303,7 +303,7 @@ test "M4 real GPG separates full and unknown trust and parses binary issuers" {
     try std.testing.expectEqualStrings(fpr[fpr.len - 16 ..], issuers.key_ids[0]);
 }
 
-test "M4 real GPG requires all signatures and rejects a tampered payload" {
+test "real GPG requires all signatures and rejects a tampered payload" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     const second = "Second Signer <second@example.invalid>";
@@ -342,7 +342,7 @@ const ImportAnswer = struct {
     }
 };
 
-test "M4 real Owner imports only after consent, honors cancellation and retains verified package bytes" {
+test "real Owner imports only after consent, honors cancellation and retains verified package bytes" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     var archive = try @import("archive_fixture.zig").init(&.{
@@ -406,7 +406,7 @@ test "M4 real Owner imports only after consent, honors cancellation and retains 
     try std.testing.expectError(error.InvalidSignature, owner.loadPackage(std.testing.io, path, .local_file, .{}));
 }
 
-test "M4 real GPG marginal web-of-trust requires the marginal allowance" {
+test "real GPG marginal web-of-trust requires the marginal allowance" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     const certifier = "Certifier <certifier@example.invalid>";
@@ -440,7 +440,7 @@ test "M4 real GPG marginal web-of-trust requires the marginal allowance" {
     try std.testing.expect((try rlpm.Verification.check(std.testing.allocator, std.testing.io, context, &snapshot, path, .{ .requirement = .required, .trust = .{ .allow_marginal = true } }, &report)).pgp);
 }
 
-test "M4 real GPG distinguishes expired signatures from refreshable expired keys" {
+test "real GPG distinguishes expired signatures from refreshable expired keys" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     const past = "20250101T000000";
@@ -466,7 +466,7 @@ test "M4 real GPG distinguishes expired signatures from refreshable expired keys
     try std.testing.expectEqual(.signature_expired, report.?.signatures[0].status);
 }
 
-test "M4 real GPG disabled and revoked keys fail even with permissive trust" {
+test "real GPG disabled and revoked keys fail even with permissive trust" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     const fpr = try fixture.fingerprint(SignatureFixture.identity);
@@ -494,7 +494,7 @@ test "M4 real GPG disabled and revoked keys fail even with permissive trust" {
     try std.testing.expectEqual(.key_revoked, report.?.signatures[0].status);
 }
 
-test "M4 real signed database is authenticated before publication and failed reload retains cache" {
+test "real signed database is authenticated before publication and failed reload retains cache" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     var archive = try @import("archive_fixture.zig").init(&.{.{ .path = "demo-1-1/desc", .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n" }}, .none);
@@ -515,7 +515,7 @@ test "M4 real signed database is authenticated before publication and failed rel
     try std.testing.expectEqual(.invalid, (try owner.database(db)).last_verification.?.signatures[0].status);
 }
 
-test "M7 signed downloads acquire unknown keys only with consent and revalidate cache" {
+test "signed downloads acquire unknown keys only with consent and revalidate cache" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     const io = std.testing.io;
@@ -557,7 +557,7 @@ test "M7 signed downloads acquire unknown keys only with consent and revalidate 
     try std.testing.expectEqualStrings(SignatureFixture.contents, pinned);
 }
 
-test "M8 preflight retains remote signature policy and revalidates before execution" {
+test "preflight retains remote signature policy and revalidates before execution" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     const io = std.testing.io;
@@ -599,7 +599,7 @@ test "M8 preflight retains remote signature policy and revalidates before execut
     try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "installed-root/payload", .{}));
 }
 
-test "M7 signed refresh publishes a matched pair and preserves it after bad signatures" {
+test "signed refresh publishes a matched pair and preserves it after bad signatures" {
     var fixture = try SignatureFixture.init();
     defer fixture.deinit() catch unreachable;
     const io = std.testing.io;

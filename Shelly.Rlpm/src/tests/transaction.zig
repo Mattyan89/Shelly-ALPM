@@ -344,7 +344,7 @@ fn oracleError(name: []const u8) anyerror {
     }) |mapping| if (std.mem.eql(u8, name, mapping.native)) return mapping.result;
     return error.UnexpectedReferenceError;
 }
-test "pinned M6 oracle lifecycle errors lock mode and prepare event traces" {
+test "pinned transaction oracle lifecycle errors lock mode and prepare event traces" {
     const parsed = try std.json.parseFromSlice(struct { library_sha256: []const u8, cases: []const OracleCase }, a, @embedFile("reference/transaction.json"), .{ .ignore_unknown_fields = true });
     defer parsed.deinit();
     try std.testing.expectEqualStrings("da30edd45277cf4b1000485658976042f8106fe0b97378d1e6c4e81a9d7c4888", parsed.value.library_sha256);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional M3 oracle. Pinned libalpm; private roots; no package operations."""
+"""Optional database oracle. Pinned libalpm; private roots; no package operations."""
 import argparse
 import ctypes as c
 import hashlib

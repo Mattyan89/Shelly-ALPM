@@ -296,7 +296,7 @@ test "independent owners see complete published databases with custom extensions
     try std.testing.expect(ref != null);
 }
 
-test "M7 pinned DOWNLOADONLY and refresh outcomes match the recorded library" {
+test "pinned DOWNLOADONLY and refresh outcomes match the recorded library" {
     var lines = std.mem.tokenizeScalar(u8, @embedFile("reference/download-oracle.jsonl"), '\n');
     while (lines.next()) |line| {
         const parsed = try std.json.parseFromSlice(std.json.Value, a, line, .{});

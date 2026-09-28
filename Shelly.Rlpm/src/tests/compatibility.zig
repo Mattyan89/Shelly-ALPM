@@ -11,7 +11,7 @@ const Row = struct {
     symbol: []const u8,
     kind: []const u8,
     origin: []const u8,
-    milestone: []const u8,
+    feature: []const u8,
     equivalent: []const u8,
     status: []const u8,
     evidence_id: []const u8,
@@ -24,7 +24,7 @@ fn readRows() !std.ArrayList(Row) {
     errdefer rows.deinit(std.testing.allocator);
     var lines = std.mem.tokenizeScalar(u8, ledger, '\n');
     try std.testing.expectEqualStrings(
-        "symbol\tkind\torigin\tmilestone\trlpm_equivalent\tstatus\tevidence\tplanned_fixture\treference",
+        "symbol\tkind\torigin\tfeature\trlpm_equivalent\tstatus\tevidence\tplanned_fixture\treference",
         lines.next().?,
     );
     while (lines.next()) |line| {
@@ -136,9 +136,9 @@ test "ledger accounts for every pinned public symbol without duplicate or invent
         try std.testing.expect(!(try seen.getOrPut(row.symbol)).found_existing);
         try std.testing.expect(oneOf(row.origin, &.{ "upstream", "cachyos" }));
         try std.testing.expect(oneOf(row.kind, &.{ "function", "constant", "type", "macro", "behavior" }));
-        try std.testing.expect(oneOf(row.milestone, &.{ "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11" }));
+        try std.testing.expect(oneOf(row.feature, &.{ "owner", "metadata", "database", "verification", "resolver", "transaction", "download", "preflight", "actions", "executor", "native-backend" }));
         try std.testing.expect(oneOf(row.status, &.{ "missing", "partial", "representation_only", "verified" }));
-        try std.testing.expect(std.mem.startsWith(u8, row.fixture, row.milestone));
+        try std.testing.expect(std.mem.startsWith(u8, row.fixture, row.feature));
         try std.testing.expect(std.mem.endsWith(u8, row.fixture, row.symbol));
         if (std.mem.eql(u8, row.kind, "behavior")) {
             try std.testing.expect(std.mem.startsWith(u8, row.symbol, "behavior."));
@@ -159,27 +159,27 @@ test "ledger accounts for every pinned public symbol without duplicate or invent
     try std.testing.expectEqual(4, extensions);
 }
 
-test "CachyOS behavior behind shared APIs remains a required milestone" {
+test "ledger assigns CachyOS behavior behind shared APIs to the responsible feature" {
     var rows = try readRows();
     defer rows.deinit(std.testing.allocator);
     const required = .{
-        .{ "cachyos-sqlite-sync", "M3" },
-        .{ "cachyos-physical-architectures", "M1" },
-        .{ "cachyos-architecture-auto", "M11" },
-        .{ "cachyos-installed-db-read", "M2" },
-        .{ "cachyos-installed-db-write", "M10" },
-        .{ "cachyos-network-isolation", "M9" },
-        .{ "cachyos-hook-network-access", "M9" },
-        .{ "cachyos-disable-sandbox", "M9" },
-        .{ "cachyos-ldconfig-network", "M9" },
-        .{ "cachyos-curl-child-cleanup", "M9" },
+        .{ "cachyos-sqlite-sync", "database" },
+        .{ "cachyos-physical-architectures", "owner" },
+        .{ "cachyos-architecture-auto", "native-backend" },
+        .{ "cachyos-installed-db-read", "metadata" },
+        .{ "cachyos-installed-db-write", "executor" },
+        .{ "cachyos-network-isolation", "actions" },
+        .{ "cachyos-hook-network-access", "actions" },
+        .{ "cachyos-disable-sandbox", "actions" },
+        .{ "cachyos-ldconfig-network", "actions" },
+        .{ "cachyos-curl-child-cleanup", "actions" },
     };
     inline for (required) |item| {
         var found = false;
         for (rows.items) |row| {
             if (!std.mem.eql(u8, row.symbol, "behavior." ++ item[0])) continue;
             try std.testing.expectEqualStrings("cachyos", row.origin);
-            try std.testing.expectEqualStrings(item[1], row.milestone);
+            try std.testing.expectEqualStrings(item[1], row.feature);
             try std.testing.expect(!std.mem.eql(u8, row.status, "representation_only"));
             found = true;
         }

@@ -7,12 +7,12 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(a);
     if (args.len != 5) return error.InvalidArguments;
     const base = args[1];
-    if (!std.mem.startsWith(u8, base, "/tmp/rlpm-m10-interop-")) return error.NotFixture;
+    if (!std.mem.startsWith(u8, base, "/tmp/rlpm-executor-interop-")) return error.NotFixture;
     const root = try std.fs.path.join(a, &.{ base, "root" });
     const db = try std.fs.path.join(a, &.{ base, "db" });
     const marker = try std.fs.path.join(a, &.{ base, ".fixture" });
     const guard = try std.Io.Dir.cwd().readFileAlloc(init.io, marker, a, .limited(100));
-    if (!std.mem.eql(u8, guard, "disposable RLPM M10 interoperability\n")) return error.NotFixture;
+    if (!std.mem.eql(u8, guard, "disposable RLPM executor interoperability\n")) return error.NotFixture;
     var owner = try rlpm.Owner.init(init.io, init.gpa, .{ .root = root, .database_path = db, .hook_directories = &.{} }, &.{});
     defer owner.deinit() catch unreachable;
     if (std.mem.eql(u8, args[2], "install")) {

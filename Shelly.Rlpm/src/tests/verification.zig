@@ -1,4 +1,4 @@
-//! M4 hermetic consumer tests: no host keyring, subprocess or network access.
+//! Signature verification consumer tests: no host keyring, subprocess or network access.
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
 const Archive = @import("archive_fixture.zig");
@@ -11,7 +11,7 @@ const trusted = valid ++ "[GNUPG:] TRUST_FULLY 0 pgp\n";
 const unknown = "[GNUPG:] NEWSIG\n[GNUPG:] ERRSIG " ++ key_id ++ " 22 8 00 1767225600 9 " ++ fingerprint ++ "\n[GNUPG:] NO_PUBKEY " ++ key_id ++ "\n";
 const bad = "[GNUPG:] NEWSIG\n[GNUPG:] BADSIG " ++ key_id ++ " Alice\n";
 
-test "M4 status matrix separates crypto, expiration, revocation, disabled keys and trust" {
+test "status matrix separates crypto, expiration, revocation, disabled keys and trust" {
     const statuses = [_]struct { name: []const u8, status: rlpm.SignatureResult.Status, eligible: bool }{
         .{ .name = "GOODSIG", .status = .valid, .eligible = true },
         .{ .name = "EXPKEYSIG", .status = .key_expired, .eligible = true },
@@ -47,7 +47,7 @@ test "M4 status matrix separates crypto, expiration, revocation, disabled keys a
         try std.testing.expectError(error.InvalidSignature, report.check(.{ .allow_marginal = true, .allow_unknown = true }));
     };
 }
-test "M4 multiple signatures and unsuccessful GPG statuses are retained" {
+test "multiple signatures and unsuccessful GPG statuses are retained" {
     var report = try rlpm.SignatureResult.parse(allocator, trusted ++ unknown ++ bad, "bad and unknown", .{ .exited = 2 });
     defer report.deinit();
     try std.testing.expectEqual(3, report.signatures.len);
@@ -63,7 +63,7 @@ test "M4 multiple signatures and unsuccessful GPG statuses are retained" {
     defer failed.deinit();
     try std.testing.expectError(error.GpgFailed, failed.check(.{}));
 }
-test "M4 incomplete or malformed statuses cannot authorize a signature" {
+test "incomplete or malformed statuses cannot authorize a signature" {
     for ([_][]const u8{
         "",                                            "[GNUPG:] GOODSIG " ++ key_id ++ " Alice\n[GNUPG:] TRUST_FULLY 0\n",
         trusted ++ "[GNUPG:] NEWSIG\n",                trusted ++ "[GNUPG:] GOODSIG " ++ key_id ++ " Alice\n",
@@ -83,10 +83,10 @@ fn parserAllocations(gpa: std.mem.Allocator) !void {
     defer report.deinit();
     try std.testing.expectEqual(3, report.signatures.len);
 }
-test "M4 structured status results release all allocations on failure" {
+test "structured status results release all allocations on failure" {
     try std.testing.checkAllAllocationFailures(allocator, parserAllocations, .{});
 }
-test "M4 checksum helpers stream files and prefer SHA256 over MD5" {
+test "checksum helpers stream files and prefer SHA256 over MD5" {
     try std.testing.expectEqualStrings("900150983cd24fb0d6963f7d28e17f72", &rlpm.Checksum.bytes(.md5, "abc"));
     try std.testing.expectEqualStrings("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", &rlpm.Checksum.bytes(.sha256, "abc"));
     var snapshot = try rlpm.ImmutableFile.fromBytes("abc");
@@ -99,7 +99,7 @@ test "M4 checksum helpers stream files and prefer SHA256 over MD5" {
     try std.testing.expectError(error.ChecksumMismatch, rlpm.Verification.check(allocator, io, .{}, &snapshot, "absent", .{ .requirement = .disabled, .sha256 = "wrong" }, &report));
 }
 const packet = "\xc2\x2c\x04\x00\x16\x08\x00\x17\x16\x21\x04" ++ "\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67" ++ "\x00\x0a\x09\x10\x89\xab\xcd\xef\x01\x23\x45\x67\x00\x00\x01";
-test "M4 bounded packet parsing exposes issuer IDs and fingerprints" {
+test "bounded packet parsing exposes issuer IDs and fingerprints" {
     var issuers = try rlpm.OpenPgp.extractIssuers(allocator, packet);
     defer issuers.deinit();
     try std.testing.expectEqualStrings(key_id, issuers.key_ids[0]);
@@ -167,7 +167,7 @@ const Fake = struct {
     }
 };
 
-test "M4 optional signatures verify when present; disabled skips GPG and missing required fails" {
+test "optional signatures verify when present; disabled skips GPG and missing required fails" {
     Fake.reset();
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
@@ -195,7 +195,7 @@ test "M4 optional signatures verify when present; disabled skips GPG and missing
     try std.testing.expectError(error.InvalidSignature, rlpm.Verification.check(allocator, io, Fake.context(), &snapshot, path, .{ .requirement = .required }, &report));
     try std.testing.expectEqual(.key_disabled, report.?.signatures[0].status);
 }
-test "M4 embedded signatures skip digests only when enabled and imports require consent plus reverification" {
+test "embedded signatures skip digests only when enabled and imports require consent plus reverification" {
     Fake.reset();
     var snapshot = try rlpm.ImmutableFile.fromBytes("abc");
     defer snapshot.deinit();
@@ -218,7 +218,7 @@ test "M4 embedded signatures skip digests only when enabled and imports require 
     try std.testing.expectEqual(.valid, report.?.signatures[0].status);
 }
 const pkginfo = "pkgname = demo\npkgver = 1-1\npkgdesc = test\narch = any\n";
-test "M4 Owner policies and retained package bytes survive replacement of a cached path" {
+test "Owner policies and retained package bytes survive replacement of a cached path" {
     var archive = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = pkginfo }, .{ .path = ".CHANGELOG", .contents = "verified changelog" }, .{ .path = "usr/file", .contents = "payload" } }, .none);
     defer archive.deinit();
     var temporary = std.testing.tmpDir(.{});
@@ -240,7 +240,7 @@ test "M4 Owner policies and retained package bytes survive replacement of a cach
     try std.testing.expectEqualStrings("verified changelog", bytes);
     try std.testing.expectError(error.ArchiveFailed, owner.loadPackage(io, archive.path, .remote_file, .{}));
 }
-test "M4 rejected database reload preserves the prior generation and last signature results" {
+test "rejected database reload preserves the prior generation and last signature results" {
     Fake.reset();
     var archive = try Archive.init(&.{.{ .path = "demo-1-1/desc", .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n" }}, .none);
     defer archive.deinit();
@@ -272,7 +272,7 @@ const ReferenceRunner = struct {
         return .{ .stdout = stdout, .stderr = try gpa.dupe(u8, ""), .term = .{ .exited = if (listing) 0 else @intCast(row.object.get("exit").?.integer) } };
     }
 };
-test "M4 independent pinned libalpm file-policy matrix, checksums and issuers" {
+test "independent pinned libalpm file-policy matrix, checksums and issuers" {
     const fixture = try std.json.parseFromSlice(std.json.Value, allocator, @embedFile("fixtures/signature-reference.json"), .{});
     defer fixture.deinit();
     const checksums = fixture.value.object.get("checksums").?.object;
@@ -334,11 +334,11 @@ fn verifyAllocations(gpa: std.mem.Allocator) !void {
     const validation = try rlpm.Verification.check(gpa, io, context, &snapshot, "unused", .{ .requirement = .required, .base64_signature = "AQ==" }, &report);
     try std.testing.expect(validation.pgp);
 }
-test "M4 verification and reimport release every allocation on failure" {
+test "verification and reimport release every allocation on failure" {
     try std.testing.checkAllAllocationFailures(allocator, verifyAllocations, .{});
 }
 
-test "M4 repository package validation uses effective policy and actual cached bytes" {
+test "repository package validation uses effective policy and actual cached bytes" {
     var archive = try Archive.init(&.{.{ .path = ".PKGINFO", .contents = pkginfo }}, .none);
     defer archive.deinit();
     const digest = try rlpm.Checksum.file(.sha256, io, archive.path);
@@ -371,7 +371,7 @@ test "M4 repository package validation uses effective policy and actual cached b
     try std.testing.expectError(error.StalePackageReference, owner.loadPackage(io, archive.path, .{ .repository = reference }, .{}));
 }
 
-test "M4 kernel seals prohibit rewriting a verified snapshot" {
+test "kernel seals prohibit rewriting a verified snapshot" {
     const native = std.c;
     var snapshot = try rlpm.ImmutableFile.fromBytes("verified");
     defer snapshot.deinit();

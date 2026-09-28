@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional M5 oracle: hash-pinned libalpm, private roots, NOLOCK, prepare only.
+"""Optional resolver oracle: hash-pinned libalpm, private roots, NOLOCK, prepare only.
 
 Never commits, downloads, refreshes databases, or reads the host package DB.
 Normal Zig tests replay its JSON and do not load this library.

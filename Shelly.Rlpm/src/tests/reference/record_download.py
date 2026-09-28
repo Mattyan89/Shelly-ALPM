@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M7 oracle. Pinned library; private file mirrors, cache and local DB only.
+"""download oracle. Pinned library; private file mirrors, cache and local DB only.
 The sole nonempty commit is independently guarded by DOWNLOADONLY and no removals.
 """
 import argparse
@@ -45,7 +45,7 @@ def main():
     finish = bind('alpm_trans_release', c.c_int, c.c_void_p)
     download_size = bind('alpm_pkg_download_size', c.c_int64, c.c_void_p)
     for name in ('downloadonly', 'digest-mismatch', 'required-signature', 'optional-signature', 'refresh-disabled', 'refresh-lock'):
-        with tempfile.TemporaryDirectory(prefix='rlpm-m7-oracle-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='rlpm-download-oracle-') as tmp:
             base = Path(tmp); root = base/'root'; db = base/'db'; mirror = base/'mirror'; cache = base/'cache'
             for path in (root, db, mirror, cache): path.mkdir()
             payload = b'package' # Native DOWNLOADONLY checks integrity, not archive inventory.

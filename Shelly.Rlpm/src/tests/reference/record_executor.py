@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M10 executor oracle: inert generated packages in private disposable roots only.
+"""Executor oracle: inert generated packages in private disposable roots only.
 Native commit is required to observe its private preflight/backup routines.
 Hooks/scriptlets are disabled; packages contain only conf and root metadata.
 """
@@ -62,7 +62,7 @@ def main():
     setevent = bind('alpm_option_set_eventcb', c.c_int, c.c_void_p, Event, c.c_void_p)
     rows = []
     for case in CASES:
-        with tempfile.TemporaryDirectory(prefix='rlpm-m10-oracle-') as temp:
+        with tempfile.TemporaryDirectory(prefix='rlpm-executor-oracle-') as temp:
             base = Path(temp).resolve(); root = base / 'root'; db = base / 'db'
             root.mkdir(); (db / 'local').mkdir(parents=True)
             (db / 'local/ALPM_DB_VERSION').write_text('9\n')
@@ -109,7 +109,7 @@ def main():
                 # Independent guard immediately before the only mutation call.
                 assert Path(getroot(handle).decode()).resolve() == root
                 assert Path(getdb(handle).decode()).resolve() == db
-                assert root.parent == db.parent == base and base.name.startswith('rlpm-m10-oracle-')
+                assert root.parent == db.parent == base and base.name.startswith('rlpm-executor-oracle-')
                 assert flags(handle) & ((1 << 7) | (1 << 10)) == (1 << 7) | (1 << 10)
                 assert not any(p.is_symlink() for p in base.rglob('*'))
                 result = commit(handle, c.byref(data))

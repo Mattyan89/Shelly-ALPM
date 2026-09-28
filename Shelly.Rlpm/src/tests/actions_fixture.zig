@@ -76,8 +76,8 @@ pub fn add(tx: *rlpm.Transaction, path: []const u8) !void {
     defer if (package) |*value| value.deinit();
     try tx.takeArchive(&package);
 }
-/// Explicit miniature executor used only by fixtures. Production commit does
-/// not enter these states or mutate payload/local records until M10.
+/// Enter the committing state so fixtures can exercise action stages independently
+/// of the production payload and local database executor.
 pub fn enter(tx: *rlpm.Transaction) void {
     tx.owner.busy = true;
     tx.state = .committing;

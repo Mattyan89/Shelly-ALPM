@@ -19,7 +19,7 @@ fn commit(owner: *rlpm.Owner, archive: []const u8, flags: rlpm.TransactionFlags)
     try tx.prepare();
     try tx.commit();
 }
-test "M10 actual commit replays M9 native scripts hooks DBONLY and DOWNLOADONLY traces" {
+test "actual commit replays native scripts hooks DBONLY and DOWNLOADONLY traces" {
     const parsed = try std.json.parseFromSlice(std.json.Value, a, @embedFile("reference/actions.json"), .{});
     defer parsed.deinit();
     for (parsed.value.object.get("cases").?.array.items) |case| {
@@ -55,7 +55,7 @@ test "M10 actual commit replays M9 native scripts hooks DBONLY and DOWNLOADONLY 
     }
 }
 
-test "M10 payload attributes hardlinks xattrs fifo and shared directory metadata" {
+test "payload attributes hardlinks xattrs fifo and shared directory metadata" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.write("root/shared/keep", "untouched");
@@ -126,7 +126,7 @@ test "M10 payload attributes hardlinks xattrs fifo and shared directory metadata
     try std.testing.expectEqual(-1, c.getxattr(acl_path, "system.posix_acl_access", &xattr, xattr.len));
 }
 
-test "M10 hooks and scripts change backup inputs before extraction and post hooks see new dependencies" {
+test "hooks and scripts change backup inputs before extraction and post hooks see new dependencies" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -148,7 +148,7 @@ test "M10 hooks and scripts change backup inputs before extraction and post hook
     try f.expect("root/trace", "installedpost");
 }
 
-test "M10 out of space during extraction preserves coherent database and cleans staging" {
+test "out of space during extraction preserves coherent database and cleans staging" {
     const mount = @cImport({
         @cInclude("sys/mount.h");
     });
@@ -180,7 +180,7 @@ test "M10 out of space during extraction preserves coherent database and cleans 
     try std.testing.expectEqual(0, (try fresh.packageIds(fresh.localDatabase().?)).len);
 }
 
-test "M10 supported device nodes are created only inside the disposable mount" {
+test "supported device nodes are created only inside the disposable mount" {
     const mount = @cImport({
         @cInclude("sys/mount.h");
     });
@@ -226,7 +226,7 @@ test "M10 supported device nodes are created only inside the disposable mount" {
     }
 }
 
-test "M10 pre-remove script can create a previously absent backup and it is saved" {
+test "pre-remove script can create a previously absent backup and it is saved" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();

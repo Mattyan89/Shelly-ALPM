@@ -279,7 +279,7 @@ jobs:
       contents: read
     container:
       image: archlinux:latest
-      # M9/M10 use nested namespaces, disposable chroots and private tmpfs mounts.
+      # Action and executor integration tests use nested namespaces, disposable chroots and private tmpfs mounts.
       options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined
     strategy:
       matrix:

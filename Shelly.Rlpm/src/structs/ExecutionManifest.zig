@@ -108,7 +108,7 @@ pub fn remember(self: *Manifest, path: []const u8, follow: bool) !?Root.State {
     return before;
 }
 /// Checks root identity, all observed paths (including symlink ancestors), and
-/// current free space. This is also required after pre-transaction hooks in M10.
+/// current free space. Recheck after pre-transaction hooks before changing payloads.
 pub fn revalidate(self: *const Manifest, root_path: []const u8, db_path: []const u8, check_space: bool) !void {
     try self.check();
     try self.revalidateRoots(root_path, db_path);

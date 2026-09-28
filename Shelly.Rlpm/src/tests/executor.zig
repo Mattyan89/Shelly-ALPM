@@ -31,7 +31,7 @@ fn package(version: []const u8, content: []const u8) !Archive {
         .{ .path = "usr/hard", .kind = .hardlink, .target = "usr/data" },
     }, .zstd);
 }
-test "M10 install query reinstall upgrade downgrade remove persists to fresh Owners" {
+test "install query reinstall upgrade downgrade remove persists to fresh Owners" {
     var f = try Fixture.init();
     defer f.deinit();
     var first = try package("1-1", "first");
@@ -109,7 +109,7 @@ const Events = struct {
         self.values.append(a, item) catch @panic("fixture allocation");
     }
 };
-test "M10 replays pinned native backup flags removal suffix and event oracle" {
+test "replays pinned native backup flags removal suffix and event oracle" {
     const parsed = try std.json.parseFromSlice(std.json.Value, a, @embedFile("reference/executor.json"), .{});
     defer parsed.deinit();
     for (parsed.value.object.get("cases").?.array.items) |case| {
@@ -170,7 +170,7 @@ test "M10 replays pinned native backup flags removal suffix and event oracle" {
     }
 }
 
-test "M10 reason changes persist under lock and invalidate references" {
+test "reason changes persist under lock and invalidate references" {
     var f = try Fixture.init();
     defer f.deinit();
     var archive = try package("1-1", "first");
@@ -192,7 +192,7 @@ test "M10 reason changes persist under lock and invalidate references" {
     try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "db/db.lck", .{}));
 }
 
-test "M10 boundary failures retain precise partial results and readable database" {
+test "boundary failures retain precise partial results and readable database" {
     const E = rlpm.Transaction.Executor;
     inline for (.{ E.Boundary.pre_hooks, .pre_scriptlet, .extract, .payload_sync, .database_write, .database_publish, .cache_reload, .post_scriptlet, .post_hooks }) |boundary| {
         var f = try Fixture.init();
@@ -218,7 +218,7 @@ test "M10 boundary failures retain precise partial results and readable database
     }
 }
 
-test "M10 journal recovery restores coherent old records at each interrupted rename" {
+test "journal recovery restores coherent old records at each interrupted rename" {
     for (0..4) |step| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -240,7 +240,7 @@ test "M10 journal recovery restores coherent old records at each interrupted ren
     }
 }
 
-test "M10 file-directory transitions retain unowned and shared contents" {
+test "file-directory transitions retain unowned and shared contents" {
     var f = try Fixture.init();
     defer f.deinit();
     var old = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = demo\npkgver = 1-1\narch = any\n" }, .{ .path = "path", .contents = "file" } }, .none);
@@ -265,7 +265,7 @@ test "M10 file-directory transitions retain unowned and shared contents" {
     try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "root/path/child", .{}));
 }
 
-test "M10 cancellation after one package keeps plan views completed remaining and fresh state" {
+test "cancellation after one package keeps plan views completed remaining and fresh state" {
     var f = try Fixture.init();
     defer f.deinit();
     var one = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = one\npkgver = 1-1\narch = any\n" }, .{ .path = "one", .contents = "one" } }, .none);
@@ -298,7 +298,7 @@ test "M10 cancellation after one package keeps plan views completed remaining an
     try std.testing.expect((try fresh.findPackage(fresh.localDatabase().?, tx.plan().?.package(last).name)) == null);
 }
 
-test "M10 actual write failure records path and never publishes a partial package" {
+test "actual write failure records path and never publishes a partial package" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.tmp.dir.createDirPath(io, "root/conf.pacnew");
@@ -330,7 +330,7 @@ test "M10 actual write failure records path and never publishes a partial packag
     try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "db/.rlpm-local-stage", .{}));
 }
 
-test "M10 confined executor rejects replaced roots before any mutation" {
+test "confined executor rejects replaced roots before any mutation" {
     var f = try Fixture.init();
     defer f.deinit();
     var archive = try package("1-1", "data");
@@ -356,7 +356,7 @@ test "M10 confined executor rejects replaced roots before any mutation" {
     try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "old-root/etc/conf", .{}));
 }
 
-test "M10 repository commit retains CachyOS installed database validation and install reason" {
+test "repository commit retains CachyOS installed database validation and install reason" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.tmp.dir.createDirPath(io, "cache");
@@ -391,7 +391,7 @@ test "M10 repository commit retains CachyOS installed database validation and in
     try std.testing.expect(installed.validation.none);
 }
 
-test "M10 ownership transfer and shared directories survive an ordered multi-package upgrade" {
+test "ownership transfer and shared directories survive an ordered multi-package upgrade" {
     var f = try Fixture.init();
     defer f.deinit();
     var old = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = old\npkgver = 1-1\narch = any\n" }, .{ .path = "shared/", .kind = .directory }, .{ .path = "shared/data", .contents = "old" } }, .none);
@@ -415,7 +415,7 @@ test "M10 ownership transfer and shared directories survive an ordered multi-pac
     try std.testing.expect((try fresh.findPackage(fresh.localDatabase().?, "new")) != null);
 }
 
-test "M10 removal failure retains installed record and pending work" {
+test "removal failure retains installed record and pending work" {
     var f = try Fixture.init();
     defer f.deinit();
     var archive = try package("1-1", "first");
@@ -439,7 +439,7 @@ test "M10 removal failure retains installed record and pending work" {
     try std.testing.expect((try fresh.findPackage(fresh.localDatabase().?, "demo")) != null);
 }
 
-test "M10 audit writes configured log and absolute symlinks cannot alter external attributes" {
+test "audit writes configured log and absolute symlinks cannot alter external attributes" {
     const c = @cImport({
         @cInclude("sys/stat.h");
     });

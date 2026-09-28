@@ -46,10 +46,10 @@ def main():
     getdb = bind('alpm_option_get_dbpath', c.c_char_p, c.c_void_p)
     initial_states = {}
     for first in ('rlpm', 'native'):
-        with tempfile.TemporaryDirectory(prefix='rlpm-m10-interop-', dir='/tmp') as temp:
+        with tempfile.TemporaryDirectory(prefix='rlpm-executor-interop-', dir='/tmp') as temp:
             base = Path(temp).resolve(); root = base / 'root'; db = base / 'db'
             root.mkdir(); (db / 'local').mkdir(parents=True)
-            (base / '.fixture').write_text('disposable RLPM M10 interoperability\n')
+            (base / '.fixture').write_text('disposable RLPM executor interoperability\n')
             (db / 'local/ALPM_DB_VERSION').write_text('9\n')
             archives = {}
             for ver in ('1-1', '2-1', '3-1'):
@@ -78,7 +78,7 @@ def main():
                         else: assert current and remove(handle, current) == 0
                         result = ListPtr(); assert prepare(handle, c.byref(result)) == 0
                         assert Path(getroot(handle).decode()).resolve() == root and Path(getdb(handle).decode()).resolve() == db
-                        assert base.parent == Path('/tmp') and base.name.startswith('rlpm-m10-interop-')
+                        assert base.parent == Path('/tmp') and base.name.startswith('rlpm-executor-interop-')
                         assert commit(handle, c.byref(result)) == 0
                     finally: assert finish(handle) == 0
                 finally: assert release(handle) == 0
@@ -110,5 +110,5 @@ def main():
             assert not (root / 'conf').exists() and (root / 'conf.pacsave').read_text() == 'user changes'
             assert sorted(p.name for p in (db / 'local').iterdir()) == ['ALPM_DB_VERSION']
     assert initial_states['rlpm'] == initial_states['native'], json.dumps(initial_states, indent=2)
-    print('M10 interoperability: native → RLPM → native and RLPM → native → RLPM passed')
+    print('Executor interoperability: native → RLPM → native and RLPM → native → RLPM passed')
 if __name__ == '__main__': main()

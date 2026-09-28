@@ -54,7 +54,7 @@ pub const Warning = union(enum) {
 pub const Sizes = struct {
     installed_add: u64 = 0,
     installed_remove: u64 = 0,
-    /// Upper estimate before M7 cache/partial-file planning.
+    /// Upper estimate before accounting for cached archives and partial downloads.
     download_upper_bound: u64 = 0,
     unknown_installed: usize = 0,
     unknown_download: usize = 0,

@@ -74,7 +74,7 @@ fn emptyArchive() !Archive {
     return Archive.init(&.{.{ .path = ".PKGINFO", .contents = info }}, .none);
 }
 
-test "M9 real chroot process preserves parent state and forwards merged complete output" {
+test "real chroot process preserves parent state and forwards merged complete output" {
     var f = try Fixture.init();
     defer f.deinit();
     try probe(&f);
@@ -110,7 +110,7 @@ test "M9 real chroot process preserves parent state and forwards merged complete
     try std.testing.expect(exit125.setup_failure == null);
 }
 
-test "M9 network namespace isolates while explicit and global permissions bypass it" {
+test "network namespace isolates while explicit and global permissions bypass it" {
     var f = try Fixture.init();
     defer f.deinit();
     try probe(&f);
@@ -145,7 +145,7 @@ test "M9 network namespace isolates while explicit and global permissions bypass
     try std.testing.expectEqualStrings("isolated\nconnected\nconnected\n", events.output.items);
 }
 
-test "M9 required isolation failure blocks execution best effort warns and independent controls remain independent" {
+test "required isolation failure blocks execution best effort warns and independent controls remain independent" {
     var f = try Fixture.init();
     defer f.deinit();
     try probe(&f);
@@ -175,7 +175,7 @@ test "M9 required isolation failure blocks execution best effort warns and indep
     try std.testing.expect(global.success() and global.network_warning == null);
 }
 
-test "M9 large target input and output progress concurrently without pipe deadlock" {
+test "large target input and output progress concurrently without pipe deadlock" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -199,7 +199,7 @@ test "M9 large target input and output progress concurrently without pipe deadlo
     try std.testing.expect(early.success());
 }
 
-test "M9 cancellation terminates process group and retains interrupted outcome" {
+test "cancellation terminates process group and retains interrupted outcome" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -224,7 +224,7 @@ test "M9 cancellation terminates process group and retains interrupted outcome" 
     try std.testing.expectEqualStrings("a.hook>a.hook<", events.hooks.items);
 }
 
-test "M9 install stages trace hooks scriptlets linker cache and refreshed post hook discovery" {
+test "install stages trace hooks scriptlets linker cache and refreshed post hook discovery" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -263,7 +263,7 @@ test "M9 install stages trace hooks scriptlets linker cache and refreshed post h
     try std.testing.expect(try iterator.next(io) == null);
 }
 
-test "M9 upgrade reinstall downgrade use new archive then new database with new old arguments" {
+test "upgrade reinstall downgrade use new archive then new database with new old arguments" {
     for ([_][]const u8{ "1-1", "2-1", "3-1" }) |old| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -292,7 +292,7 @@ test "M9 upgrade reinstall downgrade use new archive then new database with new 
     }
 }
 
-test "M9 removal uses old install on both sides before deleting local record" {
+test "removal uses old install on both sides before deleting local record" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -314,7 +314,7 @@ test "M9 removal uses old install on both sides before deleting local record" {
     try f.expect("root/trace", "sourced:0\npre_remove:1:1-1\nsourced:0\npost_remove:1:1-1\n");
 }
 
-test "M9 hook dependencies failure policy AbortOnFail and post errors preserve results" {
+test "hook dependencies failure policy AbortOnFail and post errors preserve results" {
     for ([_]bool{ false, true }) |abort| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -357,7 +357,7 @@ test "M9 hook dependencies failure policy AbortOnFail and post errors preserve r
     }
 }
 
-test "M9 NOHOOKS NOSCRIPTLET DBONLY DOWNLOADONLY are independent" {
+test "NOHOOKS NOSCRIPTLET DBONLY DOWNLOADONLY are independent" {
     for ([_]rlpm.TransactionFlags{ .{}, .{ .no_hooks = true }, .{ .no_scriptlets = true }, .{ .database_only = true }, .{ .no_hooks = true, .no_scriptlets = true }, .{ .download_only = true } }) |flags| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -385,7 +385,7 @@ test "M9 NOHOOKS NOSCRIPTLET DBONLY DOWNLOADONLY are independent" {
     }
 }
 
-test "M9 malformed pre hooks abort before any action and NOHOOKS bypasses discovery" {
+test "malformed pre hooks abort before any action and NOHOOKS bypasses discovery" {
     for ([_]bool{ false, true }) |no_hooks| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -410,7 +410,7 @@ test "M9 malformed pre hooks abort before any action and NOHOOKS bypasses discov
     }
 }
 
-test "M9 scriptlet failures stay nonfatal and versions cannot inject shell code" {
+test "scriptlet failures stay nonfatal and versions cannot inject shell code" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -427,7 +427,7 @@ test "M9 scriptlet failures stay nonfatal and versions cannot inject shell code"
     try std.testing.expectError(error.FileNotFound, f.read("root/bad"));
 }
 
-test "M9 pinned CachyOS oracle matches parser decisions script arguments and traces" {
+test "pinned CachyOS oracle matches parser decisions script arguments and traces" {
     const Case = struct {
         name: []const u8,
         hook: []const u8,
@@ -486,7 +486,7 @@ test "M9 pinned CachyOS oracle matches parser decisions script arguments and tra
     }
 }
 
-test "M9 nonfatal script failure retains status and failed payload skips post hooks" {
+test "nonfatal script failure retains status and failed payload skips post hooks" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -511,7 +511,7 @@ test "M9 nonfatal script failure retains status and failed payload skips post ho
     try std.testing.expectError(error.FileNotFound, f.read("root/trace"));
 }
 
-test "M9 linker cache runs best effort despite NOHOOKS NOSCRIPTLET DBONLY" {
+test "linker cache runs best effort despite NOHOOKS NOSCRIPTLET DBONLY" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -542,7 +542,7 @@ test "M9 linker cache runs best effort despite NOHOOKS NOSCRIPTLET DBONLY" {
     try std.testing.expect(actions.outcomes.items[0].process.?.success());
 }
 
-test "M9 scriptlet cancellation cleans staging and preserves temporary directory mode" {
+test "scriptlet cancellation cleans staging and preserves temporary directory mode" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -568,7 +568,7 @@ test "M9 scriptlet cancellation cleans staging and preserves temporary directory
     try std.testing.expectEqual(0o1777, stat.st_mode & 0o7777);
 }
 
-test "M9 scriptlet cleanup diagnostics survive successful execution" {
+test "scriptlet cleanup diagnostics survive successful execution" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.shell();
@@ -590,7 +590,7 @@ test "M9 scriptlet cleanup diagnostics survive successful execution" {
     try std.testing.expectEqual(error.ScriptletCleanupFailed, actions.outcomes.items[1].cause.?);
 }
 
-test "M9 phase callbacks can cancel before payload or post hooks" {
+test "phase callbacks can cancel before payload or post hooks" {
     for ([_]rlpm.Callbacks.Boundary{ .start, .done }) |boundary| {
         var f = try Fixture.init();
         defer f.deinit();

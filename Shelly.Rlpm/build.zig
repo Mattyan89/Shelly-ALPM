@@ -75,7 +75,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-metadata", "Run M2 metadata, archive, relation and reference fixtures").dependOn(&b.addRunArtifact(metadata_tests).step);
+    b.step("test-metadata", "Run metadata, archive, relation and reference fixtures").dependOn(&b.addRunArtifact(metadata_tests).step);
 
     const database_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/database.zig"),
@@ -83,7 +83,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-database", "Run M3 local, tar/SQLite, query, reload and allocation fixtures").dependOn(&b.addRunArtifact(database_tests).step);
+    b.step("test-database", "Run local, tar/SQLite, query, reload and allocation fixtures").dependOn(&b.addRunArtifact(database_tests).step);
 
     const verification_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/verification.zig"),
@@ -91,7 +91,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-verification", "Run M4 integrity, trust, status, import and immutable-file fixtures").dependOn(&b.addRunArtifact(verification_tests).step);
+    b.step("test-verification", "Run integrity, trust, status, import and immutable-file fixtures").dependOn(&b.addRunArtifact(verification_tests).step);
 
     const resolver_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/resolver.zig"),
@@ -99,7 +99,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-resolver", "Run M5 resolution, removal, system-upgrade and reference fixtures").dependOn(&b.addRunArtifact(resolver_tests).step);
+    b.step("test-resolver", "Run resolution, removal, system-upgrade and reference fixtures").dependOn(&b.addRunArtifact(resolver_tests).step);
 
     const executor_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/executor.zig"),
@@ -108,7 +108,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
     const run_executor_tests = b.addRunArtifact(executor_tests);
-    b.step("test-executor", "Run M10 disposable-root payload and database transactions").dependOn(&run_executor_tests.step);
+    b.step("test-executor", "Run disposable-root payload and database transactions").dependOn(&run_executor_tests.step);
     test_step.dependOn(&run_executor_tests.step);
     const hook_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/hooks.zig"),
@@ -116,14 +116,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-hooks", "Run hermetic M9 parser, discovery, matching and ownership fixtures").dependOn(&b.addRunArtifact(hook_tests).step);
+    b.step("test-hooks", "Run hermetic hook parser, discovery, matching and ownership fixtures").dependOn(&b.addRunArtifact(hook_tests).step);
     const preflight_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/preflight.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-preflight", "Run M8 private-root archive, conflict, backup and space fixtures").dependOn(&b.addRunArtifact(preflight_tests).step);
+    b.step("test-preflight", "Run private-root archive, conflict, backup and space fixtures").dependOn(&b.addRunArtifact(preflight_tests).step);
     const sandbox_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/download_sandbox.zig"),
         .target = target,
@@ -140,7 +140,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-download", "Run M7 private-cache, acquisition, refresh and DOWNLOADONLY fixtures").dependOn(&b.addRunArtifact(download_tests).step);
+    b.step("test-download", "Run private-cache, acquisition, refresh and DOWNLOADONLY fixtures").dependOn(&b.addRunArtifact(download_tests).step);
     const transaction_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/transaction.zig"),
         .target = target,
@@ -148,7 +148,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
     transaction_tests.root_module.addCSourceFile(.{ .file = b.path("src/tests/lock_process.c"), .flags = &.{"-std=c11"} });
-    b.step("test-transaction", "Run M6 private-root lifecycle, lock, ownership, cancellation and reference fixtures").dependOn(&b.addRunArtifact(transaction_tests).step);
+    b.step("test-transaction", "Run private-root lifecycle, lock, ownership, cancellation and reference fixtures").dependOn(&b.addRunArtifact(transaction_tests).step);
 
     const ledger_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/compatibility.zig"),
@@ -243,8 +243,8 @@ pub fn build(b: *std.Build) void {
     run_actions.addArtifactArg(action_tests);
     run_actions.stdio = .inherit;
     run_actions.has_side_effects = true;
-    b.step("test-actions", "Run real M9 actions in disposable chroots under a user namespace").dependOn(&run_actions.step);
-    b.step("check-actions", "Compile M9 integration without executing it").dependOn(&action_tests.step);
+    b.step("test-actions", "Run real actions in disposable chroots under a user namespace").dependOn(&run_actions.step);
+    b.step("check-actions", "Compile action integration tests without executing them").dependOn(&action_tests.step);
     const signature_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/tests/signature.zig"),

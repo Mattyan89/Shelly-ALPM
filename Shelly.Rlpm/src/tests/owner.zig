@@ -68,7 +68,7 @@ fn completeConfiguration(fixture: Fixture) rlpm.OwnerConfiguration {
     config.remote_file_signature_policy = .{ .package = .disabled, .database = .disabled };
     config.disable_download_timeout = true;
     config.parallel_downloads = 7;
-    config.sandbox_user = "unresolved-until-M7";
+    config.sandbox_user = "unresolved-sandbox-user";
     config.sandbox.setDisabled(true);
     config.sandbox.disable_network = false;
     return config;
@@ -143,7 +143,7 @@ test "owner owns caller configuration, relation versions, and ordered server lis
     try std.testing.expectEqualStrings("etc/config", config.no_upgrade[0]);
     try std.testing.expectEqualStrings("!usr/share/docs/keep", config.no_extract[1]);
     try std.testing.expectEqualStrings("usr/bin/*", config.overwrite_files[0]);
-    try std.testing.expectEqualStrings("unresolved-until-M7", config.sandbox_user.?);
+    try std.testing.expectEqualStrings("unresolved-sandbox-user", config.sandbox_user.?);
     try std.testing.expect(config.sandbox.disable_filesystem and config.sandbox.disable_syscalls and !config.sandbox.disable_network);
     try std.testing.expect(config.effectiveLocalSignaturePolicy().package_trust.allow_marginal);
     try std.testing.expectEqual(.disabled, config.effectiveRemoteSignaturePolicy().package);
@@ -488,7 +488,7 @@ test "owner defaults and registration match independently recorded libalpm resul
     try std.testing.expectEqual(1, sandbox.legacyDisabledState());
     sandbox.disable_syscalls = true;
     try std.testing.expectEqual(2, sandbox.legacyDisabledState());
-    // M3 closes the recorded local format creation/validation gap.
+    // Local database initialization creates and validates the recorded format version.
     try std.testing.expect(reference.get("initialization_creates_local_version_file").?.bool);
     _ = try fixture.temporary.dir.statFile(io, "db/local/ALPM_DB_VERSION", .{});
 }

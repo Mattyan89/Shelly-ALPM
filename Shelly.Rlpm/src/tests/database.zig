@@ -1,4 +1,4 @@
-//! M3 public-consumer tests. All filesystem state and SQLite images are private.
+//! Database public-consumer tests. All filesystem state and SQLite images are private.
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
 const Archive = @import("archive_fixture.zig");
@@ -121,7 +121,7 @@ fn sqlImage(columns: []const Value, rows: []const Value) ![]u8 {
     return allocator.dupe(u8, image[0..@intCast(size)]);
 }
 
-test "M3 local creation version validation and corrupt entries match pinned reference" {
+test "local creation version validation and corrupt entries match pinned reference" {
     const reference = try std.json.parseFromSlice(Value, allocator, @embedFile("fixtures/database-reference.json"), .{});
     defer reference.deinit();
     for (field(reference.value, "local").array.items) |case| {
@@ -161,7 +161,7 @@ test "M3 local creation version validation and corrupt entries match pinned refe
     }
 }
 
-test "M3 tar and CachyOS SQLite records and regex search match pinned reference" {
+test "tar and CachyOS SQLite records and regex search match pinned reference" {
     const reference = try std.json.parseFromSlice(Value, allocator, @embedFile("fixtures/database-reference.json"), .{});
     defer reference.deinit();
     for (field(reference.value, "sync").array.items) |case| {
@@ -250,7 +250,7 @@ test "M3 tar and CachyOS SQLite records and regex search match pinned reference"
     }
 }
 
-test "M3 all reference compression filters and files extension build shared indexes" {
+test "all reference compression filters and files extension build shared indexes" {
     for ([_]Archive.Compression{ .none, .gzip, .xz, .zstd, .bzip2 }) |compression| {
         var fixture = try Fixture.init();
         defer fixture.deinit();
@@ -272,7 +272,7 @@ test "M3 all reference compression filters and files extension build shared inde
     }
 }
 
-test "M3 lazy local metadata streams provenance and missing-desc recovery" {
+test "lazy local metadata streams provenance and missing-desc recovery" {
     var fixture = try Fixture.init();
     defer fixture.deinit();
     try fixture.local("demo-1-1", desc);
@@ -315,7 +315,7 @@ test "M3 lazy local metadata streams provenance and missing-desc recovery" {
     try std.testing.expectEqualStrings("history\n", bytes);
 }
 
-test "M3 readonly absent local never writes and local ignores repository signature policy" {
+test "readonly absent local never writes and local ignores repository signature policy" {
     var fixture = try Fixture.init();
     defer fixture.deinit();
     var config = fixture.config();
@@ -334,7 +334,7 @@ test "M3 readonly absent local never writes and local ignores repository signatu
     try std.testing.expectEqual(1, database.packages.ordered.items.len);
 }
 
-test "M3 usage-specific selection cross-repository groups and reverse dependencies" {
+test "usage-specific selection cross-repository groups and reverse dependencies" {
     var fixture = try Fixture.init();
     defer fixture.deinit();
     try fixture.sync("first.db", &entries, .zstd, null);
@@ -373,7 +373,7 @@ test "M3 usage-specific selection cross-repository groups and reverse dependenci
     try expectNames(&owner, required_hidden, &.{"zeta"});
 }
 
-test "M3 failed reload retains generation while external format replacement invalidates references" {
+test "failed reload retains generation while external format replacement invalidates references" {
     var fixture = try Fixture.init();
     defer fixture.deinit();
     try fixture.sync("test.db", &entries, .zstd, null);
@@ -443,7 +443,7 @@ fn allocationLifecycle(failing: std.mem.Allocator, root: []const u8, path: []con
     _ = try owner.removeServer(db, .servers, "https://first.invalid//");
     try owner.addListValue(io, .ignore_packages, "ignore-me");
 }
-test "M3 cache metadata regex and reload allocations clean up at every injected failure" {
+test "cache metadata regex and reload allocations clean up at every injected failure" {
     var fixture = try Fixture.init();
     defer fixture.deinit();
     try fixture.sync("test.db", &entries, .zstd, null);
@@ -463,7 +463,7 @@ test "M3 cache metadata regex and reload allocations clean up at every injected 
     }
 }
 
-test "M3 allocation failures preserve usable cache and metadata retry" {
+test "allocation failures preserve usable cache and metadata retry" {
     var fixture = try Fixture.init();
     defer fixture.deinit();
     try fixture.sync("test.db", &entries, .zstd, null);
@@ -494,7 +494,7 @@ test "M3 allocation failures preserve usable cache and metadata retry" {
     try std.testing.expectEqual(2, (try owner.findGroup(io, db, "common")).?.packages.items.len);
 }
 
-test "M3 unrelated options and ordered server edits retain cache generations" {
+test "unrelated options and ordered server edits retain cache generations" {
     var fixture = try Fixture.init();
     defer fixture.deinit();
     try fixture.sync("test.db", &entries, .zstd, null);
@@ -527,7 +527,7 @@ test "M3 unrelated options and ordered server edits retain cache generations" {
     try std.testing.expect(!(try owner.database(db)).status.group_cache_loaded);
 }
 
-test "M3 unsafe archive paths links and malformed SQLite cannot publish a cache" {
+test "unsafe archive paths links and malformed SQLite cannot publish a cache" {
     var fixture = try Fixture.init();
     defer fixture.deinit();
     var owner = try rlpm.Owner.init(io, allocator, fixture.config(), &.{.{ .database_name = "test" }});
@@ -550,7 +550,7 @@ test "M3 unsafe archive paths links and malformed SQLite cannot publish a cache"
     try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.statFile(io, "root/pacman.db", .{}));
 }
 
-test "M3 reverse relations use only the installed universe for local and archive targets" {
+test "reverse relations use only the installed universe for local and archive targets" {
     var fixture = try Fixture.init();
     defer fixture.deinit();
     try fixture.sync("test.db", &entries, .zstd, null);

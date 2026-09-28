@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M6 oracle: pinned library, disposable roots, no nonempty commit or downloads.
+"""transaction oracle: pinned library, disposable roots, no nonempty commit or downloads.
 
 Records native lifecycle errors, lock visibility/mode and prepare event order.
 The commit guard independently inspects both native target lists first.
@@ -72,7 +72,7 @@ def main():
         dict(name='lock-contention', actions=['init', 'compete', 'release', 'compete']),
     ]
     for case in cases:
-        with tempfile.TemporaryDirectory(prefix='rlpm-m6-oracle-') as directory:
+        with tempfile.TemporaryDirectory(prefix='rlpm-transaction-oracle-') as directory:
             base = Path(directory); root = base / 'root'; db = base / 'db'; root.mkdir(); (db / 'local/demo-1-1').mkdir(parents=True)
             (db / 'local/ALPM_DB_VERSION').write_text('9\n')
             (db / 'local/demo-1-1/desc').write_text('%NAME%\ndemo\n\n%VERSION%\n1-1\n\n%REASON%\n0\n\n')

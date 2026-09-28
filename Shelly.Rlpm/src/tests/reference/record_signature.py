@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional M4 oracle: hash-pinned libalpm, disposable GPG homes, no network."""
+"""Optional verification oracle: hash-pinned libalpm, disposable GPG homes, no network."""
 import argparse
 import base64
 import ctypes as c
@@ -91,8 +91,8 @@ def main():
             result['cases'].append(row)
 
         try:
-            identity = 'M4 Reference <m4-reference@example.invalid>'
-            second = 'M4 Second <m4-second@example.invalid>'
+            identity = 'Signature Reference <signature-reference@example.invalid>'
+            second = 'Signature Second <signature-second@example.invalid>'
             gpg(signer, '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-generate-key', identity, 'ed25519', 'sign', '0')
             gpg(signer, '--output', 'public.gpg', '--export', identity)
             gpg(verifier, '--import', 'public.gpg')
@@ -123,12 +123,12 @@ def main():
             sign(identity, '--local-user', second)
             capture('multiple_full', signer)
             capture('multiple_unknown', verifier)
-            expired = 'M4 Expired <m4-expired@example.invalid>'
+            expired = 'Signature Expired <signature-expired@example.invalid>'
             past = '20250101T000000'
             gpg(signer, '--faked-system-time', past, '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-generate-key', expired, 'ed25519', 'sign', '1d')
             sign(expired, '--faked-system-time', past)
             capture('expired_key', signer)
-            eternal = 'M4 Old <m4-old@example.invalid>'
+            eternal = 'Signature Old <signature-old@example.invalid>'
             gpg(signer, '--faked-system-time', past, '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-generate-key', eternal, 'ed25519', 'sign', '0')
             sign(eternal, '--faked-system-time', past, '--default-sig-expire', '1d')
             capture('expired_signature', signer)

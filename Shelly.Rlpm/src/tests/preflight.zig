@@ -1,4 +1,4 @@
-//! Hermetic M8 fixtures. Only the fixture builder writes the private roots;
+//! Hermetic preflight fixtures. Only the fixture builder writes the private roots;
 //! RLPM preflight must never mutate installed payloads or local records.
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
@@ -60,7 +60,7 @@ fn effect(manifest: *const rlpm.ExecutionManifest, path: []const u8, addition: b
 }
 const info = "pkgname = demo\npkgver = 2-1\narch = any\n";
 
-test "M8 full sealed stream creates payload metadata database and link manifests without mutation" {
+test "full sealed stream creates payload metadata database and link manifests without mutation" {
     var f = try Fixture.init();
     defer f.deinit();
     var archive = try Archive.init(&.{
@@ -90,7 +90,7 @@ test "M8 full sealed stream creates payload metadata database and link manifests
     try std.testing.expectEqual(.prepared, tx.state); // Read-only preflight boundary.
 }
 
-test "M8 ordered patterns match native slash dot negation escaping and directory behavior" {
+test "ordered patterns match native slash dot negation escaping and directory behavior" {
     const cases = [_]struct { patterns: []const []const u8, path: []const u8, result: rlpm.PathPatterns.Match }{
         .{ .patterns = &.{"usr/*"}, .path = "usr/share/.hidden", .result = .matched },
         .{ .patterns = &.{ "*", "!etc/*", "etc/keep" }, .path = "etc/keep", .result = .matched },
@@ -110,7 +110,7 @@ test "M8 ordered patterns match native slash dot negation escaping and directory
     try std.testing.expectEqual(.matched, try owner.matchNoUpgrade("etc/app.conf"));
 }
 
-test "M8 unowned and target conflicts survive NOCONFLICTS and NoExtract; overwrite resolves files" {
+test "unowned and target conflicts survive NOCONFLICTS and NoExtract; overwrite resolves files" {
     for ([_]bool{ false, true }) |overwrite| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -141,7 +141,7 @@ test "M8 unowned and target conflicts survive NOCONFLICTS and NoExtract; overwri
     }
 }
 
-test "M8 backups compare original local new contents and NoUpgrade always creates pacnew" {
+test "backups compare original local new contents and NoUpgrade always creates pacnew" {
     const cases = [_]struct { old: []const u8, local: []const u8, new: []const u8, noupgrade: bool = false, expected: rlpm.ExecutionManifest.Action }{
         .{ .old = "old", .local = "old", .new = "new", .expected = .replace },
         .{ .old = "old", .local = "edited", .new = "old", .expected = .preserve },
@@ -174,7 +174,7 @@ test "M8 backups compare original local new contents and NoUpgrade always create
     }
 }
 
-test "M8 removal pacsave rotation NOSAVE and file transfers preserve the new owner" {
+test "removal pacsave rotation NOSAVE and file transfers preserve the new owner" {
     for ([_]bool{ false, true }) |no_save| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -199,7 +199,7 @@ test "M8 removal pacsave rotation NOSAVE and file transfers preserve the new own
     }
 }
 
-test "M8 directory transitions reject unowned descendants and allow owned tree removal" {
+test "directory transitions reject unowned descendants and allow owned tree removal" {
     for ([_]bool{ false, true }) |unowned| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -232,7 +232,7 @@ test "M8 directory transitions reject unowned descendants and allow owned tree r
     try tx.preflight();
 }
 
-test "M8 missing backup members retain unhashed metadata without inventing payloads" {
+test "missing backup members retain unhashed metadata without inventing payloads" {
     for ([_]bool{ false, true }) |database_only| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -264,7 +264,7 @@ test "M8 missing backup members retain unhashed metadata without inventing paylo
     }
 }
 
-test "M8 absent backup paths still reject traversal" {
+test "absent backup paths still reject traversal" {
     var f = try Fixture.init();
     defer f.deinit();
     var archive = try Archive.init(&.{.{ .path = ".PKGINFO", .contents = info ++ "backup = ../outside\n" }}, .none);
@@ -279,7 +279,7 @@ test "M8 absent backup paths still reject traversal" {
     try std.testing.expectEqualStrings("../outside", tx.manifest().?.failure.?.path.?);
 }
 
-test "M8 archive traversal hardlink escape duplicate entries and lying mtree are rejected" {
+test "archive traversal hardlink escape duplicate entries and lying mtree are rejected" {
     const cases = [_]struct { entry: Archive.Entry, expected: anyerror }{
         .{ .entry = .{ .path = "../escape", .contents = "bad" }, .expected = error.UnsafeArchivePath },
         .{ .entry = .{ .path = "/absolute", .contents = "bad" }, .expected = error.UnsafeArchivePath },
@@ -305,7 +305,7 @@ test "M8 archive traversal hardlink escape duplicate entries and lying mtree are
     }
 }
 
-test "M8 existing absolute directory links are confined and filesystem changes invalidate review" {
+test "existing absolute directory links are confined and filesystem changes invalidate review" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.tmp.dir.createDirPath(io, "root/usr/bin");
@@ -326,7 +326,7 @@ test "M8 existing absolute directory links are confined and filesystem changes i
     try std.testing.expectError(error.StaleFilesystemState, tx.manifest().?.check());
 }
 
-test "M8 DBONLY keeps file inventory but bypasses payload conflicts and effects" {
+test "DBONLY keeps file inventory but bypasses payload conflicts and effects" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.write("data", "unowned");
@@ -343,7 +343,7 @@ test "M8 DBONLY keeps file inventory but bypasses payload conflicts and effects"
     try std.testing.expectEqual(1, tx.manifest().?.database_changes.items[0].files.len);
 }
 
-test "M8 check-space cushion boundary and read-only filesystems" {
+test "check-space cushion boundary and read-only filesystems" {
     const cap: rlpm.ExecutionManifest.Capacity = .{ .device = 1, .block_size = 4096, .available = 60, .total = 1000, .read_only = false };
     try rlpm.ExecutionManifest.checkCapacity(cap, 9);
     try std.testing.expectError(error.DiskSpaceInsufficient, rlpm.ExecutionManifest.checkCapacity(cap, 10));
@@ -352,7 +352,7 @@ test "M8 check-space cushion boundary and read-only filesystems" {
     try std.testing.expectError(error.ReadOnlyFilesystem, rlpm.ExecutionManifest.checkCapacity(read_only, 0));
 }
 
-test "M8 pinned libalpm oracle replays backup pattern conflict and installed inventory decisions" {
+test "pinned libalpm oracle replays backup pattern conflict and installed inventory decisions" {
     const Case = struct {
         name: []const u8,
         old: ?[]const u8 = null,
@@ -435,7 +435,7 @@ fn allocationPreflight(allocator: std.mem.Allocator, fixture: *Fixture, path: []
     try tx.prepare();
     try tx.preflight();
 }
-test "M8 every allocation failure releases archives root descriptors manifest and lock" {
+test "every allocation failure releases archives root descriptors manifest and lock" {
     var f = try Fixture.init();
     defer f.deinit();
     try f.installed("demo", "conf", "conf\t149603e6c03516362a8da23f624db945");
@@ -446,7 +446,7 @@ test "M8 every allocation failure releases archives root descriptors manifest an
     try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "db/db.lck", .{}));
 }
 
-test "M8 metadata-only targets are reloaded and cannot change identity dependencies or source policy" {
+test "metadata-only targets are reloaded and cannot change identity dependencies or source policy" {
     const cases = [_]struct { original: []const u8 = info, replacement: []const u8, expected: anyerror, required: bool = false }{
         .{ .replacement = "pkgname = other\npkgver = 2-1\narch = any\n", .expected = error.PackageIdentityMismatch },
         .{ .replacement = info ++ "depend = injected\n", .expected = error.PackageMetadataMismatch },
@@ -482,7 +482,7 @@ test "M8 metadata-only targets are reloaded and cannot change identity dependenc
     }
 }
 
-test "M8 cancellation callbacks cannot reenter preflight and retain failed phase diagnostics" {
+test "cancellation callbacks cannot reenter preflight and retain failed phase diagnostics" {
     var f = try Fixture.init();
     defer f.deinit();
     var archive = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = info }, .{ .path = "data", .contents = "new" } }, .none);
@@ -518,7 +518,7 @@ test "M8 cancellation callbacks cannot reenter preflight and retain failed phase
     try std.testing.expect(capture.cancelled and capture.reentry and capture.failed);
 }
 
-test "M8 detects permission changes and symlink loops before payload mutation" {
+test "detects permission changes and symlink loops before payload mutation" {
     for ([_]bool{ false, true }) |loop| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -547,7 +547,7 @@ test "M8 detects permission changes and symlink loops before payload mutation" {
     }
 }
 
-test "M8 large inventory uses indexed ownership and includes database staging in space estimate" {
+test "large inventory uses indexed ownership and includes database staging in space estimate" {
     var f = try Fixture.init();
     defer f.deinit();
     const entries = try a.alloc(Archive.Entry, 2049);
@@ -575,7 +575,7 @@ test "M8 large inventory uses indexed ownership and includes database staging in
     try std.testing.expect(blocks > 2048);
 }
 
-test "M8 sync preflight verifies cached bytes metadata and CachyOS database provenance" {
+test "sync preflight verifies cached bytes metadata and CachyOS database provenance" {
     for ([_]bool{ false, true }) |mismatch| {
         var f = try Fixture.init();
         defer f.deinit();
@@ -626,7 +626,7 @@ test "M8 sync preflight verifies cached bytes metadata and CachyOS database prov
     }
 }
 
-test "M8 backup symlink hashes prior payload without rewriting its absolute target" {
+test "backup symlink hashes prior payload without rewriting its absolute target" {
     var f = try Fixture.init();
     defer f.deinit();
     var archive = try Archive.init(&.{
@@ -648,7 +648,7 @@ test "M8 backup symlink hashes prior payload without rewriting its absolute targ
     try std.testing.expectEqualStrings(entry.new_hash.?, tx.manifest().?.database_changes.items[0].backups[0].hash.?);
 }
 
-test "M8 packages loaded before a stricter policy cannot bypass current preflight verification" {
+test "packages loaded before a stricter policy cannot bypass current preflight verification" {
     var f = try Fixture.init();
     defer f.deinit();
     var archive = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = info }, .{ .path = "data", .contents = "new" } }, .none);

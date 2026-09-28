@@ -1,5 +1,5 @@
 //! Borrowed configuration input. Owner copies all strings/lists; callback contexts
-//! remain borrowed. Runtime effects are tracked by milestone in options.md.
+//! remain borrowed. Runtime effects are documented in options.md.
 const OwnerConfiguration = @This();
 const std = @import("std");
 const SignaturePolicy = @import("SignaturePolicy.zig");
