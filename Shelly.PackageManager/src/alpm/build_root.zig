@@ -1,4 +1,6 @@
 //! Bootstrap inputs are selected by compiled availability, not runtime preference.
+//! These are baseline tools; recipe dependencies may add pacman or libalpm
+//! regardless of the backend compiled into Shelly.
 const selection = @import("backend.zig");
 
 pub const rlpm_only = !selection.libalpm_enabled;

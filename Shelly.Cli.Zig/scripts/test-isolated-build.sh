@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Set to pacman (or the distribution's libalpm development package) to exercise
+# declared guest dependencies while checking that Shelly remains RLPM-only.
+libalpm_package=${SHELLY_TEST_LIBALPM_PACKAGE:-}
+
 if [[ $(id -u) -eq 0 ]]; then
   printf 'skipping isolated smoke test: run from an authenticated normal-user session\n' >&2
   exit 77
@@ -70,11 +74,24 @@ build() {
   test ! -e /usr/local/libexec/shelly/shelly-rlpm-action-worker
   test ! -e /usr/local/libexec/shelly/shelly-download-worker
   if [[ $shelly_rlpm_only == true ]]; then
-    ! command -v pacman
-    if compgen -G '/usr/lib/libalpm.so*'; then return 1; fi
     local linked
     linked=$(LC_ALL=C ldd /usr/local/libexec/shelly/shelly)
     [[ $linked != *libalpm* && $linked != *'not found'* ]]
+    if [[ -z $shelly_libalpm_package ]]; then
+      ! command -v pacman
+      if compgen -G '/usr/lib/libalpm.so*'; then return 1; fi
+    fi
+  fi
+  if [[ -n $shelly_libalpm_package ]]; then
+    pkg-config --exists libalpm
+    printf '#include <alpm.h>\nint main(void) { return alpm_version() == 0; }\n' >alpm-smoke.c
+    local -a alpm_flags
+    read -r -a alpm_flags <<<"$(pkg-config --cflags --libs libalpm)"
+    cc alpm-smoke.c -o alpm-smoke "${alpm_flags[@]}"
+    ./alpm-smoke
+    local application_linked
+    application_linked=$(LC_ALL=C ldd ./alpm-smoke)
+    [[ $application_linked == *libalpm.so* && $application_linked != *'not found'* ]]
   fi
   # Keep the guest alive until the host supervisor checks its private boundary.
   for ((attempt = 0; attempt < 300; attempt++)); do
@@ -113,6 +130,8 @@ package() {
 }
 PKGBUILD
 printf "sha256sums=('%s')\n" "$source_digest" >>"$fixture_dir/PKGBUILD"
+printf 'shelly_libalpm_package=%q\n' "$libalpm_package" >>"$fixture_dir/PKGBUILD"
+printf '%s\n' 'if [[ -n $shelly_libalpm_package ]]; then makedepends+=("$shelly_libalpm_package"); fi' >>"$fixture_dir/PKGBUILD"
 
 # This test-only wrapper runs after sudo, so sudo's umask policy cannot mask
 # the regression. SUDO_USER/UID/GID continue to identify the normal caller.
@@ -221,9 +240,12 @@ for mask in 0022 0007 0027 0077; do
   tar -xOf "$artifact" .PKGINFO >"$case_dir/pkginfo"
   tar -xOf "$artifact" .BUILDINFO >"$case_dir/buildinfo"
   grep -q '^installed = cmake-' "$case_dir/buildinfo"
-  if [[ $shelly_rlpm_only == true ]] && grep -Eq '^installed = (pacman|libalpm)-' "$case_dir/buildinfo"; then
+  if [[ $shelly_rlpm_only == true && -z $libalpm_package ]] && grep -Eq '^installed = (pacman|libalpm)-' "$case_dir/buildinfo"; then
     printf 'RLPM-only guest installed pacman or libalpm\n' >&2
     exit 1
+  fi
+  if [[ -n $libalpm_package ]]; then
+    grep -Fq "installed = $libalpm_package-" "$case_dir/buildinfo"
   fi
   grep -Fxq 'depend = shelly-isolated-runtime-only' "$case_dir/pkginfo"
   tar -tf "$artifact" >"$case_dir/archive-entries"

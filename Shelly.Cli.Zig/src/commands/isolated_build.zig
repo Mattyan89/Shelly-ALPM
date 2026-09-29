@@ -309,7 +309,7 @@ pub const Root = struct {
             operation,
         );
         try operation.checkCancelled();
-        if (capture.forbidden) return error.UnsupportedBuildRootDependency;
+        if (capture.forbidden) return error.UnexpectedBuildRuntimeDependency;
         if (capture.missing or (status != 0 and !capture.static)) return error.MissingBuildRuntime;
     }
 

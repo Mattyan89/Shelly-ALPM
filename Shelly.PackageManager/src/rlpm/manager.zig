@@ -26,7 +26,6 @@ pub const Manager = struct {
     package_setup_failed: bool = false,
     detected_cachyos: bool = false,
     temporary: bool = false,
-    rlpm_only_root: bool = false,
     names: std.heap.ArenaAllocator,
     download_address_family_policy: downloader.AddressFamilyPolicy,
     parallel_download_count: u8,
@@ -45,7 +44,6 @@ pub const Manager = struct {
             .dispatcher = events.Dispatcher.init(allocator),
             .owner = undefined,
             .operation_context = options.operation_context,
-            .rlpm_only_root = options.rlpm_only_root,
             .names = .init(allocator),
             .download_address_family_policy = defaultDownloadAddressFamilyPolicy(),
             .parallel_download_count = defaultParallelDownloadCount(),
@@ -423,11 +421,6 @@ pub const Manager = struct {
         const plan = tx.plan() orelse {
             operation.finish(.success);
             return;
-        };
-        if (self.rlpm_only_root) if (try @import("build_root_policy.zig").rejection(self.allocator, plan)) |message| {
-            defer self.allocator.free(message);
-            self.dispatcher.raiseError(.{ .message = message });
-            return error.UnsupportedBuildRootDependency;
         };
         if (mode == .remove) for (plan.removals) |id| {
             const name = plan.package(id).name;

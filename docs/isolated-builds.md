@@ -35,15 +35,19 @@ messages do not change dependency selection, signature checks, or cancellation.
 
 Binaries compiled with `-Dlibalpm=false` provision an explicit userspace and
 build-tool set instead of `base` and `base-devel`. They copy the host trust
-database without installing `archlinux-keyring`, whose dependency on pacman
-would defeat this profile. RLPM resolves normal repository dependencies and
-rejects any resolved pacman/libalpm requirement before installation, reporting
-the chain from the requested package. Dependency validation stays enabled.
+database without requiring `archlinux-keyring` or its pacman dependency for
+Shelly's own operation. RLPM resolves and installs the recipe's normal repository
+dependencies, including pacman, libalpm, and packages providing the libalpm shared
+library. The compiled backend controls Shelly's implementation and baseline
+tools; it does not restrict the software that can be built. Dependency validation
+stays enabled.
 
 Both profiles stage one CLI at `/usr/local/libexec/shelly/shelly`; its private
 worker modes re-execute that binary inside the guest. The RLPM-only profile checks
 its runtime libraries before provisioning and inside the guest, and rejects
 missing libraries or libalpm linkage. No sibling worker files are required.
+These checks apply to the staged Shelly executable, not the recipe's tools or
+outputs, which may link to libalpm.
 The guest receives a local-database-only package configuration after provisioning;
 the host's repository configuration and signature policy govern provisioning.
 Configuration and local database permissions allow the unprivileged guest to
@@ -115,6 +119,13 @@ database is removed after review; provisioning refreshes and verifies the
 repositories again using the configured signature policy. Local repository
 servers must be readable by the invoking user during review. A built archive
 must be published in a configured repository's database to be resolved here.
+
+For a recipe that compiles against libalpm, declare the package supplying
+`alpm.h` and `libalpm.pc` in the global `makedepends` array (`pacman` on Arch,
+or the distribution's development package). A declaration only inside a
+`package_<name>()` function does not provision those build inputs. Keep the
+recipe's intended backend and build flags; an RLPM-only coordinator can build
+a libalpm-enabled application.
 
 Build dependency planning uses the PKGBUILD's global `depends`, `makedepends`,
 and (unless checks are disabled) `checkdepends`, including the active
@@ -252,8 +263,21 @@ interactively when run from a terminal; unattended runs require an existing
 sudo credential and exit `77` (skipped) if authentication is unavailable.
 Set `SHELLY_LIBALPM=false` when the smoke or documentation script builds its own
 CLI to exercise the RLPM-only variant. The smoke fixture detects the staged
-binary's variant and additionally checks the single-executable layout, permissions, library resolution,
-the absence of pacman/libalpm, and repository dependencies in `.BUILDINFO`.
+binary's variant and additionally checks the single-executable layout,
+permissions, library resolution, the absence of baseline pacman/libalpm
+dependencies, and repository dependencies in `.BUILDINFO`.
+
+Run the same fixture with a declared libalpm build dependency to verify that
+the guest can compile and run a program using `alpm.h` and `libalpm.pc` while
+the staged Shelly executable remains independent of libalpm:
+
+```sh
+SHELLY_LIBALPM=false SHELLY_TEST_LIBALPM_PACKAGE=pacman \
+  Shelly.Cli.Zig/scripts/test-isolated-build.sh
+```
+
+Use the distribution's package name instead of `pacman` if it packages the
+libalpm development files separately.
 
 Cancellation across the elevation boundary has a rootless integration fixture
 that uses a deterministic fake elevator:

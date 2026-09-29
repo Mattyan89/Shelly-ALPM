@@ -186,9 +186,9 @@ Both worker modes then re-execute the staged Shelly inside the guest.
 Update guest permission fixtures and
 `Shelly.Cli.Zig/scripts/test-isolated-build.sh` to assert the single-executable
 layout. Preserve the compile-time provisioning profile selection: only
-`-Dlibalpm=false` uses the explicit RLPM-only package set and forbids pacman/libalpm
-infrastructure dependencies. Runtime backend selection must not change that
-profile.
+`-Dlibalpm=false` uses the explicit RLPM-only package set without requiring
+pacman/libalpm for Shelly itself. Recipe dependencies may install those packages
+in the guest. Runtime backend selection must not change the provisioning profile.
 
 Exercise host bootstrap, guest queries, dependency installation, package actions,
 artifact validation/export, and optional host installation using the new launch
@@ -230,7 +230,7 @@ Use descriptive test and section names throughout.
 | Download behavior | Existing cache, refresh, signature, resume, timeout, retry, concurrency, progress, and cancellation tests pass through the new launch interface. Run actual sandboxed downloads in an environment that permits the required privilege transitions. |
 | Action behavior | Hook/scriptlet/ldconfig, network-policy failure, concurrent stdin/output, parent-state preservation, process-group cancellation, and full executor integration tests pass. |
 | Relocation | A copied Shelly runs both modes without sibling helpers or source-cache paths; self-execution also works after its original pathname is renamed/replaced. |
-| Isolated builds | Complete an RLPM-only isolated build with only Shelly staged and no pacman/libalpm in the guest; also run the existing libalpm-enabled isolation regressions. |
+| Isolated builds | Complete an RLPM-only isolated build with only Shelly staged and no pacman/libalpm needed by the recipe; also build a recipe that declares and links to libalpm while Shelly remains independent, and run the existing libalpm-enabled isolation regressions. |
 | Library consumers | Relevant library test targets use explicit, noninstalled fixtures; embedders have a documented dispatcher/override contract and configuration ownership coverage. |
 | Dynamic dependencies | Inspect the unified executable and transitive libraries for each build variant; preserve the RLPM-only and optional Flatpak boundaries. |
 | User-facing behavior | Help, version, completions, normal output formatting, UI protocol, and bootstrap/sandbox entry points retain their behavior. |

@@ -449,7 +449,6 @@ test {
     _ = @import("alpm/backend.zig");
     if (Manager.libalpm_enabled) _ = @import("alpm/bindings.zig");
     _ = @import("alpm/bootstrap.zig");
-    _ = @import("rlpm/build_root_policy.zig");
     _ = @import("alpm/manager.zig");
     if (Manager.libalpm_enabled) _ = @import("alpm/manager_test.zig");
     _ = @import("alpm/events.zig");

@@ -61,9 +61,31 @@ the requested variant. Prebuilt packages likewise declare the expected variant
 with `SHELLY_LIBALPM` and reject a mismatched release binary. Pacman is optional for package-owner lookup during pacfile merging.
 GPG and a populated host trust database remain necessary for signature verification.
 
-Only binaries compiled with `-Dlibalpm=false` use the explicit, pacman-free
-[isolated-build profile](isolated-builds.md). Selecting RLPM at runtime in a
-libalpm-enabled binary retains the existing bootstrap packages and staging.
+`PKGBUILD-devario` builds the full application with RLPM only, pinned to a
+published RLPM commit. It always passes `-Dlibalpm=false`, including in CLI and
+PackageManager checks; `SHELLY_LIBALPM` does not override this recipe. The package
+is named `shelly`, keeps Flatpak optional, and has no pacman, libalpm, or
+`devario-alpm-runtime` dependency. Packaging rejects unresolved libraries or
+transitive libalpm linkage in the shipped executables.
+
+```sh
+shelly build ./PKGBUILD-devario
+# Alternatively, with makepkg and the build dependencies already installed:
+makepkg -p PKGBUILD-devario
+```
+
+The recipe is self-contained: assets and configuration come from the pinned
+checkout. It builds upstream's configuration/storage defaults. It does not apply
+the separate Devario distribution patches for `/etc/shelly.conf`,
+`/var/lib/shelly`, or `SHELLY_ALPM_CONFIG`; that distribution integration remains
+in Devario's own package repository.
+
+Only binaries compiled with `-Dlibalpm=false` use the explicit bootstrap package
+set without requiring pacman in the [isolated-build profile](isolated-builds.md).
+Selecting RLPM at runtime in a libalpm-enabled binary retains the existing
+bootstrap packages and staging.
+Recipe dependencies may still install pacman or libalpm inside the guest;
+Shelly's compiled backend does not change the package being built.
 
 ## Library boundary
 

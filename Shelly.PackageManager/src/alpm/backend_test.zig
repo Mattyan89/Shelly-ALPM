@@ -56,49 +56,87 @@ test "native backend explicit unavailable selection fails before opening configu
     try t.expectError(error.BackendUnavailable, pm.Manager.init(t.allocator, t.environ, .{ .backend = .libalpm, .config_path = "/nonexistent/config" }));
 }
 
-test "native backend rejects a transitive build root requirement before download or payload writes" {
-    var fixture = try Fixture.init(.rlpm);
-    defer fixture.deinit();
-    fixture.options.rlpm_only_root = true;
-    try addRepository(&fixture);
-    {
-        var file = try fixture.temp.dir.createFile(t.io, "db/sync/testing.db", .{});
-        defer file.close(t.io);
-        var buffer: [4096]u8 = undefined;
-        var writer = file.writer(t.io, &buffer);
-        var tar: std.tar.Writer = .{ .underlying_writer = &writer.interface };
-        for ([_][2][]const u8{ .{ "recipe", "tool" }, .{ "tool", "pacman" }, .{ "pacman", "" } }) |entry| {
-            const path = try std.fmt.allocPrint(t.allocator, "{s}-1-1/desc", .{entry[0]});
-            defer t.allocator.free(path);
-            const desc = try std.fmt.allocPrint(t.allocator, "%NAME%\n{s}\n\n%VERSION%\n1-1\n\n%ARCH%\nany\n\n%FILENAME%\n{s}.pkg.tar\n\n%CSIZE%\n1\n\n%DEPENDS%\n{s}\n\n", .{ entry[0], entry[0], entry[1] });
-            defer t.allocator.free(desc);
-            try tar.writeFileBytes(path, desc, .{ .mode = 0o644 });
-        }
-        try tar.finishPedantically();
-        try writer.interface.flush();
-    }
-    const manager = try fixture.manager();
-    defer manager.deinit();
-    const Capture = struct {
-        chain_seen: bool = false,
-        fn receive(data: ?*anyopaque, value: pm.Manager.events.ErrorArgs) void {
-            const self: *@This() = @ptrCast(@alignCast(data.?));
-            self.chain_seen = self.chain_seen or std.mem.indexOf(u8, value.message, "recipe -> tool -> pacman") != null;
-        }
+test "native backend RLPM provisions pacman libalpm and transitive ABI providers in private roots" {
+    const Requirement = struct {
+        dependency: [:0]const u8,
+        supplier: []const u8,
+        provides: []const u8 = "",
     };
-    var capture: Capture = .{};
-    _ = try manager.dispatcher.addErrorHandler(.{ .function = Capture.receive, .data = &capture });
-    var targets = [_][:0]const u8{"recipe"};
-    try t.expectError(error.UnsupportedBuildRootDependency, manager.install_packages(&targets, .{}));
-    try t.expect(capture.chain_seen);
-    const installed = try manager.get_installed_packages();
-    defer pm.Manager.OwnedPackage.deinitSlice(t.allocator, installed);
-    try t.expectEqual(@as(usize, 0), installed.len);
-    try t.expectError(error.FileNotFound, fixture.temp.dir.statFile(t.io, "db/db.lck", .{}));
-    var cache = try fixture.temp.dir.openDir(t.io, "cache", .{ .iterate = true });
-    defer cache.close(t.io);
-    var entries = cache.iterate();
-    try t.expectEqual(null, try entries.next(t.io));
+    for ([_]Requirement{
+        .{ .dependency = "pacman", .supplier = "pacman" },
+        .{ .dependency = "libalpm", .supplier = "libalpm" },
+        .{ .dependency = "libalpm.so=16-64", .supplier = "alpm-runtime", .provides = "libalpm.so=16-64" },
+        .{ .dependency = "lib:libalpm.so=16-64", .supplier = "alpm-runtime", .provides = "lib:libalpm.so=16-64" },
+    }) |requirement| {
+        var fixture = try Fixture.init(.rlpm);
+        defer fixture.deinit();
+        const a = fixture.arena.allocator();
+        try addRepository(&fixture);
+        {
+            const file = try fixture.temp.dir.createFile(t.io, "db/sync/testing.db", .{});
+            defer file.close(t.io);
+            var buffer: [4096]u8 = undefined;
+            var writer = file.writer(t.io, &buffer);
+            var tar: std.tar.Writer = .{ .underlying_writer = &writer.interface };
+            const Package = struct {
+                name: []const u8,
+                dependency: []const u8 = "",
+                provides: []const u8 = "",
+            };
+            for ([_]Package{
+                .{ .name = "recipe", .dependency = "tool" },
+                .{ .name = "tool", .dependency = requirement.dependency },
+                .{ .name = requirement.supplier, .provides = requirement.provides },
+            }) |package| {
+                const filename = try std.fmt.allocPrint(a, "{s}-1-1-any.pkg.tar", .{package.name});
+                const cache_path = try std.fs.path.join(a, &.{ "cache", filename });
+                const payload_path = try std.fmt.allocPrint(a, "usr/share/{s}", .{package.name});
+                {
+                    const archive = try fixture.temp.dir.createFile(t.io, cache_path, .{});
+                    defer archive.close(t.io);
+                    var archive_buffer: [4096]u8 = undefined;
+                    var archive_writer = archive.writer(t.io, &archive_buffer);
+                    var archive_tar: std.tar.Writer = .{ .underlying_writer = &archive_writer.interface };
+                    const dependency = if (package.dependency.len == 0) "" else try std.fmt.allocPrint(a, "depend = {s}\n", .{package.dependency});
+                    const provides = if (package.provides.len == 0) "" else try std.fmt.allocPrint(a, "provides = {s}\n", .{package.provides});
+                    const metadata = try std.fmt.allocPrint(a, "pkgname = {s}\npkgver = 1-1\narch = any\n{s}{s}", .{ package.name, dependency, provides });
+                    try archive_tar.writeFileBytes(".PKGINFO", metadata, .{ .mode = 0o644 });
+                    try archive_tar.writeFileBytes(payload_path, package.name, .{ .mode = 0o644 });
+                    try archive_tar.finishPedantically();
+                    try archive_writer.interface.flush();
+                }
+                const bytes = try fixture.temp.dir.readFileAlloc(t.io, cache_path, a, .limited(64 * 1024));
+                var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+                std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
+                const checksum = std.fmt.bytesToHex(digest, .lower);
+                const desc_path = try std.fmt.allocPrint(a, "{s}-1-1/desc", .{package.name});
+                const desc = try std.fmt.allocPrint(
+                    a,
+                    "%NAME%\n{s}\n\n%VERSION%\n1-1\n\n%ARCH%\nany\n\n%FILENAME%\n{s}\n\n" ++
+                        "%CSIZE%\n{d}\n\n%SHA256SUM%\n{s}\n\n%DEPENDS%\n{s}\n\n%PROVIDES%\n{s}\n\n",
+                    .{ package.name, filename, bytes.len, checksum, package.dependency, package.provides },
+                );
+                try tar.writeFileBytes(desc_path, desc, .{ .mode = 0o644 });
+            }
+            try tar.finishPedantically();
+            try writer.interface.flush();
+        }
+        const manager = try fixture.manager();
+        defer manager.deinit();
+        var targets = [_][:0]const u8{"recipe"};
+        try manager.install_packages(&targets, .{ .nohooks = true, .noscriptlet = true });
+        try t.expectEqual(pm.Manager.Backend.rlpm, manager.backend());
+        try t.expect(try manager.is_dependency_satisfied_by_installed_packages(requirement.dependency));
+        const installed = try manager.get_installed_packages();
+        defer pm.Manager.OwnedPackage.deinitSlice(t.allocator, installed);
+        try t.expectEqual(@as(usize, 3), installed.len);
+        for ([_][]const u8{ "recipe", "tool", requirement.supplier }) |name| {
+            const path = try std.fmt.allocPrint(a, "root/usr/share/{s}", .{name});
+            const payload = try fixture.temp.dir.readFileAlloc(t.io, path, a, .limited(64));
+            try t.expectEqualStrings(name, payload);
+        }
+        try t.expectError(error.FileNotFound, fixture.temp.dir.statFile(t.io, "db/db.lck", .{}));
+    }
 }
 
 test "native backend archive install query reason and removal in private roots" {

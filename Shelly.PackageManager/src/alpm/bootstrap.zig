@@ -467,7 +467,6 @@ fn bootstrapReporting(
         .log_file = log_path,
         .gpg_directory = target_gpg_path,
         .root_hooks_only = true,
-        .rlpm_only_root = build_root.rlpm_only,
     });
     defer manager.deinit();
 

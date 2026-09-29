@@ -261,7 +261,7 @@ pub fn cause(err: anyerror) []const u8 {
         error.IsolatedBootstrapFailed => "Could not provision the isolated build root. Review the package installation and initialization hook output.",
         error.CommitFailed => "The package transaction failed. Review the preceding backend error for its cause.",
         error.DuplicateTarget => "The same package was requested more than once in this transaction. Remove duplicate package targets and retry.",
-        error.UnsupportedBuildRootDependency => "This RLPM-only build root requires a package or library from pacman/libalpm. Review the reported dependency chain.",
+        error.UnexpectedBuildRuntimeDependency => "The RLPM-only Shelly executable links to libalpm. Rebuild Shelly with -Dlibalpm=false. Packages being built may depend on libalpm.",
         error.MissingBuildRuntime => "A required library or executable is missing from the isolated build root. Review the runtime dependency output.",
         error.BootstrapPackageSetupFailed => "Package initialization failed inside the isolated build root. Review the reported hook or scriptlet error before retrying.",
         error.IsolatedCommandFailed => "Could not finish setting up the isolated build root. Review the setup command output.",

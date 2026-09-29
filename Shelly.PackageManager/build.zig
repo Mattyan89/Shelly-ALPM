@@ -321,7 +321,7 @@ pub fn build(b: *std.Build) void {
 
     const bootstrap_tests = b.addTest(.{
         .root_module = mod,
-        .filters = &.{ "bootstrap", "provisioning", "root finalizer", "build root policy" },
+        .filters = &.{ "bootstrap", "provisioning", "root finalizer" },
     });
     const bootstrap_step = b.step("bootstrap-test", "Test isolated root configuration and diagnostics");
     bootstrap_step.dependOn(&b.addRunArtifact(bootstrap_tests).step);
