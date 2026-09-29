@@ -42,9 +42,16 @@ pub const Event = union(enum) {
 };
 pub const Progress = struct { phase: Phase, package: ?PackageRef, percent: u8, position: usize, total: usize };
 pub const Download = union(enum) {
+    /// Queued acquisition; no network slot has been occupied yet.
     init: struct { name: []const u8, optional: bool },
-    progress: struct { name: []const u8, downloaded: u64, total: ?u64 },
-    retry: struct { name: []const u8, resuming: bool },
+    started: struct { name: []const u8, attempt: u32 },
+    progress: struct { name: []const u8, attempt: u32 = 1, downloaded: u64, total: ?u64 },
+    retry: struct { name: []const u8, attempt: u32 = 1, resuming: bool },
+    /// Payload and applicable signature requests ended, before acceptance.
+    /// A verification retry starts a new attempt for the same acquisition.
+    transferred: struct { name: []const u8, attempt: u32, downloaded: u64, result: enum { updated, unchanged, failed } },
+    processing: struct { name: []const u8, stage: enum { verification, publication }, boundary: Boundary, position: usize, total: usize },
+    /// Terminal acquisition result, after verification and durable publication.
     completed: struct { name: []const u8, downloaded: u64, result: enum { updated, unchanged, failed } },
 };
 pub const Key = struct { fingerprint: []const u8, user_id: ?[]const u8 = null };

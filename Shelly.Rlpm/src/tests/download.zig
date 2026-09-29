@@ -408,3 +408,357 @@ test "URL batches marshal logical events to Owner and finish started jobs after 
     try std.testing.expectEqual(4, events.initialized);
     try std.testing.expectEqual(4, events.completed);
 }
+
+const HttpFixture = struct {
+    server: std.Io.net.Server,
+    body: []const u8,
+    active: std.atomic.Value(usize) = .init(0),
+    peak: std.atomic.Value(usize) = .init(0),
+    requests: std.atomic.Value(usize) = .init(0),
+    signatures: std.atomic.Value(usize) = .init(0),
+    gate_slow: bool = false,
+    unknown_length: bool = false,
+    fast_reported: std.atomic.Value(bool) = .init(false),
+    timed_out: std.atomic.Value(bool) = .init(false),
+    failed: std.atomic.Value(bool) = .init(false),
+
+    fn serve(self: *@This()) !void {
+        var handlers: std.Io.Group = .init;
+        defer handlers.cancel(io);
+        while (true) {
+            const stream = try self.server.accept(io);
+            handlers.concurrent(io, respond, .{ self, stream }) catch |err| {
+                stream.close(io);
+                return err;
+            };
+        }
+    }
+    fn respond(self: *@This(), stream: std.Io.net.Stream) void {
+        defer stream.close(io);
+        self.respondInner(stream) catch |err| {
+            if (err != error.Canceled) self.failed.store(true, .release);
+        };
+    }
+    fn respondInner(self: *@This(), stream: std.Io.net.Stream) !void {
+        var read_buffer: [2048]u8 = undefined;
+        var reader = stream.reader(io, &read_buffer);
+        const line = try reader.interface.takeDelimiter('\n') orelse return error.EndOfStream;
+        var parts = std.mem.tokenizeScalar(u8, line, ' ');
+        _ = parts.next();
+        const path = parts.next() orelse return error.InvalidRequest;
+        const missing = std.mem.startsWith(u8, path, "/missing/");
+        const signature = std.mem.endsWith(u8, path, ".sig");
+        const slow = std.mem.indexOf(u8, path, "/slow.") != null;
+        while (try reader.interface.takeDelimiter('\n')) |header| {
+            if (std.mem.eql(u8, header, "\r")) break;
+        } else return error.EndOfStream;
+        _ = self.requests.fetchAdd(1, .monotonic);
+        if (signature) _ = self.signatures.fetchAdd(1, .monotonic);
+        const active = self.active.fetchAdd(1, .acq_rel) + 1;
+        _ = self.peak.fetchMax(active, .monotonic);
+        {
+            defer _ = self.active.fetchSub(1, .acq_rel);
+            if (self.gate_slow and slow and !signature) {
+                // A regression that defers callbacks until join must fail in
+                // bounded time, rather than deadlock the fixture's server.
+                const start = std.Io.Clock.awake.now(io);
+                while (!self.fast_reported.load(.acquire)) {
+                    if (start.durationTo(std.Io.Clock.awake.now(io)).toMilliseconds() > 3000) {
+                        self.timed_out.store(true, .release);
+                        break;
+                    }
+                    try io.sleep(.fromMilliseconds(5), .awake);
+                }
+            } else try io.sleep(.fromMilliseconds(30), .awake);
+        }
+        var write_buffer: [256]u8 = undefined;
+        var writer = stream.writer(io, &write_buffer);
+        if (missing or signature) {
+            try writer.interface.writeAll("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        } else {
+            if (self.unknown_length) {
+                try writer.interface.writeAll("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+            } else try writer.interface.print("HTTP/1.1 200 OK\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{self.body.len});
+            try writer.interface.writeAll(self.body);
+        }
+        try writer.interface.flush();
+    }
+};
+
+test "package and repository HTTP queues bound overlapping payload signature and mirror requests" {
+    var archive = try Archive.init(&.{.{ .path = "demo-1-1/desc", .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n" }}, .none);
+    defer archive.deinit();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(io, archive.path, a, .limited(1024 * 1024));
+    defer a.free(bytes);
+    for ([_]u8{ 1, 3, 10 }) |limit| for ([_]bool{ false, true }) |database| {
+        var fixture = try Fixture.init();
+        defer fixture.deinit();
+        const address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
+        var server: HttpFixture = .{ .server = try address.listen(io, .{ .reuse_address = true }), .body = bytes };
+        defer server.server.deinit(io);
+        var serving = try io.concurrent(HttpFixture.serve, .{&server});
+        defer _ = serving.cancel(io) catch {};
+        var arena = std.heap.ArenaAllocator.init(a);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        const port = server.server.socket.address.getPort();
+        const mirrors = [_][]const u8{
+            try std.fmt.allocPrint(alloc, "http://127.0.0.1:{d}/missing", .{port}),
+            try std.fmt.allocPrint(alloc, "http://127.0.0.1:{d}/good", .{port}),
+        };
+        const policy: rlpm.SignaturePolicy = .{ .package = .optional, .database = .optional };
+        var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache}, .parallel_downloads = limit }, &.{});
+        defer owner.deinit() catch unreachable;
+        var requests: [12]rlpm.Downloads.Request = undefined;
+        for (&requests, 0..) |*request, index| {
+            const name = try std.fmt.allocPrint(alloc, "repo{d}", .{index});
+            if (database) _ = try owner.registerDatabase(.{ .database_name = name, .servers = &mirrors, .signature_policy = policy });
+            request.* = .{ .name = try std.fmt.allocPrint(alloc, "{s}.pkg", .{name}), .servers = mirrors[1..], .cache_servers = mirrors[0..1], .policy = policy };
+        }
+        if (database) {
+            var result = try owner.refreshDatabases(io, true);
+            defer result.deinit();
+            try result.check();
+            try std.testing.expectEqual(12, result.databases.len);
+        } else {
+            const files = try rlpm.Downloads.acquire(&owner, io, &requests);
+            defer a.free(files);
+            for (files) |*file| file.deinit();
+        }
+        const peak = server.peak.load(.acquire);
+        try std.testing.expect(peak <= limit);
+        try std.testing.expect(if (limit == 1) peak == 1 else peak > 1);
+        try std.testing.expectEqual(12, server.signatures.load(.acquire));
+        try std.testing.expectEqual(36, server.requests.load(.acquire));
+        try std.testing.expect(!server.failed.load(.acquire));
+    };
+}
+
+test "fast transfer completion reaches the owner before a slow response is released" {
+    const Capture = struct {
+        server: *HttpFixture,
+        owner: *rlpm.Owner,
+        thread: @TypeOf(std.os.linux.gettid()),
+        transferred: usize = 0,
+        accepted: usize = 0,
+        wrong_thread: bool = false,
+        fn receive(data: ?*anyopaque, value: rlpm.Callbacks.Download) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            self.wrong_thread = self.wrong_thread or self.thread != std.os.linux.gettid();
+            switch (value) {
+                .transferred => |update| {
+                    std.testing.expectEqual(0, self.accepted) catch unreachable;
+                    self.transferred += 1;
+                    if (std.mem.startsWith(u8, update.name, "fast.")) self.server.fast_reported.store(true, .release);
+                },
+                .completed => self.accepted += 1,
+                .progress => |update| if (std.mem.startsWith(u8, update.name, "fast.")) {
+                    std.testing.expect(!self.server.fast_reported.load(.acquire)) catch unreachable;
+                },
+                else => {},
+            }
+            std.testing.expectError(error.CallbackReentry, self.owner.setCallbacks(.{})) catch unreachable;
+        }
+    };
+    var archive = try Archive.init(&.{.{ .path = "demo-1-1/desc", .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n" }}, .none);
+    defer archive.deinit();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(io, archive.path, a, .limited(1024 * 1024));
+    defer a.free(bytes);
+    for ([_]bool{ false, true }) |database| {
+        var fixture = try Fixture.init();
+        defer fixture.deinit();
+        const address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
+        var server: HttpFixture = .{ .server = try address.listen(io, .{ .reuse_address = true }), .body = bytes, .gate_slow = true, .unknown_length = true };
+        defer server.server.deinit(io);
+        var serving = try io.concurrent(HttpFixture.serve, .{&server});
+        defer _ = serving.cancel(io) catch {};
+        const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}", .{server.server.socket.address.getPort()});
+        defer a.free(url);
+        var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache}, .parallel_downloads = 3 }, &.{});
+        defer owner.deinit() catch unreachable;
+        var capture: Capture = .{ .server = &server, .owner = &owner, .thread = std.os.linux.gettid() };
+        try owner.setCallbacks(.{ .download = Capture.receive, .download_context = &capture });
+        if (database) {
+            for ([_][]const u8{ "slow", "fast" }) |name| _ = try owner.registerDatabase(.{ .database_name = name, .servers = &.{url} });
+            var result = try owner.refreshDatabases(io, true);
+            defer result.deinit();
+            try result.check();
+        } else {
+            const files = try rlpm.Downloads.acquire(&owner, io, &.{
+                .{ .name = "slow.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
+                .{ .name = "fast.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
+            });
+            defer a.free(files);
+            for (files) |*file| file.deinit();
+        }
+        try std.testing.expectEqual(2, capture.transferred);
+        try std.testing.expectEqual(2, capture.accepted);
+        try std.testing.expect(!capture.wrong_thread and !server.timed_out.load(.acquire));
+    }
+}
+
+const AcceptanceEvents = struct {
+    owner: *rlpm.Owner,
+    started: usize = 0,
+    transferred: usize = 0,
+    completed: usize = 0,
+    accepted: usize = 0,
+    verification_failures: usize = 0,
+    last_attempt: u32 = 0,
+    cancel_stage: ?@FieldType(@FieldType(rlpm.Callbacks.Download, "processing"), "stage") = null,
+    cancel_retry: bool = false,
+    fn receive(data: ?*anyopaque, value: rlpm.Callbacks.Download) void {
+        const self: *@This() = @ptrCast(@alignCast(data.?));
+        switch (value) {
+            .started => |update| {
+                self.started += 1;
+                std.testing.expect(update.attempt > self.last_attempt) catch unreachable;
+                self.last_attempt = update.attempt;
+                if (self.cancel_retry and update.attempt == 2) self.owner.requestCancellation();
+            },
+            .transferred => |update| {
+                if (update.result != .failed) self.transferred += 1;
+            },
+            .processing => |update| {
+                if (update.stage == .verification and update.boundary == .failed) self.verification_failures += 1;
+                if (self.cancel_stage == update.stage and update.boundary == .start) self.owner.requestCancellation();
+            },
+            .completed => |update| {
+                self.completed += 1;
+                if (update.result != .failed) self.accepted += 1;
+            },
+            else => {},
+        }
+    }
+};
+
+test "rejected database candidates reopen a transfer attempt and retain one acquisition result" {
+    for ([_]bool{ false, true }) |cancel| {
+        var fixture = try Fixture.init();
+        defer fixture.deinit();
+        try fixture.repository("1-1");
+        try fixture.temporary.dir.createDirPath(io, "bad");
+        try fixture.temporary.dir.writeFile(io, .{ .sub_path = "bad/cachyos.db", .data = "invalid archive" });
+        const bad = try std.fmt.allocPrint(a, "file://{s}/bad", .{fixture.path});
+        defer a.free(bad);
+        var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache} }, &.{.{ .database_name = "cachyos", .servers = &.{ bad, fixture.server } }});
+        defer owner.deinit() catch unreachable;
+        var capture: AcceptanceEvents = .{ .owner = &owner, .cancel_retry = cancel };
+        try owner.setCallbacks(.{ .download = AcceptanceEvents.receive, .download_context = &capture });
+        var result = try owner.refreshDatabases(io, true);
+        defer result.deinit();
+        if (cancel) {
+            try std.testing.expectError(error.Cancelled, result.check());
+            try std.testing.expectEqual(0, capture.accepted);
+            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "sync/cachyos.db", .{}));
+        } else {
+            try result.check();
+            try std.testing.expectEqual(1, capture.accepted);
+            try std.testing.expectEqual(2, capture.transferred);
+            try std.testing.expect((try owner.findPackage(owner.findDatabase("cachyos").?, "demo")) != null);
+        }
+        try std.testing.expectEqual(2, capture.started);
+        try std.testing.expectEqual(1, capture.completed);
+        try std.testing.expectEqual(1, capture.verification_failures);
+        try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "db.lck", .{}));
+    }
+}
+
+test "transferred packages with bad digests fail acceptance without publishing cache bytes" {
+    var fixture = try Fixture.init();
+    defer fixture.deinit();
+    try fixture.temporary.dir.writeFile(io, .{ .sub_path = "mirror/demo.pkg", .data = "package" });
+    var owner = try fixture.owner();
+    defer owner.deinit() catch unreachable;
+    var version = try rlpm.Version.init("1-1", a);
+    defer version.deinit(a);
+    const package: rlpm.Package = .{ .name = "demo", .version = version, .database_name = "core", .compressed_size = 7, .sha256_sum = "0000000000000000000000000000000000000000000000000000000000000000" };
+    var capture: AcceptanceEvents = .{ .owner = &owner };
+    try owner.setCallbacks(.{ .download = AcceptanceEvents.receive, .download_context = &capture });
+    try std.testing.expectError(error.ChecksumMismatch, rlpm.Downloads.acquire(&owner, io, &.{.{ .name = "demo.pkg", .package = &package, .servers = &.{fixture.server}, .policy = rlpm.OwnerConfiguration.disabled_signatures }}));
+    try std.testing.expectEqual(1, capture.transferred);
+    try std.testing.expectEqual(1, capture.verification_failures);
+    try std.testing.expectEqual(1, capture.completed);
+    try std.testing.expectEqual(0, capture.accepted);
+    try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "cache/demo.pkg", .{}));
+}
+
+test "cancellation at verification and publication boundaries leaves packages and databases unpublished" {
+    const Stage = @FieldType(@FieldType(rlpm.Callbacks.Download, "processing"), "stage");
+    for ([_]Stage{ .verification, .publication }) |stage| for ([_]bool{ false, true }) |database| {
+        var fixture = try Fixture.init();
+        defer fixture.deinit();
+        try fixture.repository("1-1");
+        try fixture.temporary.dir.writeFile(io, .{ .sub_path = "mirror/demo.pkg", .data = "package" });
+        var owner = try fixture.owner();
+        defer owner.deinit() catch unreachable;
+        var capture: AcceptanceEvents = .{ .owner = &owner, .cancel_stage = stage };
+        try owner.setCallbacks(.{ .download = AcceptanceEvents.receive, .download_context = &capture });
+        if (database) {
+            var result = try owner.refreshDatabases(io, true);
+            defer result.deinit();
+            try std.testing.expectError(error.Cancelled, result.check());
+            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "db.lck", .{}));
+            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "sync/cachyos.db", .{}));
+        } else {
+            const url = try std.fmt.allocPrint(a, "{s}/demo.pkg", .{fixture.server});
+            defer a.free(url);
+            try std.testing.expectError(error.Cancelled, owner.fetchPackage(io, url));
+            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "cache/demo.pkg", .{}));
+        }
+        try std.testing.expectEqual(1, capture.transferred);
+        try std.testing.expectEqual(1, capture.completed);
+        try std.testing.expectEqual(0, capture.accepted);
+    };
+}
+
+test "cancellation interrupts an active HTTP request and leaves queued acquisitions unpublished" {
+    const Cancel = struct {
+        server: *HttpFixture,
+        owner: *rlpm.Owner,
+        fn run(self: *@This()) void {
+            const start = std.Io.Clock.awake.now(io);
+            while (self.server.active.load(.acquire) == 0) {
+                if (start.durationTo(std.Io.Clock.awake.now(io)).toMilliseconds() > 3000) break;
+                io.sleep(.fromMilliseconds(5), .awake) catch break;
+            }
+            self.owner.requestCancellation();
+        }
+    };
+    for ([_]bool{ false, true }) |database| {
+        var fixture = try Fixture.init();
+        defer fixture.deinit();
+        const address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
+        var server: HttpFixture = .{ .server = try address.listen(io, .{ .reuse_address = true }), .body = "unused", .gate_slow = true };
+        defer server.server.deinit(io);
+        var serving = try io.concurrent(HttpFixture.serve, .{&server});
+        defer _ = serving.cancel(io) catch {};
+        const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}", .{server.server.socket.address.getPort()});
+        defer a.free(url);
+        var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache}, .parallel_downloads = 1 }, &.{});
+        defer owner.deinit() catch unreachable;
+        var capture: DownloadEvents = .{ .owner = &owner, .thread = std.os.linux.gettid() };
+        try owner.setCallbacks(.{ .download = DownloadEvents.callback, .download_context = &capture });
+        var cancel: Cancel = .{ .server = &server, .owner = &owner };
+        var cancelling = try io.concurrent(Cancel.run, .{&cancel});
+        defer cancelling.await(io);
+        if (database) {
+            for ([_][]const u8{ "slow", "queued" }) |name| _ = try owner.registerDatabase(.{ .database_name = name, .servers = &.{url} });
+            var result = try owner.refreshDatabases(io, true);
+            defer result.deinit();
+            try std.testing.expectError(error.Cancelled, result.check());
+            for (result.databases) |entry| try std.testing.expectEqual(.failed, entry.outcome);
+            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "db.lck", .{}));
+        } else {
+            try std.testing.expectError(error.Cancelled, rlpm.Downloads.acquire(&owner, io, &.{
+                .{ .name = "slow.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
+                .{ .name = "queued.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
+            }));
+            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "cache/queued.pkg", .{}));
+        }
+        try std.testing.expectEqual(1, server.requests.load(.acquire));
+        try std.testing.expectEqual(2, capture.initialized);
+        try std.testing.expectEqual(2, capture.completed);
+        try std.testing.expect(!server.timed_out.load(.acquire));
+    }
+}

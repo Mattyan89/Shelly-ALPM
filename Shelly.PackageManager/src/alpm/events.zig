@@ -13,6 +13,16 @@ pub const ProgressArgs = struct {
     current: c_ulong,
 };
 
+/// Observation only; does not attach an operation or change confirmation policy.
+pub const DownloadUpdate = struct {
+    name: []const u8,
+    operation_id: ?operation_api.OperationId = null,
+    state: enum { batch_start, started, progress, retry, completed, unchanged, failed },
+    bytes: u64 = 0,
+    total: ?u64 = null,
+    resuming: bool = false,
+};
+
 pub const QuestionArgs = struct {
     question: ?[]const u8,
     question_type: c_int,
@@ -93,6 +103,7 @@ pub const QuestionResponse = struct {
 
 pub const Dispatcher = struct {
     operationEvents: std.ArrayList(Handler(operation_api.Event).T),
+    downloads: std.ArrayList(Handler(DownloadUpdate).T),
     progress: std.ArrayList(Handler(ProgressArgs).T),
     question: std.ArrayList(Handler(QuestionArgs).T),
     errorEvents: std.ArrayList(Handler(ErrorArgs).T),
@@ -116,6 +127,7 @@ pub const Dispatcher = struct {
     pub fn init(allocator: std.mem.Allocator) Dispatcher {
         return .{
             .operationEvents = .empty,
+            .downloads = .empty,
             .allocator = allocator,
             .progress = .empty,
             .question = .empty,
@@ -138,6 +150,7 @@ pub const Dispatcher = struct {
 
     pub fn deinit(self: *Dispatcher) void {
         self.operationEvents.deinit(self.allocator);
+        self.downloads.deinit(self.allocator);
         if (self.common_question_response) |*response| response.deinit(self.allocator);
         self.progress.deinit(self.allocator);
         self.question.deinit(self.allocator);
@@ -168,6 +181,15 @@ pub const Dispatcher = struct {
     pub fn forwardOperationEvent(data: ?*anyopaque, event: operation_api.Event) void {
         const self: *Dispatcher = @ptrCast(@alignCast(data.?));
         self.dispatch(operation_api.Event, &self.operationEvents, event);
+    }
+
+    pub fn addDownloadHandler(self: *Dispatcher, handler: Handler(DownloadUpdate).T) !usize {
+        try self.downloads.append(self.allocator, handler);
+        return self.downloads.items.len - 1;
+    }
+
+    pub fn notifyDownload(self: *Dispatcher, update: DownloadUpdate) void {
+        self.dispatch(DownloadUpdate, &self.downloads, update);
     }
 
     pub fn addProgressHandler(self: *Dispatcher, handler: Handler(ProgressArgs).T) !usize {

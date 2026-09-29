@@ -2023,6 +2023,22 @@ test "Manager.sync keeps included repository mirrors separate during fallback (i
 }
 
 test "ALPM package and database downloads honor limits across mirror retries" {
+    const Observer = struct {
+        started: std.atomic.Value(usize) = .init(0),
+        finished: std.atomic.Value(usize) = .init(0),
+        retries: std.atomic.Value(usize) = .init(0),
+        fn receive(data: ?*anyopaque, update: @import("events.zig").DownloadUpdate) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            if (update.state == .batch_start) return;
+            testing.expect(update.name.len != 0 and std.mem.indexOfScalar(u8, update.name, '/') == null) catch unreachable;
+            switch (update.state) {
+                .started => _ = self.started.fetchAdd(1, .monotonic),
+                .completed, .unchanged, .failed => _ = self.finished.fetchAdd(1, .monotonic),
+                .retry => _ = self.retries.fetchAdd(1, .monotonic),
+                else => {},
+            }
+        }
+    };
     const allocator = testing.allocator;
     const io = testing.io;
     const previous = Manager.defaultParallelDownloadCount();
@@ -2054,12 +2070,19 @@ test "ALPM package and database downloads honor limits across mirror retries" {
             Manager.setDefaultParallelDownloadCount(limit);
             const mgr = try Manager.init(allocator, testing.environ, .{ .config_path = workspace.config_path });
             defer mgr.deinit();
+            var observer: Observer = .{};
+            _ = try mgr.dispatcher.addDownloadHandler(.{ .function = Observer.receive, .data = &observer });
+            try testing.expectEqual(null, mgr.operation_context);
+            try testing.expectEqual(null, mgr.dispatcher.operation);
             if (packages) {
                 var names = [_][:0]const u8{ "remote-provider", "alpha-provider", "literal-target", "version-provider", "versioned-target" };
                 try testing.expectError(error.UpdateFetchFailed, mgr.install_packages(&names, .{}));
             } else {
                 try testing.expectError(error.UpdateFetchFailed, mgr.sync_for_update_check(true));
             }
+            try testing.expectEqual(@as(usize, 5), observer.started.load(.acquire));
+            try testing.expectEqual(@as(usize, 5), observer.finished.load(.acquire));
+            try testing.expectEqual(@as(usize, 5), observer.retries.load(.acquire));
             try testing.expectEqual(@as(usize, 10), server.requests.load(.acquire));
             try testing.expectEqual(@as(usize, 0), server.active.load(.acquire));
             try testing.expect(!server.failed.load(.acquire));

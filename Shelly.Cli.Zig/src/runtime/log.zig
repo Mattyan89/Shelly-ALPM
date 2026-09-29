@@ -456,6 +456,13 @@ test "transaction log records operation lifecycle without progress noise" {
     operation.status(.information, "installed example (1.0-1)", "alpm.information", null);
     operation.progress(.{ .percentage = 50, .message = "ignored progress" });
     operation.finish(.success);
+    var rejected = operation_context.begin(.{ .backend = .alpm, .kind = .install });
+    var transfer = rejected.child(.{ .backend = .download, .kind = .download, .subject = "bad.pkg" });
+    transfer.status(.information, "Package retrieval completed: bad.pkg", "download.complete", null);
+    transfer.finish(.success);
+    rejected.status(.information, "Verifying downloads: bad.pkg", "acquisition.processing", null);
+    rejected.reportError(error.ChecksumMismatch, "Rejected bad.pkg", "rlpm", null, false);
+    rejected.finish(.failed);
     session.close();
 
     const contents = try temporary.dir.readFileAlloc(
@@ -467,7 +474,10 @@ test "transaction log records operation lifecycle without progress noise" {
     defer allocator.free(contents);
     try std.testing.expect(std.mem.indexOf(u8, contents, "Transaction started") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "installed example (1.0-1)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, contents, "Transaction completed") != null);
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, contents, "Transaction completed"));
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Verifying downloads: bad.pkg") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Rejected bad.pkg") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Could not complete the requested operation.") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "installed example (1.0-1)") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "ignored progress") == null);
 }

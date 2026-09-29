@@ -61,6 +61,7 @@ pub fn urlFilename(allocator: std.mem.Allocator, url: []const u8) ![]const u8 {
     return allocator.dupe(u8, decoded);
 }
 fn check(owner: *Owner, io: std.Io, path: []const u8, request: Request) !File {
+    try owner.checkCancelled();
     var snapshot = try Immutable.copy(io, path);
     errdefer snapshot.deinit();
     if (request.package) |pkg| if (pkg.compressed_size) |size| {
@@ -136,9 +137,17 @@ const Job = struct {
     result: ?File = null,
     failure: ?anyerror = null,
     downloaded: std.atomic.Value(u64) = .init(0),
+    total: std.atomic.Value(u64) = .init(0),
     retries: std.atomic.Value(u32) = .init(0),
     resuming: std.atomic.Value(bool) = .init(false),
+    started: std.atomic.Value(bool) = .init(false),
     done: std.atomic.Value(bool) = .init(false),
+    reported_start: bool = false,
+    reported_done: bool = false,
+    attempt: u32 = 1,
+    next_server: usize = 0,
+    force: bool = false,
+    mtime: ?i128 = null,
     reported: u64 = 0,
     reported_retries: u32 = 0,
     needs_download: bool = true,
@@ -192,18 +201,24 @@ const Batch = struct {
             job.resuming.store(resuming, .release);
             _ = job.retries.fetchAdd(1, .release);
         }
-        if (e.progress) |progress| job.downloaded.store(progress.bytes_downloaded, .release);
+        if (e.progress) |progress| {
+            job.total.store(progress.bytes_total orelse 0, .release);
+            job.downloaded.store(progress.bytes_downloaded, .release);
+        }
     }
     fn execute(self: *Batch, index: usize) !void {
         const job = &self.jobs[index];
         if (!job.needs_download) return;
         defer job.done.store(true, .release);
+        job.started.store(true, .release);
+        if (self.owner.configuration.callbacks.fetch != null) self.dispatch();
         self.acquire(job) catch |err| {
             job.failure = err;
             return err;
         };
     }
     fn acquire(self: *Batch, job: *Job) !void {
+        if (job.database) return self.acquireDatabase(job);
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
         const a = arena.allocator();
@@ -275,7 +290,8 @@ const Batch = struct {
             return;
         }
         const Sandbox = @import("DownloadSandbox.zig");
-        if (Sandbox.applicable(self.owner)) return Sandbox.fetch(self.owner, self.allocator, self.io, url, path, force, maximum, mtime, mtime == null and is_payload, &job.downloaded, if (is_payload) &job.effective_url else null);
+        var signature_downloaded: std.atomic.Value(u64) = .init(0);
+        if (Sandbox.applicable(self.owner)) return Sandbox.fetch(self.owner, self.allocator, self.io, url, path, force, maximum, mtime, mtime == null and is_payload, if (is_payload) &job.downloaded else &signature_downloaded, if (is_payload) &job.effective_url else null);
         var downloader = self.session.downloader(.{
             .address_family_policy = self.owner.configuration.address_family_policy,
             .timeout_in_seconds = if (self.owner.configuration.disable_download_timeout) 0 else 30,
@@ -304,36 +320,66 @@ const Batch = struct {
             .failure => |err| return err,
         }
     }
-    fn fetchWithDispatch(self: *Batch, job: *Job, url: []const u8, path: []const u8, force: bool, maximum: ?u64, mtime: ?i128) !void {
-        if (self.owner.configuration.callbacks.fetch != null) return self.fetch(job, url, path, force, maximum, mtime);
-        const Work = struct {
-            batch: *Batch,
-            job: *Job,
-            url: []const u8,
-            path: []const u8,
-            force: bool,
-            maximum: ?u64,
-            mtime: ?i128,
-            finished: std.atomic.Value(bool) = .init(false),
-            failure: ?anyerror = null,
-            fn run(work: *@This()) void {
-                defer work.finished.store(true, .release);
-                work.batch.fetch(work.job, work.url, work.path, work.force, work.maximum, work.mtime) catch |err| {
-                    work.failure = err;
+    fn acquireDatabase(self: *Batch, job: *Job) !void {
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const sig = try std.fmt.allocPrint(a, "{s}.sig", .{job.path});
+        var last: anyerror = error.NoServers;
+        while (job.next_server < job.request.servers.len) {
+            try self.owner.checkCancelled();
+            const server = job.request.servers[job.next_server];
+            job.next_server += 1;
+            if (job.next_server > 1) {
+                job.resuming.store(false, .release);
+                _ = job.retries.fetchAdd(1, .release);
+            }
+            job.unchanged = false;
+            job.downloaded.store(0, .release);
+            job.total.store(0, .release);
+            if (job.mtime != null) try Publication.copy(self.io, job.destination, job.path);
+            const url = try joinUrl(a, server, job.request.name);
+            self.fetch(job, url, job.path, job.force, null, job.mtime) catch |err| {
+                if (err == error.NotModified and job.mtime != null) job.unchanged = true else {
+                    if (err == error.Cancelled) return err;
+                    last = err;
+                    continue;
+                }
+            };
+            std.Io.Dir.cwd().deleteFile(self.io, sig) catch {};
+            if (job.request.policy.database != .disabled) {
+                self.fetch(job, try signatureUrl(a, signatureSource(url, job.effective_url, self.owner.configuration.database_extension)), sig, true, 16 * 1024, null) catch |err| {
+                    if (err == error.Cancelled) return err;
+                    if (err != error.NotFound or job.request.policy.database == .required) {
+                        last = err;
+                        continue;
+                    }
                 };
             }
-        };
-        var work: Work = .{ .batch = self, .job = job, .url = url, .path = path, .force = force, .maximum = maximum, .mtime = mtime };
-        var future = self.io.concurrent(Work.run, .{&work}) catch null;
-        if (future) |*running| {
-            while (!work.finished.load(.acquire)) {
+            return;
+        }
+        return last;
+    }
+    /// Only the owner pumps public callbacks, including when concurrency is
+    /// unavailable or a custom fetch implementation owns the transport.
+    fn wait(self: *Batch) void {
+        self.finished.store(false, .release);
+        if (self.owner.configuration.callbacks.fetch != null) {
+            for (0..self.jobs.len) |i| {
+                self.execute(i) catch {};
                 self.dispatch();
-                self.io.sleep(.fromMilliseconds(20), .awake) catch self.owner.requestCancellation();
             }
-            running.await(self.io);
-        } else work.run();
-        self.dispatch();
-        if (work.failure) |err| return err;
+        } else {
+            var future = self.io.concurrent(Batch.run, .{self}) catch null;
+            if (future) |*running| {
+                while (!self.finished.load(.acquire)) {
+                    self.dispatch();
+                    self.io.sleep(.fromMilliseconds(20), .awake) catch self.owner.requestCancellation();
+                }
+                running.await(self.io);
+            } else self.run();
+            self.dispatch();
+        }
     }
     fn run(self: *Batch) void {
         defer self.finished.store(true, .release);
@@ -341,13 +387,30 @@ const Batch = struct {
     }
     fn dispatch(self: *Batch) void {
         for (self.jobs) |*job| {
+            if (!job.needs_download or job.reported_done or !job.started.load(.acquire)) continue;
+            // Snapshot completion before byte counters. If the worker finishes
+            // during this dispatch, leave its terminal event to the next pass
+            // so no late progress can reopen a completed child operation.
+            const done = job.done.load(.acquire);
+            if (!job.reported_start) {
+                job.reported_start = true;
+                self.owner.downloadEvent(.{ .started = .{ .name = job.request.name, .attempt = job.attempt } });
+            }
             const retry_count = job.retries.load(.acquire);
             while (job.reported_retries < retry_count) : (job.reported_retries += 1)
-                self.owner.downloadEvent(.{ .retry = .{ .name = job.request.name, .resuming = job.resuming.load(.acquire) } });
+                self.owner.downloadEvent(.{ .retry = .{ .name = job.request.name, .attempt = job.attempt, .resuming = job.resuming.load(.acquire) } });
             const progress = job.downloaded.load(.acquire);
             if (progress != job.reported) {
-                self.owner.downloadEvent(.{ .progress = .{ .name = job.request.name, .downloaded = progress, .total = if (job.request.package) |p| p.compressed_size else null } });
+                const observed_total = job.total.load(.acquire);
+                const expected_total = if (job.request.package) |p| p.compressed_size else null;
+                self.owner.downloadEvent(.{ .progress = .{ .name = job.request.name, .attempt = job.attempt, .downloaded = progress, .total = expected_total orelse (if (observed_total != 0) observed_total else null) } });
                 job.reported = progress;
+            }
+            // Acquire pairs all non-atomic result fields with the worker's
+            // release, and never read them while its signature request runs.
+            if (done) {
+                job.reported_done = true;
+                self.owner.downloadEvent(.{ .transferred = .{ .name = job.request.name, .attempt = job.attempt, .downloaded = job.downloaded.load(.acquire), .result = if (job.failure != null) .failed else if (job.unchanged) .unchanged else .updated } });
             }
         }
     }
@@ -413,40 +476,37 @@ pub fn acquire(owner: *Owner, io: std.Io, requests: []const Request) ![]File {
         };
     }
     var batch: Batch = .{ .owner = owner, .allocator = thread_safe.allocator(), .io = io, .jobs = jobs, .session = &session, .servers = servers.items };
-    if (owner.configuration.callbacks.fetch != null) {
-        for (0..jobs.len) |i| {
-            batch.execute(i) catch {};
-            batch.dispatch();
-        }
-    } else {
-        var future = io.concurrent(Batch.run, .{&batch}) catch null;
-        if (future) |*running| {
-            while (!batch.finished.load(.acquire)) {
-                batch.dispatch();
-                io.sleep(.fromMilliseconds(20), .awake) catch {
-                    owner.requestCancellation();
-                };
-            }
-            running.await(io);
-        } else batch.run();
-        batch.dispatch();
-    }
+    batch.wait();
     var failure: ?anyerror = null;
-    for (jobs) |*job| {
+    for (jobs, 0..) |*job, index| {
         if (!job.needs_download) continue;
         if (!job.done.load(.acquire)) job.failure = if (owner.cancelled.load(.acquire)) error.Cancelled else error.DownloadFailed;
+        if (job.failure == null) owner.checkCancelled() catch |err| {
+            job.failure = err;
+        };
         if (job.failure == null) {
+            processing(owner, job, .verification, .start, index + 1, jobs.len);
             job.result = check(owner, io, job.path, job.request) catch |err| blk: {
                 job.failure = err;
                 break :blk null;
             };
-            if (job.result) |*result| {
-                publishCache(owner, io, result, job.path, job.destination) catch |err| {
+            processing(owner, job, .verification, if (job.failure == null) .done else .failed, index + 1, jobs.len);
+            if (job.failure == null) owner.checkCancelled() catch |err| {
+                job.failure = err;
+            };
+            if (job.result) |*result| if (job.failure == null) {
+                processing(owner, job, .publication, .start, index + 1, jobs.len);
+                // A progress callback may cancel before the durable write.
+                owner.checkCancelled() catch |err| {
                     job.failure = err;
                 };
+                if (job.failure == null) publishCache(owner, io, result, job.path, job.destination) catch |err| {
+                    job.failure = err;
+                };
+                processing(owner, job, .publication, if (job.failure == null) .done else .failed, index + 1, jobs.len);
                 result.cached = false;
                 result.transferred = job.downloaded.load(.acquire);
-            }
+            };
         }
         job.event_completed = true;
         owner.downloadEvent(.{ .completed = .{ .name = job.request.name, .downloaded = job.downloaded.load(.acquire), .result = if (job.failure != null) .failed else if (job.unchanged) .unchanged else .updated } });
@@ -462,6 +522,9 @@ pub fn acquire(owner: *Owner, io: std.Io, requests: []const Request) ![]File {
         job.result = null;
     }
     return results;
+}
+fn processing(owner: *Owner, job: *const Job, stage: @FieldType(@FieldType(Callbacks.Download, "processing"), "stage"), boundary: Callbacks.Boundary, position: usize, total: usize) void {
+    owner.downloadEvent(.{ .processing = .{ .name = job.request.name, .stage = stage, .boundary = boundary, .position = position, .total = total } });
 }
 fn publishCache(owner: *Owner, io: std.Io, result: *File, _: []const u8, destination: []const u8) !void {
     // Publish from the sealed copy; replacing staging during verification cannot
@@ -544,116 +607,151 @@ pub fn refresh(owner: *Owner, io: std.Io, force: bool) !RefreshResult {
     defer if (lock_live) lock.release(owner.allocator) catch {};
     const entries = try owner.allocator.alloc(Refresh, owner.sync_databases.items.len);
     errdefer owner.allocator.free(entries);
-    var session = transport.DownloadSession.init(owner.allocator, io, if (owner.configuration.disable_download_timeout) 0 else 30, owner.configuration.address_family_policy);
-    defer session.deinit();
-    owner.transactionEvent(.{ .phase = .{ .phase = .database_retrieve, .boundary = .start } });
-    var failed = false;
-    for (owner.sync_databases.items, entries) |*db, *entry| {
+    var arena = std.heap.ArenaAllocator.init(owner.allocator);
+    defer arena.deinit();
+    const jobs = try arena.allocator().alloc(Job, entries.len);
+    // All jobs are initialized before cleanup, including skipped repositories.
+    for (owner.sync_databases.items, entries, jobs) |*db, *entry, *job| {
         entry.* = .{ .reference = db.identity.?, .outcome = .skipped };
+        job.* = .{ .database = true, .request = .{ .name = std.fs.path.basename(db.path), .servers = db.servers.items, .policy = db.signature_policy }, .stage = "", .path = "", .destination = db.path, .force = force, .needs_download = false };
+    }
+    defer for (jobs) |*job| {
+        if (job.effective_url) |url| owner.allocator.free(url);
+        if (job.event_initialized and !job.event_completed) owner.downloadEvent(.{ .completed = .{ .name = job.request.name, .downloaded = job.downloaded.load(.acquire), .result = .failed } });
+        if (job.stage_lock) |*guard| {
+            std.Io.Dir.cwd().deleteTree(io, job.stage) catch {};
+            guard.deinit();
+        }
+    };
+    var thread_safe: transport.LockedAllocator = .{ .child_allocator = owner.allocator, .io = io };
+    var session = transport.DownloadSession.init(thread_safe.allocator(), io, if (owner.configuration.disable_download_timeout) 0 else 30, owner.configuration.address_family_policy);
+    defer session.deinit();
+    var batch: Batch = .{ .owner = owner, .allocator = thread_safe.allocator(), .io = io, .jobs = jobs, .session = &session };
+    owner.transactionEvent(.{ .phase = .{ .phase = .database_retrieve, .boundary = .start } });
+    for (owner.sync_databases.items, jobs, entries) |*db, *job, *entry| {
         if (!db.usage.sync) continue;
-        refreshOne(owner, io, &session, db, force, &lock) catch |err| {
+        prepareDatabase(owner, io, arena.allocator(), job) catch |err| {
             entry.outcome = .failed;
             entry.cause = err;
-            failed = true;
-            if (owner.last_diagnostic == null) owner.last_diagnostic = @import("Diagnostic.zig").init(.refresh, err, db.identity);
             continue;
         };
-        entry.outcome = if (db.last_refresh_updated) .updated else .unchanged;
+        job.needs_download = true;
+        job.event_initialized = true;
+        owner.downloadEvent(.{ .init = .{ .name = job.request.name, .optional = false } });
     }
+    while (true) {
+        batch.wait();
+        var retry = false;
+        for (owner.sync_databases.items, jobs, entries, 0..) |*db, *job, *entry, index| {
+            if (!job.needs_download) continue;
+            if (!job.done.load(.acquire)) job.failure = if (owner.cancelled.load(.acquire)) error.Cancelled else error.DownloadFailed;
+            if (job.failure == null) {
+                const accepted = acceptDatabase(owner, io, db, job, &lock, index + 1, jobs.len) catch |err| blk: {
+                    job.failure = err;
+                    break :blk true; // Fatal errors must not try another mirror.
+                };
+                if (!accepted and job.next_server < job.request.servers.len and !owner.cancelled.load(.acquire)) {
+                    // The rejected candidate's transfer already finished. A new
+                    // round gets a fresh visible attempt, with no stale counters.
+                    job.attempt += 1;
+                    job.failure = null;
+                    job.started.store(false, .release);
+                    job.done.store(false, .release);
+                    job.downloaded.store(0, .release);
+                    job.total.store(0, .release);
+                    job.reported = 0;
+                    job.reported_start = false;
+                    job.reported_done = false;
+                    retry = true;
+                    continue;
+                }
+            }
+            job.needs_download = false;
+            job.event_completed = true;
+            entry.outcome = if (job.failure != null) .failed else if (db.last_refresh_updated) .updated else .unchanged;
+            entry.cause = job.failure;
+            owner.downloadEvent(.{ .completed = .{ .name = job.request.name, .downloaded = job.downloaded.load(.acquire), .result = if (job.failure != null) .failed else if (db.last_refresh_updated) .updated else .unchanged } });
+        }
+        if (!retry) break;
+    }
+    var failed = false;
+    for (entries) |entry| if (entry.cause) |err| {
+        failed = true;
+        if (owner.last_diagnostic == null) owner.last_diagnostic = @import("Diagnostic.zig").init(.refresh, err, entry.reference);
+    };
     lock_live = false;
     try lock.release(owner.allocator);
     owner.transactionEvent(.{ .phase = .{ .phase = .database_retrieve, .boundary = if (failed) .failed else .done } });
     return .{ .allocator = owner.allocator, .databases = entries };
 }
-fn refreshOne(owner: *Owner, io: std.Io, session: *transport.DownloadSession, db: *@import("Database.zig"), force: bool, lock: *const @import("DatabaseLock.zig")) !void {
+fn prepareDatabase(owner: *Owner, io: std.Io, a: std.mem.Allocator, job: *Job) !void {
     try owner.checkCancelled();
-    var arena = std.heap.ArenaAllocator.init(owner.allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
-    const parent = std.fs.path.dirname(db.path).?;
+    const parent = std.fs.path.dirname(job.destination).?;
     try std.Io.Dir.cwd().createDirPath(io, parent);
-    try Publication.recover(io, owner.allocator, db.path);
-    const name = std.fs.path.basename(db.path);
-    const stage = try stageDirectory(a, io, parent, name);
-    var job: Job = .{ .database = true, .request = .{ .name = name, .servers = db.servers.items, .policy = db.signature_policy }, .stage = stage, .path = try std.fs.path.join(a, &.{ stage, name }), .destination = db.path, .stage_lock = try Publication.DirectoryLock.acquire(stage, true, true) };
-    defer if (job.stage_lock) |*guard| guard.deinit();
-    defer if (job.effective_url) |url| owner.allocator.free(url);
-    defer std.Io.Dir.cwd().deleteTree(io, stage) catch {};
-    const sig = try std.fmt.allocPrint(a, "{s}.sig", .{job.path});
-    var batch: Batch = .{ .owner = owner, .allocator = owner.allocator, .io = io, .jobs = @as(*[1]Job, &job), .session = session };
-    owner.downloadEvent(.{ .init = .{ .name = name, .optional = false } });
-    var success = false;
-    defer owner.downloadEvent(.{ .completed = .{ .name = name, .downloaded = job.downloaded.load(.acquire), .result = if (!success) .failed else if (db.last_refresh_updated) .updated else .unchanged } });
-    var last: anyerror = error.NoServers;
-    for (db.servers.items, 0..) |server, index| {
-        try owner.checkCancelled();
-        if (index != 0) owner.downloadEvent(.{ .retry = .{ .name = name, .resuming = false } });
-        var unchanged = false;
-        const mtime: ?i128 = if (force) null else blk: {
-            const st = std.Io.Dir.cwd().statFile(io, db.path, .{}) catch break :blk null;
-            try Publication.copy(io, db.path, job.path);
-            break :blk st.mtime.nanoseconds;
-        };
-        const url = try joinUrl(a, server, name);
-        batch.fetchWithDispatch(&job, url, job.path, force, null, mtime) catch |err| {
-            if (err == error.NotModified and mtime != null) unchanged = true else {
-                if (err == error.Cancelled) return err;
-                last = err;
-                continue;
-            }
-        };
-        std.Io.Dir.cwd().deleteFile(io, sig) catch {};
-        if (db.signature_policy.database != .disabled) {
-            batch.fetchWithDispatch(&job, try signatureUrl(a, signatureSource(url, job.effective_url, owner.configuration.database_extension)), sig, true, 16 * 1024, null) catch |err| {
-                if (err == error.Cancelled) return err;
-                if (err != error.NotFound or db.signature_policy.database == .required) {
-                    last = err;
-                    continue;
-                }
-            };
-        }
-        var snapshot = try Immutable.copy(io, job.path);
-        defer snapshot.deinit();
-        const signature_bytes = if (db.signature_policy.database != .disabled) try @import("OpenPgp.zig").readDetached(owner.allocator, io, job.path) else null;
-        defer if (signature_bytes) |bytes| owner.allocator.free(bytes);
-        var signature: ?Immutable = if (signature_bytes) |bytes| try Immutable.fromBytes(bytes) else null;
-        defer if (signature) |*file| file.deinit();
-        var candidate = try db.copyRegistration(db.path, db.signature_policy);
-        defer candidate.deinit();
-        candidate.populateSealed(io, owner.verificationContext(), &snapshot, .{ .bytes = signature_bytes }) catch |err| {
-            Verification.clearReport(&db.last_verification);
-            db.last_verification = candidate.last_verification;
-            candidate.last_verification = null;
-            db.last_load_error = err;
-            last = err;
-            continue;
-        };
+    try Publication.recover(io, owner.allocator, job.destination);
+    job.stage = try stageDirectory(a, io, parent, job.request.name);
+    job.path = try std.fs.path.join(a, &.{ job.stage, job.request.name });
+    job.stage_lock = try Publication.DirectoryLock.acquire(job.stage, true, true);
+    if (!job.force) {
+        const st = std.Io.Dir.cwd().statFile(io, job.destination, .{}) catch return;
+        job.mtime = st.mtime.nanoseconds;
+    }
+}
+/// False means candidate validation rejected this mirror; all mutations and
+/// trust questions stay on the owner thread after acquisition workers join.
+fn acceptDatabase(owner: *Owner, io: std.Io, db: *@import("Database.zig"), job: *Job, lock: *const @import("DatabaseLock.zig"), position: usize, total: usize) !bool {
+    try owner.checkCancelled();
+    processing(owner, job, .verification, .start, position, total);
+    var verified = false;
+    errdefer if (!verified) processing(owner, job, .verification, .failed, position, total);
+    try owner.checkCancelled();
+    var snapshot = try Immutable.copy(io, job.path);
+    defer snapshot.deinit();
+    const signature_bytes = if (db.signature_policy.database != .disabled) try @import("OpenPgp.zig").readDetached(owner.allocator, io, job.path) else null;
+    defer if (signature_bytes) |bytes| owner.allocator.free(bytes);
+    var signature: ?Immutable = if (signature_bytes) |bytes| try Immutable.fromBytes(bytes) else null;
+    defer if (signature) |*file| file.deinit();
+    var candidate = try db.copyRegistration(db.path, db.signature_policy);
+    defer candidate.deinit();
+    candidate.populateSealed(io, owner.verificationContext(), &snapshot, .{ .bytes = signature_bytes }) catch |err| {
+        Verification.clearReport(&db.last_verification);
+        db.last_verification = candidate.last_verification;
+        candidate.last_verification = null;
+        db.last_load_error = err;
+        job.failure = err;
+        processing(owner, job, .verification, .failed, position, total);
+        return false;
+    };
+    verified = true;
+    processing(owner, job, .verification, .done, position, total);
+    try owner.checkCancelled();
+    try lock.validate();
+    // Verify and parse exactly the sealed bytes subsequently published.
+    var old_signature_invalid = false;
+    const old_signature = if (db.signature_policy.database != .disabled) @import("OpenPgp.zig").readDetached(owner.allocator, io, db.path) catch |err| blk: {
+        if (err == error.OutOfMemory) return err;
+        old_signature_invalid = true;
+        break :blk null;
+    } else null;
+    defer if (old_signature) |bytes| owner.allocator.free(bytes);
+    const same_signature = !old_signature_invalid and if (signature_bytes) |bytes| old_signature != null and std.mem.eql(u8, bytes, old_signature.?) else old_signature == null;
+    if (!job.unchanged or !same_signature) {
+        processing(owner, job, .publication, .start, position, total);
         try owner.checkCancelled();
         try lock.validate();
-        // Verify and parse exactly the sealed bytes subsequently published.
-        var old_signature_invalid = false;
-        const old_signature = if (db.signature_policy.database != .disabled) @import("OpenPgp.zig").readDetached(owner.allocator, io, db.path) catch |err| blk: {
-            if (err == error.OutOfMemory) return err;
-            old_signature_invalid = true;
-            break :blk null;
-        } else null;
-        defer if (old_signature) |bytes| owner.allocator.free(bytes);
-        const same_signature = !old_signature_invalid and if (signature_bytes) |bytes| old_signature != null and std.mem.eql(u8, bytes, old_signature.?) else old_signature == null;
-        if (!unchanged or !same_signature) {
-            try Publication.publish(io, owner.allocator, snapshot.path(), if (signature) |*file| file.path() else null, db.path);
-            if (!unchanged) db.takeCache(&candidate);
-        }
-        if (unchanged) {
-            Verification.clearReport(&db.last_verification);
-            db.last_verification = candidate.last_verification;
-            candidate.last_verification = null;
-            db.last_load_error = null;
-        }
-        db.last_refresh_updated = !unchanged;
-        success = true;
-        return;
+        errdefer processing(owner, job, .publication, .failed, position, total);
+        try Publication.publish(io, owner.allocator, snapshot.path(), if (signature) |*file| file.path() else null, db.path);
+        if (!job.unchanged) db.takeCache(&candidate);
+        processing(owner, job, .publication, .done, position, total);
     }
-    return last;
+    if (job.unchanged) {
+        Verification.clearReport(&db.last_verification);
+        db.last_verification = candidate.last_verification;
+        candidate.last_verification = null;
+        db.last_load_error = null;
+    }
+    db.last_refresh_updated = !job.unchanged;
+    return true;
 }
 
 /// Effective bytes remaining, after policy-aware cache checks. Partial lengths

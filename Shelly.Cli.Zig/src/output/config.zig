@@ -530,6 +530,12 @@ fn progressPercentage(update: PackageManager.operation.ProgressUpdate) u8 {
 }
 
 fn progressType(progress: PackageManager.operation.ProgressEvent) []const u8 {
+    // Acquisition stages retain the established UI phase identifiers. They
+    // must not fall back to Installing/Upgrading merely because of the parent.
+    if (progress.update.stage) |stage| {
+        if (std.mem.eql(u8, stage, "Verifying downloads")) return "IntegrityStart";
+        if (std.mem.eql(u8, stage, "Publishing downloads")) return "LoadStart";
+    }
     if (progress.envelope.backend == .download) {
         const subject = progress.envelope.subject orelse "";
         return if (std.mem.endsWith(u8, subject, ".db") or

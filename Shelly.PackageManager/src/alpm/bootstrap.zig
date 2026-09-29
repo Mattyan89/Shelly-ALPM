@@ -103,12 +103,147 @@ const DiagnosticOutput = struct {
     io: ?std.Io = null,
     last_progress: ?std.Io.Timestamp = null,
     last_progress_stage: ?u64 = null,
+    allocator: std.mem.Allocator = std.heap.page_allocator,
+    mutex: std.Io.Mutex = .init,
+    observe_downloads: bool = false,
+    downloads: std.StringHashMapUnmanaged(Transfer) = .empty,
+    last_download_progress: ?std.Io.Timestamp = null,
+
+    const Transfer = struct {
+        operation_id: ?operation_api.OperationId = null,
+        bytes: u64 = 0,
+        total: ?u64 = null,
+        active: bool = true,
+        transferred: bool = false,
+        unchanged: bool = false,
+    };
+
+    fn deinit(self: *DiagnosticOutput) void {
+        self.clearDownloads();
+        self.downloads.deinit(self.allocator);
+    }
+
+    fn clearDownloads(self: *DiagnosticOutput) void {
+        var keys = self.downloads.keyIterator();
+        while (keys.next()) |key| self.allocator.free(key.*);
+        self.downloads.clearRetainingCapacity();
+        self.last_download_progress = null;
+    }
+
+    fn lock(self: *DiagnosticOutput) void {
+        if (self.io) |io| self.mutex.lockUncancelable(io);
+    }
+
+    fn unlock(self: *DiagnosticOutput) void {
+        if (self.io) |io| self.mutex.unlock(io);
+    }
+
+    fn handleDownload(data: ?*anyopaque, update: events.DownloadUpdate) void {
+        const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        self.lock();
+        defer self.unlock();
+        self.writeDownload(update);
+    }
+
+    fn writeDownload(self: *DiagnosticOutput, update: events.DownloadUpdate) void {
+        if (update.state == .batch_start) {
+            self.clearDownloads();
+            return;
+        }
+        const entry = self.downloads.getOrPut(self.allocator, update.name) catch return;
+        if (!entry.found_existing) {
+            entry.key_ptr.* = self.allocator.dupe(u8, update.name) catch {
+                _ = self.downloads.remove(update.name);
+                return;
+            };
+            entry.value_ptr.* = .{ .operation_id = update.operation_id };
+        }
+        const transfer = entry.value_ptr;
+        if (update.state != .started and update.operation_id != null and update.operation_id != transfer.operation_id) return;
+        switch (update.state) {
+            .batch_start => unreachable,
+            .started => transfer.* = .{ .operation_id = update.operation_id },
+            .retry => {
+                if (!update.resuming) transfer.* = .{ .operation_id = transfer.operation_id };
+            },
+            .progress => {
+                transfer.bytes = update.bytes;
+                transfer.total = update.total;
+            },
+            .completed, .unchanged, .failed => {
+                transfer.active = false;
+                transfer.transferred = update.state != .failed;
+                transfer.bytes = update.bytes;
+                transfer.total = update.total;
+            },
+        }
+        defer self.stderr.flush() catch {};
+        if (update.state != .progress) {
+            const label: []const u8 = switch (update.state) {
+                .started => "Retrieving package",
+                .retry => "Retrying download",
+                .completed => "Package retrieval completed",
+                .unchanged => "Download skipped",
+                .failed => "Download failed",
+                .batch_start, .progress => unreachable,
+            };
+            self.stderr.print("shellystrap: {s}: {s}\n", .{ label, update.name }) catch {};
+        }
+        if (update.state == .started or update.state == .retry) return;
+        var active: usize = 0;
+        var transferred: usize = 0;
+        var bytes: u64 = 0;
+        var total: u64 = 0;
+        var known = true;
+        var values = self.downloads.valueIterator();
+        while (values.next()) |value| {
+            active += @intFromBool(value.active);
+            transferred += @intFromBool(value.transferred);
+            bytes +|= value.bytes;
+            if (value.total) |size| total +|= size else known = false;
+        }
+        if (self.io) |io| {
+            const now = std.Io.Clock.awake.now(io);
+            if (self.last_download_progress) |last| {
+                if (active != 0 and last.durationTo(now).toMilliseconds() < 250) return;
+            }
+            self.last_download_progress = now;
+        }
+        self.stderr.print("shellystrap: Downloads: {d} active, {d} transferred ({d}", .{ active, transferred, bytes }) catch {};
+        if (known) self.stderr.print("/{d}", .{total}) catch {};
+        self.stderr.writeAll(" bytes)\n") catch {};
+    }
 
     fn handleOperation(data: ?*anyopaque, event: operation_api.Event) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        self.lock();
+        defer self.unlock();
         switch (event) {
-            .status => |status| self.writeStatus(status),
-            .progress => |progress| self.writeProgress(progress.update),
+            .started => |started| {
+                if (started.envelope.backend == .download) {
+                    self.writeDownload(.{ .name = std.fs.path.basename(started.envelope.subject orelse "download"), .operation_id = started.envelope.operation_id, .state = .started });
+                } else if (started.envelope.parent_id == null) self.clearDownloads();
+            },
+            .status => |status| {
+                if (status.envelope.backend == .download) {
+                    const name = std.fs.path.basename(status.envelope.subject orelse "download");
+                    const code = status.code orelse "";
+                    if (std.mem.eql(u8, code, "download.retry") or std.mem.eql(u8, code, "download.resume")) self.writeDownload(.{ .name = name, .operation_id = status.envelope.operation_id, .state = .retry, .resuming = std.mem.eql(u8, code, "download.resume") });
+                    if (std.mem.eql(u8, code, "download.skipped")) {
+                        if (self.downloads.getPtr(name)) |transfer| transfer.unchanged = true;
+                    }
+                } else self.writeStatus(status);
+            },
+            .progress => |progress| {
+                if (progress.envelope.backend == .download) {
+                    self.writeDownload(.{ .name = std.fs.path.basename(progress.envelope.subject orelse progress.update.message orelse "download"), .operation_id = progress.envelope.operation_id, .state = .progress, .bytes = progress.update.bytes_completed orelse 0, .total = progress.update.bytes_total });
+                } else self.writeProgress(progress.update);
+            },
+            .completed => |completed| if (completed.envelope.backend == .download) {
+                const name = std.fs.path.basename(completed.envelope.subject orelse "download");
+                const transfer = self.downloads.get(name) orelse Transfer{};
+                self.writeDownload(.{ .name = name, .operation_id = completed.envelope.operation_id, .state = if (completed.status != .success) .failed else if (transfer.unchanged) .unchanged else .completed, .bytes = transfer.bytes, .total = transfer.total });
+            },
             else => {},
         }
     }
@@ -162,22 +297,32 @@ const DiagnosticOutput = struct {
 
     fn handleInformational(data: ?*anyopaque, args: events.InformationalArgs) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        self.lock();
+        defer self.unlock();
+        if (self.observe_downloads and (args.event_type == .pkg_retrieve_start or args.event_type == .pkg_retrieve_done)) return;
         self.writeStatus(.{ .level = operation_api.StatusLevel.information, .message = args.message, .package_name = args.package_name, .code = args.code, .native_code = @as(?i64, @intFromEnum(args.event_type)) });
     }
 
     fn handleProgress(data: ?*anyopaque, args: events.ProgressArgs) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        self.lock();
+        defer self.unlock();
+        if (self.observe_downloads and (args.progress_type == 100 or args.progress_type == 101)) return;
         self.writeProgress(.{ .stage = "transaction", .message = args.pkg_name, .percentage = @floatFromInt(std.math.clamp(args.percent, 0, 100)), .completed = args.current, .total = args.howmany, .native_code = args.progress_type });
     }
 
     fn handleError(data: ?*anyopaque, args: events.ErrorArgs) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        self.lock();
+        defer self.unlock();
         defer self.stderr.flush() catch {};
         self.stderr.print("Could not provision the isolated build root: {0f}.\n", .{@import("diagnostics").safe(std.mem.trimEnd(u8, args.message, "\r\n"))}) catch {};
     }
 
     fn handleScriptlet(data: ?*anyopaque, args: events.ScriptletArgs) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        self.lock();
+        defer self.unlock();
         defer self.stderr.flush() catch {};
         self.stderr.print("shellystrap: scriptlet: {s}\n", .{
             std.mem.trimEnd(u8, args.line, "\r\n"),
@@ -186,6 +331,8 @@ const DiagnosticOutput = struct {
 
     fn handleHook(data: ?*anyopaque, args: events.HookArgs) void {
         const self: *DiagnosticOutput = @ptrCast(@alignCast(data.?));
+        self.lock();
+        defer self.unlock();
         defer self.stderr.flush() catch {};
         self.stderr.print("shellystrap: hook: {s}: {s}\n", .{
             args.name orelse "unknown",
@@ -328,11 +475,13 @@ fn bootstrapReporting(
     // initializes newly installed tools (including TeX) without host hooks.
 
     var diagnostic_output: DiagnosticOutput = undefined;
+    defer if (diagnostic_writer != null) diagnostic_output.deinit();
     if (diagnostic_writer) |writer| {
-        diagnostic_output = .{ .stderr = writer, .io = io };
+        diagnostic_output = .{ .stderr = writer, .io = io, .allocator = allocator, .observe_downloads = true };
         if (manager.backend() == .rlpm) {
             _ = try manager.dispatcher.addOperationHandler(.{ .function = DiagnosticOutput.handleOperation, .data = &diagnostic_output });
         } else {
+            _ = try manager.dispatcher.addDownloadHandler(.{ .function = DiagnosticOutput.handleDownload, .data = &diagnostic_output });
             _ = try manager.dispatcher.addInformationalHandler(.{ .function = DiagnosticOutput.handleInformational, .data = &diagnostic_output });
             _ = try manager.dispatcher.addProgressHandler(.{ .function = DiagnosticOutput.handleProgress, .data = &diagnostic_output });
         }
@@ -774,4 +923,55 @@ test "bootstrap native operation and legacy callbacks use identical readable for
             "shellystrap: hook: demo.hook: (1/1) Updating cache\n",
         shared.written(),
     );
+}
+
+test "bootstrap aggregates interleaved transfers and flushes terminal output for both callback paths" {
+    const t = std.testing;
+    var legacy: std.Io.Writer.Allocating = .init(t.allocator);
+    defer legacy.deinit();
+    var shared: std.Io.Writer.Allocating = .init(t.allocator);
+    defer shared.deinit();
+    var legacy_output: DiagnosticOutput = .{ .stderr = &legacy.writer, .io = t.io, .allocator = t.allocator };
+    defer legacy_output.deinit();
+    var shared_output: DiagnosticOutput = .{ .stderr = &shared.writer, .io = t.io, .allocator = t.allocator };
+    defer shared_output.deinit();
+    const names = [_][]const u8{ "first.pkg", "second.pkg", "third.pkg" };
+    var envelopes: [3]operation_api.Envelope = undefined;
+    for (&envelopes, names, 0..) |*envelope, name, index| {
+        envelope.* = .{ .operation_id = index + 1, .parent_id = 10, .backend = .download, .kind = .download, .subject = name };
+        DiagnosticOutput.handleDownload(&legacy_output, .{ .name = name, .state = .started });
+        DiagnosticOutput.handleOperation(&shared_output, .{ .started = .{ .envelope = envelope.* } });
+    }
+    for (envelopes, names) |envelope, name| {
+        DiagnosticOutput.handleDownload(&legacy_output, .{ .name = name, .state = .progress, .bytes = 5, .total = 10 });
+        DiagnosticOutput.handleOperation(&shared_output, .{ .progress = .{ .envelope = envelope, .update = .{ .stage = "download", .bytes_completed = 5, .bytes_total = 10 } } });
+        // Keep the subsequent callbacks inside the throttle without a sleep.
+        for ([_]*DiagnosticOutput{ &legacy_output, &shared_output }) |output| output.last_download_progress = std.Io.Clock.awake.now(t.io).addDuration(.fromSeconds(60));
+    }
+    try t.expectEqual(@as(usize, 1), std.mem.count(u8, legacy.written(), "Downloads:"));
+    try t.expect(std.mem.indexOf(u8, legacy.written(), "3 active, 0 transferred") != null);
+    // One transfer with unknown length keeps the batch byte count honest.
+    for ([_]*DiagnosticOutput{ &legacy_output, &shared_output }) |output| output.last_download_progress = null;
+    DiagnosticOutput.handleDownload(&legacy_output, .{ .name = names[2], .state = .progress, .bytes = 7 });
+    DiagnosticOutput.handleOperation(&shared_output, .{ .progress = .{ .envelope = envelopes[2], .update = .{ .stage = "download", .bytes_completed = 7 } } });
+    try t.expect(std.mem.indexOf(u8, legacy.written(), "3 active, 0 transferred (17 bytes)") != null);
+    for ([_]*DiagnosticOutput{ &legacy_output, &shared_output }) |output| output.last_download_progress = std.Io.Clock.awake.now(t.io).addDuration(.fromSeconds(60));
+    const before = legacy.written().len;
+    DiagnosticOutput.handleDownload(&legacy_output, .{ .name = names[0], .state = .completed, .bytes = 5, .total = 10 });
+    DiagnosticOutput.handleOperation(&shared_output, .{ .completed = .{ .envelope = envelopes[0], .status = .success } });
+    try t.expect(legacy.written().len > before);
+    // A new mirror attempt starts from zero; a prior completed transfer must
+    // not leave a transferred count or 100% bar for its replacement.
+    const old_attempt = envelopes[0];
+    envelopes[0].operation_id = 4;
+    DiagnosticOutput.handleDownload(&legacy_output, .{ .name = names[0], .state = .started });
+    DiagnosticOutput.handleOperation(&shared_output, .{ .started = .{ .envelope = envelopes[0] } });
+    DiagnosticOutput.handleOperation(&shared_output, .{ .progress = .{ .envelope = old_attempt, .update = .{ .stage = "download", .bytes_completed = 10, .bytes_total = 10 } } });
+    try t.expect(!shared_output.downloads.get(names[0]).?.transferred);
+    try t.expectEqual(@as(u64, 0), shared_output.downloads.get(names[0]).?.bytes);
+    DiagnosticOutput.handleDownload(&legacy_output, .{ .name = names[1], .state = .retry });
+    DiagnosticOutput.handleOperation(&shared_output, .{ .status = .{ .envelope = envelopes[1], .level = .information, .message = "Retrying download: second.pkg", .code = "download.retry" } });
+    try t.expectEqualStrings(legacy.written(), shared.written());
+    try t.expectEqual(@as(usize, 1), std.mem.count(u8, shared.written(), "Package retrieval completed: first.pkg"));
+    try t.expect(std.mem.indexOf(u8, shared.written(), "Retrying download: second.pkg") != null);
 }

@@ -278,6 +278,7 @@ pub const Manager = struct {
         var signature_policies = std.StringHashMap(DatabaseSignaturePolicy).init(self.allocator);
         defer signature_policies.deinit();
         self.package_download = false;
+        self.dispatcher.notifyDownload(.{ .name = "", .state = .batch_start });
         var databases: libalpm.DatabaseList = rawLibalpm.alpm_get_syncdbs(self.handle);
         if (databases == null) return TransactionError.SyncDbFailed;
         var dict = listDictionary.ListDictionary.init(self.allocator);
@@ -1965,6 +1966,7 @@ pub const Manager = struct {
             const db_url = std.fmt.allocPrint(self.allocator, "{s}/{s}.db", .{ url_base, database_name }) catch continue;
             defer self.allocator.free(db_url);
 
+            download_scope.beginAttempt();
             const database_updated = switch (downloader_instance.downloadToFile(db_url, dest, force_download)) {
                 .succes => true,
                 .skipped => false,
@@ -2193,6 +2195,7 @@ pub const Manager = struct {
     }
 
     fn download_prepared_packages(self: *Manager) TransactionError!void {
+        self.dispatcher.notifyDownload(.{ .name = "", .state = .batch_start });
         self.stalePartSweep(std.Io.Duration.fromSeconds(500));
         const PackageJob = struct {
             package: libalpm.Package,
@@ -2273,6 +2276,7 @@ pub const Manager = struct {
                 const file_url = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ url, package.file_name() }) catch return downloader.DownloadError.InvalidUrl;
                 defer self.allocator.free(file_url);
 
+                download_scope.beginAttempt();
                 switch (downloader_instance.downloadToFile(file_url, dest, true)) {
                     .succes => {
                         const sig_url = std.fmt.allocPrint(self.allocator, "{s}.sig", .{file_url}) catch return downloader.DownloadError.InvalidUrl;
@@ -2631,7 +2635,7 @@ pub const Manager = struct {
                 // callers that do not attach a common operation.
                 if (self.dispatcher.operation == null) {
                     self.dispatcher.raiseProgress(.{
-                        .progress_type = @intCast(rawLibalpm.ALPM_PROGRESS_ADD_START),
+                        .progress_type = if (std.mem.endsWith(u8, path, ".db") or std.mem.endsWith(u8, path, ".db.sig")) 101 else 100,
                         .pkg_name = std.fs.path.basename(path),
                         .percent = p.percent,
                         .howmany = 1,
@@ -3329,29 +3333,67 @@ test "process-wide address-family default is configurable" {
 /// Individual attempts remain quiet, while callers still receive a correlated
 /// download lifecycle and can cancel before any network work begins.
 const MirrorDownloadScope = struct {
+    manager: *Manager,
+    subject: []const u8,
+    bytes: u64 = 0,
+    total: ?u64 = null,
+    attempts: usize = 0,
+    unchanged: bool = false,
     operation: ?operation_api.Operation = null,
     successful: bool = false,
 
     fn init(manager: *Manager, subject: []const u8) MirrorDownloadScope {
+        manager.dispatcher.notifyDownload(.{ .name = std.fs.path.basename(subject), .state = .started });
         if (manager.dispatcher.operation) |parent| {
-            return .{ .operation = parent.child(.{
+            return .{ .manager = manager, .subject = subject, .operation = parent.child(.{
                 .backend = .download,
                 .kind = .download,
                 .subject = subject,
             }) };
         }
         if (manager.operation_context) |context| {
-            return .{ .operation = context.begin(.{
+            return .{ .manager = manager, .subject = subject, .operation = context.begin(.{
                 .backend = .download,
                 .kind = .download,
                 .subject = subject,
             }) };
         }
-        return .{};
+        return .{ .manager = manager, .subject = subject };
     }
 
     fn attach(self: *MirrorDownloadScope, downloader_instance: *downloader.CoreDownloader) void {
         if (self.operation) |*operation| downloader_instance.setParentOperation(operation);
+        downloader_instance.setEventCallback(observe, self);
+    }
+
+    fn observe(data: ?*anyopaque, event: downloader.DownloadEvent) void {
+        const self: *MirrorDownloadScope = @ptrCast(@alignCast(data.?));
+        self.manager.handleDownloadEvent(event) catch {};
+        if (!std.mem.eql(u8, event.destination_path orelse "", self.subject)) return;
+        const name = std.fs.path.basename(self.subject);
+        if (event.retrying) |resuming| {
+            self.manager.dispatcher.notifyDownload(.{ .name = name, .state = .retry, .resuming = resuming });
+            if (!resuming) {
+                self.bytes = 0;
+                self.total = null;
+            }
+        }
+        if (event.progress) |progress| {
+            self.bytes = progress.bytes_downloaded;
+            self.total = if (progress.bytes_total == 0) null else progress.bytes_total;
+            self.manager.dispatcher.notifyDownload(.{ .name = name, .state = .progress, .bytes = self.bytes, .total = self.total });
+        }
+        if (event.event_type == .Skipped) self.unchanged = true;
+    }
+
+    fn beginAttempt(self: *MirrorDownloadScope) void {
+        // HTTP errors can occur before the transport emits Start. Mirror
+        // attempts must therefore be observed at the caller's boundary.
+        if (self.attempts != 0) self.manager.dispatcher.notifyDownload(.{ .name = std.fs.path.basename(self.subject), .state = .retry });
+        self.attempts += 1;
+        self.unchanged = false;
+        self.bytes = 0;
+        self.total = null;
     }
 
     fn succeed(self: *MirrorDownloadScope) void {
@@ -3359,6 +3401,7 @@ const MirrorDownloadScope = struct {
     }
 
     fn finish(self: *MirrorDownloadScope) void {
+        self.manager.dispatcher.notifyDownload(.{ .name = std.fs.path.basename(self.subject), .state = if (!self.successful) .failed else if (self.unchanged) .unchanged else .completed, .bytes = self.bytes, .total = self.total });
         if (self.operation) |*operation| {
             const status: operation_api.CompletionStatus = if (operation.isCancelled())
                 .cancelled

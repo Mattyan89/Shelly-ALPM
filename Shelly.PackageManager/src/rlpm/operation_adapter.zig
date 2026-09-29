@@ -309,10 +309,8 @@ fn progress(data: ?*anyopaque, value: rlpm.Callbacks.Progress) void {
 fn download(data: ?*anyopaque, value: rlpm.Callbacks.Download) void {
     const self = from(data);
     switch (value) {
-        .init => |update| {
-            const operation = self.downloadOperation(update.name);
-            operation.status(.information, "Download started", "download.start", null);
-        },
+        .init => {},
+        .started => |update| downloadStatus(self.downloadOperation(update.name), update.name, "Retrieving package", "download.start"),
         .progress => |update| self.downloadOperation(update.name).progress(.{
             .stage = "download",
             .message = update.name,
@@ -320,8 +318,12 @@ fn download(data: ?*anyopaque, value: rlpm.Callbacks.Download) void {
             .bytes_total = update.total,
             .native_code = downloadCode(update.name),
         }),
-        .retry => |update| self.downloadOperation(update.name).status(.information, "Retrying download", "download.retry", null),
-        .completed => |update| {
+        .retry => |update| {
+            const operation = self.downloadOperation(update.name);
+            downloadStatus(operation, update.name, "Retrying download", if (update.resuming) "download.resume" else "download.retry");
+            if (!update.resuming) operation.progress(.{ .stage = "download", .message = update.name, .bytes_completed = 0, .native_code = downloadCode(update.name) });
+        },
+        .transferred => |update| {
             const operation = self.downloadOperation(update.name);
             if (update.result == .updated) operation.progress(.{
                 .stage = "download",
@@ -331,17 +333,41 @@ fn download(data: ?*anyopaque, value: rlpm.Callbacks.Download) void {
                 .percentage = 100,
                 .native_code = downloadCode(update.name),
             });
-            if (update.result != .failed) operation.status(if (update.result == .updated) .success else .information, if (update.result == .updated) "Download completed" else "Download skipped", if (update.result == .updated) "download.complete" else "download.skipped", null);
-            // A failed transfer is diagnosed by the transaction or sync caller.
-            // Completing its child clears only that file's progress bar.
-            if (self.downloads.fetchRemove(update.name)) |removed| {
-                var child = removed.value;
-                child.finish(if (update.result != .failed) .success else if (self.operation.isCancelled()) .cancelled else .failed);
-                self.operation.context.allocator.free(removed.key);
-            }
+            if (update.result != .failed) downloadStatus(operation, update.name, if (update.result == .updated) "Package retrieval completed" else "Download skipped", if (update.result == .updated) "download.complete" else "download.skipped");
+            self.finishDownload(update.name, update.result != .failed);
+        },
+        .processing => |update| {
+            const stage: []const u8 = switch (update.stage) {
+                .verification => "Verifying downloads",
+                .publication => "Publishing downloads",
+            };
+            if (update.boundary == .start) downloadStatus(self.operation, update.name, stage, "acquisition.processing");
+            self.operation.progress(.{
+                .stage = stage,
+                .message = update.name,
+                .completed = if (update.boundary == .done) update.position else update.position -| 1,
+                .total = update.total,
+            });
+        },
+        .completed => |update| {
+            // Acceptance failures never reopen an already completed transfer.
+            // The transaction/sync caller supplies the detailed error.
+            if (update.result == .failed) self.finishDownload(update.name, false);
         },
     }
     if (self.previous.download) |callback| callback(self.previous.download_context, value);
+}
+fn downloadStatus(operation: *op.Operation, file: []const u8, label: []const u8, code: []const u8) void {
+    const message = std.fmt.allocPrint(operation.context.allocator, "{s}: {s}", .{ label, file }) catch return;
+    defer operation.context.allocator.free(message);
+    operation.status(.information, message, code, null);
+}
+fn finishDownload(self: *Adapter, file: []const u8, success: bool) void {
+    if (self.downloads.fetchRemove(file)) |removed| {
+        var child = removed.value;
+        child.finish(if (success) .success else if (self.operation.isCancelled()) .cancelled else .failed);
+        self.operation.context.allocator.free(removed.key);
+    }
 }
 fn downloadCode(name_value: []const u8) i64 {
     return if (std.mem.endsWith(u8, name_value, ".db") or std.mem.endsWith(u8, name_value, ".db.sig")) 101 else 100;
@@ -677,13 +703,20 @@ test "native presentation preserves actions hook numbering and per-file download
     try t.expect(std.mem.indexOf(u8, transcript.written(), "alpm.pacsave|null||/etc/demo.pacsave") != null);
 
     transcript.clearRetainingCapacity();
-    for ([_][]const u8{ "core.db", "demo.pkg.tar", "failed.pkg.tar", "cached.pkg.tar" }) |file| cb.download.?(cb.download_context, .{ .init = .{ .name = file, .optional = false } });
+    for ([_][]const u8{ "core.db", "demo.pkg.tar", "failed.pkg.tar", "cached.pkg.tar" }) |file| {
+        cb.download.?(cb.download_context, .{ .init = .{ .name = file, .optional = false } });
+        try t.expectEqual(0, adapter.downloads.count());
+    }
+    for ([_][]const u8{ "core.db", "demo.pkg.tar", "failed.pkg.tar", "cached.pkg.tar" }) |file| cb.download.?(cb.download_context, .{ .started = .{ .name = file, .attempt = 1 } });
     cb.download.?(cb.download_context, .{ .retry = .{ .name = "demo.pkg.tar", .resuming = true } });
     cb.download.?(cb.download_context, .{ .progress = .{ .name = "failed.pkg.tar", .downloaded = 2, .total = 8 } });
-    cb.download.?(cb.download_context, .{ .completed = .{ .name = "core.db", .downloaded = 8, .result = .updated } });
-    cb.download.?(cb.download_context, .{ .completed = .{ .name = "demo.pkg.tar", .downloaded = 16, .result = .updated } });
-    cb.download.?(cb.download_context, .{ .completed = .{ .name = "failed.pkg.tar", .downloaded = 2, .result = .failed } });
-    cb.download.?(cb.download_context, .{ .completed = .{ .name = "cached.pkg.tar", .downloaded = 0, .result = .unchanged } });
+    cb.download.?(cb.download_context, .{ .transferred = .{ .name = "core.db", .attempt = 1, .downloaded = 8, .result = .updated } });
+    cb.download.?(cb.download_context, .{ .transferred = .{ .name = "demo.pkg.tar", .attempt = 1, .downloaded = 16, .result = .updated } });
+    cb.download.?(cb.download_context, .{ .transferred = .{ .name = "failed.pkg.tar", .attempt = 1, .downloaded = 2, .result = .failed } });
+    cb.download.?(cb.download_context, .{ .transferred = .{ .name = "cached.pkg.tar", .attempt = 1, .downloaded = 0, .result = .unchanged } });
+    const transfer_length = transcript.written().len;
+    cb.download.?(cb.download_context, .{ .completed = .{ .name = "demo.pkg.tar", .downloaded = 16, .result = .failed } });
+    try t.expectEqual(transfer_length, transcript.written().len);
     const text = transcript.written();
     try t.expectEqual(@as(usize, 0), adapter.downloads.count());
     try t.expectEqual(@as(usize, 2), std.mem.count(u8, text, "|100\n"));

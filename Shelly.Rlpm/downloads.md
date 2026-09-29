@@ -1,6 +1,6 @@
 # Downloads, cache and refresh
 
-M7 uses `Shelly.Download`, extracted from PackageManager's existing downloader
+RLPM uses `Shelly.Download`, extracted from PackageManager's existing downloader
 and bounded queue. PackageManager retains its operation-context adapter and
 public downloader imports. Neither RLPM nor the shared transport links libalpm.
 HTTP/HTTPS use `Shelly.Http`; the Zig `Curl.zig` adapter calls libcurl for its other
@@ -32,8 +32,9 @@ try tx.commit(); // acquisition/verification only; zero installed packages chang
 `Transaction.download()` explicitly acquires a prepared plan without committing.
 The transaction owns its `downloaded_files` and sealed descriptors until release.
 Normal commits consume acquisition, preflight,
-hooks and installation. The backend selector remains M11 work. CachyOS tar/SQLite
-repositories, architecture handling, provenance and sandbox switches are retained.
+hooks and installation. Runtime backend selection works in builds with libalpm;
+builds without it use RLPM throughout. CachyOS tar/SQLite repositories,
+architecture handling, provenance and sandbox switches are retained.
 
 ## Cache and transfer contract
 
@@ -42,7 +43,7 @@ Every hit is checked under the current size/digest/signature/trust policy, with
 key acquisition still requiring consent. Disabled signatures deliberately do not
 imply a cryptographic identity guarantee. Corrupt-cache questions can authorize
 removal. Package archives are not unpacked by DOWNLOADONLY; inventory and
-prepared-plan identity checks belong to M8, matching the native stage boundary.
+prepared-plan identity checks run in preflight, matching the native stage boundary.
 
 Package basenames reject traversal, separators and NUL, including decoded URL
 paths. Partial downloads live in private mode-0700 staging directories guarded
@@ -61,10 +62,20 @@ requests use separate workers and therefore do not share that connection pool.
 Detached signatures follow the effective redirect URL when its filename contains
 the configured database extension or `.pkg`, matching the pinned selection rule.
 
-Workers only update transfer state. Owner dispatches logical init/progress/retry/
-completion callbacks on its calling thread, under the existing reentry guard.
-Fast progress updates may be coalesced. Custom fetch callbacks also run on that
-thread, in private staging, and support updated/unchanged/error results. Custom
+Workers only update transfer state. Owner dispatches callbacks on its calling
+thread, under the existing reentry guard. `init` means queued acquisition;
+`started` identifies an occupied worker slot and its candidate attempt.
+`progress` and `retry` belong to that attempt. `transferred` ends the payload and
+applicable signature requests promptly, even while other files are downloading.
+It does not authenticate the candidate. `processing` identifies the filename,
+verification/publication stage, boundary, and position in the batch. Only
+`completed` means final acceptance (verified and durably published, accepted
+unchanged, or failed). Cached files do not create artificial transfer events.
+Fast progress updates may be coalesced; a completed transfer never emits later
+progress. Verification and publication remain on the owner thread after workers
+join. A database candidate rejected during verification can reopen transfer work
+with a new attempt identity, followed by one final acquisition result. Custom
+fetch callbacks also run on that thread, in private staging, and support updated/unchanged/error results. Custom
 fetch batches are serial; the callback owns transport and privilege policy, as
 in libalpm. Cancellation still prevents verification/publication afterward.
 
@@ -73,12 +84,33 @@ If configured cache locations cannot be used, the fallback is a private
 from libalpm's shared `/tmp` fallback. The returned File/FileSet owns strings and
 sealed descriptors; `deinit` does not delete successfully cached archives.
 
+## Presentation
+
+PackageManager finishes each download child on `transferred`, leaving acceptance
+and transaction success independent. Verification and publication show the
+current filename and completed/total position. A new candidate attempt creates
+a fresh download child; final acquisition completion does not repeat its bar.
+
+Isolated-root provisioning retains each active file's latest byte counters and
+prints one aggregate summary at most every 250 ms while work is active. Starts,
+retries, terminal results, stage changes, errors and hook/scriptlet output flush
+immediately; a final idle summary is also immediate. Unknown totals remain
+unknown. Both native backends feed this presentation through metadata observers
+that do not change standalone confirmation policy. Interactive CLI per-file
+bars remain intact.
+
 ## Refresh and publication
 
 Refresh requires `db.lck`, rejects an active transaction, honors repository sync
 usage and the configured extension, and tries every enabled repository. It reports
-updated/unchanged/skipped/failed outcomes separately. It preserves source file
-modification times for conditional refresh. A forced refresh bypasses conditions.
+updated/unchanged/skipped/failed outcomes separately, in configured repository
+order. Independent databases acquire their payload/signature pairs concurrently
+under the same `ParallelDownloads` limit as packages. Candidate verification,
+key-import questions, parsing and journaled publication remain on the owner
+thread. Rejected candidates with remaining mirrors enter another bounded
+acquisition round; successful repositories are not downloaded again. It preserves
+source file modification times for conditional refresh. A forced refresh bypasses
+conditions.
 
 Database data and detached signatures are sealed, verified and parsed before
 publication. A successful update replaces only that database's generation; an
@@ -108,7 +140,7 @@ no configured user, or all three switches disabled avoids that path. The child
 applies native Zig Landlock write confinement and the seccomp filter as configured, clears
 supplementary groups and changes GID/UID. Setup failure aborts the request. The
 parent never changes credentials. Downloads need network access; the CachyOS
-network switch's execution restrictions belong to M9.
+network switch's execution restrictions apply to hook and scriptlet execution.
 The filter retains all 81 distinct pinned syscall denials and rejects alternate
 syscall ABIs. It uses Linux syscalls directly, without libseccomp. Account lookup
 uses libc/NSS; libc credential setters retain their thread-coordination behavior.
@@ -125,7 +157,11 @@ must not be assumed to survive removal of a build cache.
 `zig build test-download` covers private file mirrors, cache checks, size and
 signature rejection, custom callbacks, aggregate refresh, locking, independent
 readers, CachyOS repository names, custom extensions, URL batches, callbacks and
-DOWNLOADONLY. These tests are also in `zig build test`; publication recovery is
+DOWNLOADONLY. Local HTTP fixtures verify overlap and limits 1/3/10 for packages
+and repositories including mirror/signature requests, fast transfer completion
+while a slow response remains blocked, unknown response lengths, retries after
+candidate rejection, and cancellation before publication. These tests require
+localhost socket access. These tests are also in `zig build test`; publication recovery is
 in the module tests. Normal tests do not use the host package database or GPG.
 
 `Shelly.Download: zig build test` exercises local HTTP and FTP, redirects,

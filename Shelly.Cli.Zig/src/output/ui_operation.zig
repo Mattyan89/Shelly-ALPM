@@ -586,6 +586,8 @@ test "UI operation reporter preserves percentages for every progress frame shape
 
     var alpm = operation_context.begin(.{ .backend = .alpm, .kind = .install, .subject = "demo" });
     alpm.progress(.{ .stage = "transaction", .completed = 37, .total = 100, .percentage = 37, .native_code = 100 });
+    alpm.progress(.{ .stage = "Verifying downloads", .message = "demo.pkg", .completed = 1, .total = 2 });
+    alpm.progress(.{ .stage = "Publishing downloads", .message = "demo.pkg", .completed = 1, .total = 2 });
     alpm.finish(.success);
     var flatpak = operation_context.begin(.{ .backend = .flatpak, .kind = .install, .subject = "org.demo.App" });
     flatpak.progress(.{ .stage = "Downloading", .percentage = 64 });
@@ -606,6 +608,18 @@ test "UI operation reporter preserves percentages for every progress frame shape
             "\"ProgressType\":\"PackageDownload\"",
             "\"Percent\":37",
             "\"Stage\":\"transaction\"",
+        },
+        &.{
+            "\"ProgressType\":\"IntegrityStart\"",
+            "\"PackageName\":\"demo.pkg\"",
+            "\"Stage\":\"Verifying downloads\"",
+            "\"Percent\":50",
+        },
+        &.{
+            "\"ProgressType\":\"LoadStart\"",
+            "\"PackageName\":\"demo.pkg\"",
+            "\"Stage\":\"Publishing downloads\"",
+            "\"Percent\":50",
         },
         &.{
             "\"$kind\":\"flatpak.progress\"",
