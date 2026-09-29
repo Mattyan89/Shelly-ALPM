@@ -1,11 +1,13 @@
-const Fixture = @This();
 const std = @import("std");
+
+const Fixture = @This();
 const c = @cImport({
     @cInclude("archive.h");
     @cInclude("archive_entry.h");
 });
 const io = std.testing.io;
 const allocator = std.testing.allocator;
+
 pub const Entry = struct {
     path: []const u8,
     contents: []const u8 = "",
@@ -19,6 +21,7 @@ pub const Entry = struct {
     sparse: bool = false,
     acl: bool = false,
 };
+
 pub const Compression = enum { none, zstd, gzip, xz, bzip2 };
 temporary: std.testing.TmpDir,
 path: [:0]u8,
@@ -43,7 +46,13 @@ pub fn init(entries: []const Entry, compression: Compression) !Fixture {
     const extended = for (entries) |item| {
         if (item.xattr != null or item.capabilities or item.sparse or item.acl) break true;
     } else false;
-    try std.testing.expectEqual(c.ARCHIVE_OK, if (extended) c.archive_write_set_format_pax(writer) else c.archive_write_set_format_ustar(writer));
+    try std.testing.expectEqual(
+        c.ARCHIVE_OK,
+        if (extended)
+            c.archive_write_set_format_pax(writer)
+        else
+            c.archive_write_set_format_ustar(writer),
+    );
     try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_open_filename(writer, path.ptr));
     for (entries) |item| {
         const entry = c.archive_entry_new() orelse return error.OutOfMemory;
@@ -53,7 +62,14 @@ pub fn init(entries: []const Entry, compression: Compression) !Fixture {
         const target = if (item.target) |value| try allocator.dupeSentinel(u8, value, 0) else null;
         defer if (target) |value| allocator.free(value);
         c.archive_entry_set_pathname(entry, name.ptr);
-        c.archive_entry_set_perm(entry, item.mode orelse (if (item.kind == .directory) @as(u32, 0o755) else 0o644));
+        c.archive_entry_set_perm(
+            entry,
+            item.mode orelse
+                (if (item.kind == .directory)
+                    @as(u32, 0o755)
+                else
+                    0o644),
+        );
         c.archive_entry_set_mtime(entry, item.mtime, 0);
         if (item.xattr) |value| c.archive_entry_xattr_add_entry(entry, "user.rlpm", value.ptr, value.len);
         if (item.capabilities) {
@@ -61,11 +77,46 @@ pub fn init(entries: []const Entry, compression: Compression) !Fixture {
             c.archive_entry_xattr_add_entry(entry, "security.capability", &caps, caps.len);
         }
         if (item.acl) {
-            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 7, c.ARCHIVE_ENTRY_ACL_USER_OBJ, -1, null);
-            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 5, c.ARCHIVE_ENTRY_ACL_GROUP_OBJ, -1, null);
-            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 0, c.ARCHIVE_ENTRY_ACL_OTHER, -1, null);
-            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 5, c.ARCHIVE_ENTRY_ACL_MASK, -1, null);
-            _ = c.archive_entry_acl_add_entry(entry, c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS, 4, c.ARCHIVE_ENTRY_ACL_USER, 42, "fixture");
+            _ = c.archive_entry_acl_add_entry(
+                entry,
+                c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS,
+                7,
+                c.ARCHIVE_ENTRY_ACL_USER_OBJ,
+                -1,
+                null,
+            );
+            _ = c.archive_entry_acl_add_entry(
+                entry,
+                c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS,
+                5,
+                c.ARCHIVE_ENTRY_ACL_GROUP_OBJ,
+                -1,
+                null,
+            );
+            _ = c.archive_entry_acl_add_entry(
+                entry,
+                c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS,
+                0,
+                c.ARCHIVE_ENTRY_ACL_OTHER,
+                -1,
+                null,
+            );
+            _ = c.archive_entry_acl_add_entry(
+                entry,
+                c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS,
+                5,
+                c.ARCHIVE_ENTRY_ACL_MASK,
+                -1,
+                null,
+            );
+            _ = c.archive_entry_acl_add_entry(
+                entry,
+                c.ARCHIVE_ENTRY_ACL_TYPE_ACCESS,
+                4,
+                c.ARCHIVE_ENTRY_ACL_USER,
+                42,
+                "fixture",
+            );
         }
         c.archive_entry_set_filetype(entry, switch (item.kind) {
             .file => 0o100000,
@@ -81,12 +132,21 @@ pub fn init(entries: []const Entry, compression: Compression) !Fixture {
         c.archive_entry_set_size(entry, @intCast(item.declared_size orelse item.contents.len));
         if (item.sparse) c.archive_entry_sparse_add_entry(entry, @intCast(item.contents.len - 4), 4);
         try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_header(writer, entry));
-        if (item.contents.len != 0) try std.testing.expectEqual(@as(isize, @intCast(item.contents.len)), c.archive_write_data(writer, item.contents.ptr, item.contents.len));
+        if (item.contents.len != 0)
+            try std.testing.expectEqual(
+                @as(isize, @intCast(item.contents.len)),
+                c.archive_write_data(
+                    writer,
+                    item.contents.ptr,
+                    item.contents.len,
+                ),
+            );
         try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_finish_entry(writer));
     }
     try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_close(writer));
     return .{ .temporary = temporary, .path = path };
 }
+
 pub fn deinit(self: *Fixture) void {
     allocator.free(self.path);
     self.temporary.cleanup();
@@ -101,14 +161,29 @@ pub fn gzip(bytes: []const u8) ![]u8 {
     const buffer = try allocator.alloc(u8, bytes.len + 4096);
     defer allocator.free(buffer);
     var used: usize = 0;
-    try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_open_memory(writer, buffer.ptr, buffer.len, &used));
+    try std.testing.expectEqual(
+        c.ARCHIVE_OK,
+        c.archive_write_open_memory(
+            writer,
+            buffer.ptr,
+            buffer.len,
+            &used,
+        ),
+    );
     const entry = c.archive_entry_new() orelse return error.OutOfMemory;
     defer c.archive_entry_free(entry);
     c.archive_entry_set_pathname(entry, "data");
     c.archive_entry_set_filetype(entry, 0o100000);
     c.archive_entry_set_size(entry, @intCast(bytes.len));
     try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_header(writer, entry));
-    try std.testing.expectEqual(@as(isize, @intCast(bytes.len)), c.archive_write_data(writer, bytes.ptr, bytes.len));
+    try std.testing.expectEqual(
+        @as(isize, @intCast(bytes.len)),
+        c.archive_write_data(
+            writer,
+            bytes.ptr,
+            bytes.len,
+        ),
+    );
     try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_close(writer));
     return allocator.dupe(u8, buffer[0..used]);
 }

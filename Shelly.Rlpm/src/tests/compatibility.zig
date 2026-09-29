@@ -1,6 +1,7 @@
 //! Offline checks of the reference inventory. Passing is not a behavioral parity claim.
 const std = @import("std");
 const reference = @import("reference/assets.zig");
+
 const ledger = @embedFile("compatibility-ledger.tsv");
 const evidence = @embedFile("compatibility-evidence.tsv");
 const upstream = @embedFile("reference/upstream-alpm.h");
@@ -64,7 +65,9 @@ fn collectSymbols(source: []const u8, symbols: *std.StringHashMap(void)) !void {
             while (pos < source.len and (std.ascii.isAlphanumeric(source[pos]) or source[pos] == '_')) : (pos += 1) {}
             const name = source[start..pos];
             if (std.mem.eql(u8, name, "ALPM_H") or std.mem.eql(u8, name, "ALPM_LIST_H")) continue;
-            if (std.mem.startsWith(u8, name, "alpm_") or std.mem.startsWith(u8, name, "ALPM_") or std.mem.eql(u8, name, "FREELIST")) {
+            if (std.mem.startsWith(u8, name, "alpm_") or std.mem.startsWith(u8, name, "ALPM_") or
+                std.mem.eql(u8, name, "FREELIST"))
+            {
                 try symbols.put(name, {});
             }
         } else {
@@ -74,18 +77,32 @@ fn collectSymbols(source: []const u8, symbols: *std.StringHashMap(void)) !void {
 }
 
 fn oneOf(value: []const u8, allowed: []const []const u8) bool {
-    for (allowed) |item| if (std.mem.eql(u8, value, item)) return true;
+    for (allowed) |item|
+        if (std.mem.eql(u8, value, item)) return true;
     return false;
 }
 
 test "reference artifacts match their pinned SHA-256 and build provenance" {
     const Manifest = struct {
         schema: u32,
-        package: struct { pkgbuild_sha256: []const u8 },
-        library: struct { version: []const u8, capability_mask: u32 },
-        assets: []const struct { path: []const u8, sha256: []const u8 },
+        package: struct {
+            pkgbuild_sha256: []const u8,
+        },
+        library: struct {
+            version: []const u8,
+            capability_mask: u32,
+        },
+        assets: []const struct {
+            path: []const u8,
+            sha256: []const u8,
+        },
     };
-    const parsed = try std.json.parseFromSlice(Manifest, std.testing.allocator, @embedFile("reference/manifest.json"), .{ .ignore_unknown_fields = true });
+    const parsed = try std.json.parseFromSlice(
+        Manifest,
+        std.testing.allocator,
+        @embedFile("reference/manifest.json"),
+        .{ .ignore_unknown_fields = true },
+    );
     defer parsed.deinit();
     try std.testing.expectEqual(1, parsed.value.schema);
     try std.testing.expectEqualStrings("16.0.1", parsed.value.library.version);
@@ -105,7 +122,9 @@ test "reference artifacts match their pinned SHA-256 and build provenance" {
             found = true;
             if (std.mem.eql(u8, asset.path, "packaging/PKGBUILD")) {
                 try std.testing.expectEqualStrings(parsed.value.package.pkgbuild_sha256, &hex);
-                try std.testing.expect(std.mem.indexOf(u8, @embedFile("reference/packaging/.BUILDINFO"), &hex) != null);
+                try std.testing.expect(
+                    std.mem.indexOf(u8, @embedFile("reference/packaging/.BUILDINFO"), &hex) != null,
+                );
             }
         }
         try std.testing.expect(found);
@@ -136,8 +155,30 @@ test "ledger accounts for every pinned public symbol without duplicate or invent
         try std.testing.expect(!(try seen.getOrPut(row.symbol)).found_existing);
         try std.testing.expect(oneOf(row.origin, &.{ "upstream", "cachyos" }));
         try std.testing.expect(oneOf(row.kind, &.{ "function", "constant", "type", "macro", "behavior" }));
-        try std.testing.expect(oneOf(row.feature, &.{ "owner", "metadata", "database", "verification", "resolver", "transaction", "download", "preflight", "actions", "executor", "native-backend" }));
-        try std.testing.expect(oneOf(row.status, &.{ "missing", "partial", "representation_only", "verified" }));
+        try std.testing.expect(
+            oneOf(
+                row.feature,
+                &.{
+                    "owner",
+                    "metadata",
+                    "database",
+                    "verification",
+                    "resolver",
+                    "transaction",
+                    "download",
+                    "preflight",
+                    "actions",
+                    "executor",
+                    "native-backend",
+                },
+            ),
+        );
+        try std.testing.expect(
+            oneOf(
+                row.status,
+                &.{ "missing", "partial", "representation_only", "verified" },
+            ),
+        );
         try std.testing.expect(std.mem.startsWith(u8, row.fixture, row.feature));
         try std.testing.expect(std.mem.endsWith(u8, row.fixture, row.symbol));
         if (std.mem.eql(u8, row.kind, "behavior")) {
@@ -154,7 +195,8 @@ test "ledger accounts for every pinned public symbol without duplicate or invent
         if (std.mem.startsWith(u8, row.symbol, "ALPM_TRANS_FLAG_")) flags += 1;
     }
     var names = required.keyIterator();
-    while (names.next()) |name| try std.testing.expect(seen.contains(name.*));
+    while (names.next()) |name|
+        try std.testing.expect(seen.contains(name.*));
     try std.testing.expectEqual(16, flags);
     try std.testing.expectEqual(4, extensions);
 }
@@ -210,7 +252,11 @@ test "coverage claims distinguish unit evidence from independent reference expec
         const kind = evidence_kinds.get(row.evidence_id);
         if (!std.mem.eql(u8, row.evidence_id, "-")) try std.testing.expect(kind != null);
         if (std.mem.eql(u8, row.status, "verified")) {
-            try std.testing.expectEqualStrings("reference-fixture", kind orelse return error.MissingParityEvidence);
+            try std.testing.expectEqualStrings(
+                "reference-fixture",
+                kind orelse
+                    return error.MissingParityEvidence,
+            );
         }
     }
 }

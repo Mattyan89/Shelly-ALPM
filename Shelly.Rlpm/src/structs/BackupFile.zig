@@ -1,5 +1,6 @@
-const BackupFile = @This();
 const std = @import("std");
+
+const BackupFile = @This();
 name: []const u8,
 /// Archive PKGINFO backup records have no installed-content hash yet.
 hash: ?[]const u8 = null,

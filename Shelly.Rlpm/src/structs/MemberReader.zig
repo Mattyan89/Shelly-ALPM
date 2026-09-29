@@ -1,8 +1,9 @@
 //! Independently owned package member stream. Local members are read verbatim,
 //! including compressed mtree bytes; MtreeIterator handles their compression.
-const MemberReader = @This();
 const std = @import("std");
 const ArchiveReader = @import("ArchiveReader.zig");
+
+const MemberReader = @This();
 const c = @cImport({
     @cInclude("stdio.h");
     @cInclude("errno.h");
@@ -21,6 +22,7 @@ pub fn openFile(allocator: std.mem.Allocator, path: []const u8) !?MemberReader {
     };
     return .{ .stream = .{ .file = file } };
 }
+
 pub fn read(self: *MemberReader, buffer: []u8) !usize {
     return switch (self.stream) {
         .archive => |*reader| reader.read(buffer),
@@ -31,6 +33,7 @@ pub fn read(self: *MemberReader, buffer: []u8) !usize {
         },
     };
 }
+
 pub fn readAll(self: *MemberReader, allocator: std.mem.Allocator, limit: usize) ![]u8 {
     var bytes: std.ArrayList(u8) = .empty;
     errdefer bytes.deinit(allocator);
@@ -43,6 +46,7 @@ pub fn readAll(self: *MemberReader, allocator: std.mem.Allocator, limit: usize) 
     }
     return bytes.toOwnedSlice(allocator);
 }
+
 pub fn deinit(self: *MemberReader) void {
     switch (self.stream) {
         .archive => |*reader| reader.deinit(),

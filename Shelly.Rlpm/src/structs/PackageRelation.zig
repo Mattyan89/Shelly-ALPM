@@ -1,8 +1,9 @@
 //! Relations borrow strings. parse performs no allocation; clone owns all strings
 //! and must be paired with deinit. Constraint versions are intentionally raw.
-const PackageRelation = @This();
 const std = @import("std");
 const Version = @import("Version.zig");
+
+const PackageRelation = @This();
 
 pub const Constraint = union(enum) {
     any,
@@ -31,7 +32,8 @@ pub fn parse(value: []const u8) !PackageRelation {
     for ([_]u8{ '<', '>', '=' }) |operator| {
         const index = std.mem.indexOfScalar(u8, specification, operator) orelse continue;
         result.name = specification[0..index];
-        const inclusive = operator != '=' and index + 1 < specification.len and specification[index + 1] == '=';
+        const inclusive = operator != '=' and index + 1 < specification.len and
+            specification[index + 1] == '=';
         const version = specification[index + (if (inclusive) @as(usize, 2) else 1) ..];
         result.constraint = switch (operator) {
             '<' => if (inclusive) .{ .less_equal = version } else .{ .less = version },
@@ -46,20 +48,28 @@ pub fn parse(value: []const u8) !PackageRelation {
 
 pub fn clone(self: PackageRelation, allocator: std.mem.Allocator) !PackageRelation {
     if (std.mem.indexOfScalar(u8, self.name, 0) != null) return error.InvalidPackageRelation;
-    if (self.description) |value| if (std.mem.indexOfScalar(u8, value, 0) != null) return error.InvalidPackageRelation;
+    if (self.description) |value|
+        if (std.mem.indexOfScalar(u8, value, 0) != null)
+            return error.InvalidPackageRelation;
     switch (self.constraint) {
         .any => {},
-        inline else => |value| if (std.mem.indexOfScalar(u8, value, 0) != null) return error.InvalidPackageRelation,
+        inline else => |value| if (std.mem.indexOfScalar(u8, value, 0) != null)
+            return error.InvalidPackageRelation,
     }
     const name = try allocator.dupe(u8, self.name);
     errdefer allocator.free(name);
     const description = if (self.description) |value| try allocator.dupe(u8, value) else null;
     errdefer if (description) |value| allocator.free(value);
-    return .{ .name = name, .description = description, .constraint = switch (self.constraint) {
-        .any => .any,
-        inline else => |value, tag| @unionInit(Constraint, @tagName(tag), try allocator.dupe(u8, value)),
-    } };
+    return .{
+        .name = name,
+        .description = description,
+        .constraint = switch (self.constraint) {
+            .any => .any,
+            inline else => |value, tag| @unionInit(Constraint, @tagName(tag), try allocator.dupe(u8, value)),
+        },
+    };
 }
+
 /// Only for a relation returned by clone, never a borrowed parse result.
 pub fn deinit(self: *PackageRelation, allocator: std.mem.Allocator) void {
     allocator.free(self.name);
@@ -70,6 +80,7 @@ pub fn deinit(self: *PackageRelation, allocator: std.mem.Allocator) void {
     }
     self.* = undefined;
 }
+
 pub fn format(self: PackageRelation, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     try writer.writeAll(self.name);
     switch (self.constraint) {
@@ -88,9 +99,11 @@ pub fn format(self: PackageRelation, writer: *std.Io.Writer) std.Io.Writer.Error
     }
     if (self.description) |value| try writer.print(": {s}", .{value});
 }
+
 pub fn formatAlloc(self: PackageRelation, allocator: std.mem.Allocator) ![]u8 {
     return std.fmt.allocPrint(allocator, "{f}", .{self});
 }
+
 pub fn matchesVersion(self: PackageRelation, version: []const u8) bool {
     return switch (self.constraint) {
         .any => true,
@@ -101,10 +114,17 @@ pub fn matchesVersion(self: PackageRelation, version: []const u8) bool {
         .less => |value| Version.compareStrings(version, value) == .lessThan,
     };
 }
-pub fn satisfiedBy(self: PackageRelation, name: []const u8, version: []const u8, provisions: []const PackageRelation) bool {
+
+pub fn satisfiedBy(
+    self: PackageRelation,
+    name: []const u8,
+    version: []const u8,
+    provisions: []const PackageRelation,
+) bool {
     if (std.mem.eql(u8, self.name, name) and self.matchesVersion(version)) return true;
     return self.providedBy(provisions);
 }
+
 /// Provision-only matching also handles permissively parsed empty names without
 /// inventing a literal package identity for AssumeInstalled or graph edges.
 pub fn providedBy(self: PackageRelation, provisions: []const PackageRelation) bool {

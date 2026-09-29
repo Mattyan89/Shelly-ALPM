@@ -1,3 +1,5 @@
+const Database = @import("structs/Database.zig");
+
 test {
-    _ = @import("structs/Database.zig").HostTests;
+    _ = Database.HostTests;
 }

@@ -1,13 +1,16 @@
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
 const Archive = @import("archive_fixture.zig");
+
 const a = std.testing.allocator;
 const io = std.testing.io;
+
 const Fixture = struct {
     temporary: std.testing.TmpDir,
     path: [:0]const u8,
     cache: []const u8,
     server: []const u8,
+
     fn init() !Fixture {
         var temporary = std.testing.tmpDir(.{});
         errdefer temporary.cleanup();
@@ -17,19 +20,49 @@ const Fixture = struct {
         errdefer a.free(path);
         const cache = try std.fmt.allocPrint(a, "{s}/cache", .{path});
         errdefer a.free(cache);
-        return .{ .temporary = temporary, .path = path, .cache = cache, .server = try std.fmt.allocPrint(a, "file://{s}/mirror", .{path}) };
+        return .{
+            .temporary = temporary,
+            .path = path,
+            .cache = cache,
+            .server = try std.fmt.allocPrint(
+                a,
+                "file://{s}/mirror",
+                .{path},
+            ),
+        };
     }
+
     fn deinit(self: *Fixture) void {
         a.free(self.path);
         a.free(self.cache);
         a.free(self.server);
         self.temporary.cleanup();
     }
+
     fn owner(self: *Fixture) !rlpm.Owner {
-        return rlpm.Owner.init(io, a, .{ .root = self.path, .database_path = self.path, .cache_directories = &.{self.cache} }, &.{.{ .database_name = "cachyos", .servers = &.{self.server} }});
+        return rlpm.Owner.init(
+            io,
+            a,
+            .{
+                .root = self.path,
+                .database_path = self.path,
+                .cache_directories = &.{self.cache},
+            },
+            &.{
+                .{
+                    .database_name = "cachyos",
+                    .servers = &.{self.server},
+                },
+            },
+        );
     }
+
     fn repository(self: *Fixture, version: []const u8) !void {
-        const metadata = try std.fmt.allocPrint(a, "%NAME%\ndemo\n\n%VERSION%\n{s}\n\n%FILENAME%\ndemo.pkg.tar.zst\n\n%CSIZE%\n7\n\n%INSTALLED_DB%\ncachyos\n\n", .{version});
+        const metadata = try std.fmt.allocPrint(
+            a,
+            "%NAME%\ndemo\n\n%VERSION%\n{s}\n\n%FILENAME%\ndemo.pkg.tar.zst\n\n%CSIZE%\n7\n\n%INSTALLED_DB%\ncachyos\n\n",
+            .{version},
+        );
         defer a.free(metadata);
         var archive = try Archive.init(&.{.{ .path = "demo-1-1/desc", .contents = metadata }}, .none);
         defer archive.deinit();
@@ -52,13 +85,42 @@ test "URL fetch publishes a verified sealed file and revalidates cached bytes" {
     var cached = try owner.fetchPackage(io, url);
     defer cached.deinit();
     try std.testing.expect(cached.cached);
-    try std.testing.expectError(error.InvalidPackageFilename, owner.fetchPackage(io, "https://example.test/%2e%2e"));
-    try std.testing.expectError(error.InvalidPackageFilename, owner.fetchPackage(io, "https://example.test/a%2fb"));
+    try std.testing.expectError(
+        error.InvalidPackageFilename,
+        owner.fetchPackage(
+            io,
+            "https://example.test/%2e%2e",
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidPackageFilename,
+        owner.fetchPackage(
+            io,
+            "https://example.test/a%2fb",
+        ),
+    );
     const original = "https://origin.test/demo.pkg.tar.zst";
     const redirected = "https://mirror.test/demo.pkg.tar.zst";
-    try std.testing.expectEqualStrings(redirected, rlpm.Downloads.signatureSource(original, redirected, ".db"));
-    try std.testing.expectEqualStrings(original, rlpm.Downloads.signatureSource(original, "https://mirror.test/opaque?id=demo.pkg.tar.zst", ".db"));
-    try std.testing.expectEqualStrings("https://mirror.test/cachyos.custom", rlpm.Downloads.signatureSource(original, "https://mirror.test/cachyos.custom", ".custom"));
+    try std.testing.expectEqualStrings(
+        redirected,
+        rlpm.Downloads.signatureSource(original, redirected, ".db"),
+    );
+    try std.testing.expectEqualStrings(
+        original,
+        rlpm.Downloads.signatureSource(
+            original,
+            "https://mirror.test/opaque?id=demo.pkg.tar.zst",
+            ".db",
+        ),
+    );
+    try std.testing.expectEqualStrings(
+        "https://mirror.test/cachyos.custom",
+        rlpm.Downloads.signatureSource(
+            original,
+            "https://mirror.test/cachyos.custom",
+            ".custom",
+        ),
+    );
 }
 test "refresh preserves CachyOS metadata and stale references change only on update" {
     var fixture = try Fixture.init();
@@ -195,14 +257,20 @@ const FetchContext = struct {
     result: rlpm.Callbacks.FetchResult = .updated,
     calls: usize = 0,
     cancel: bool = false,
+
     fn fetch(ctx: ?*anyopaque, request: rlpm.Callbacks.Fetch) rlpm.Callbacks.FetchError!rlpm.Callbacks.FetchResult {
         const self: *FetchContext = @ptrCast(@alignCast(ctx.?));
         self.calls += 1;
-        if (self.owner.setCallbacks(.{})) |_| return error.DownloadFailed else |err| if (err != error.CallbackReentry) return error.DownloadFailed;
+        if (self.owner.setCallbacks(.{})) |_|
+            return error.DownloadFailed
+        else |err| if (err != error.CallbackReentry)
+            return error.DownloadFailed;
         var arena = std.heap.ArenaAllocator.init(a);
         defer arena.deinit();
-        const name = rlpm.Downloads.urlFilename(arena.allocator(), request.url) catch return error.DownloadFailed;
-        const destination = std.fs.path.join(arena.allocator(), &.{ request.destination_directory, name }) catch return error.OutOfMemory;
+        const name = rlpm.Downloads.urlFilename(arena.allocator(), request.url) catch
+            return error.DownloadFailed;
+        const destination = std.fs.path.join(arena.allocator(), &.{ request.destination_directory, name }) catch
+            return error.OutOfMemory;
         std.Io.Dir.cwd().copyFile(self.source, .cwd(), destination, io, .{}) catch return error.DownloadFailed;
         if (self.cancel) self.owner.requestCancellation();
         return self.result;
@@ -226,7 +294,10 @@ test "custom fetch updated and unchanged results run behind the callback guard" 
     try std.testing.expectEqual(2, ctx.calls);
     ctx.cancel = true;
     try std.testing.expectError(error.Cancelled, owner.fetchPackage(io, "custom://mirror/third.pkg"));
-    try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "cache/third.pkg", .{}));
+    try std.testing.expectError(
+        error.FileNotFound,
+        fixture.temporary.dir.access(io, "cache/third.pkg", .{}),
+    );
 }
 
 test "required and oversized optional signatures never become usable cache files" {
@@ -245,7 +316,13 @@ test "required and oversized optional signatures never become usable cache files
     options = owner.options();
     options.remote_file_signature_policy.?.package = .optional;
     try owner.setOptions(io, options);
-    try fixture.temporary.dir.writeFile(io, .{ .sub_path = "mirror/pkg.sig", .data = &@as([16385]u8, @splat(42)) });
+    try fixture.temporary.dir.writeFile(
+        io,
+        .{
+            .sub_path = "mirror/pkg.sig",
+            .data = &@as([16385]u8, @splat(42)),
+        },
+    );
     if (owner.fetchPackage(io, url)) |value| {
         var unexpected = value;
         unexpected.deinit();
@@ -259,11 +336,35 @@ test "cache servers precede repository servers and misses fall through" {
     defer fixture.deinit();
     try fixture.repository("1-1");
     try fixture.temporary.dir.createDirPath(io, "cache-server");
-    try fixture.temporary.dir.writeFile(io, .{ .sub_path = "cache-server/demo.pkg.tar.zst", .data = "cache!!" });
+    try fixture.temporary.dir.writeFile(
+        io,
+        .{
+            .sub_path = "cache-server/demo.pkg.tar.zst",
+            .data = "cache!!",
+        },
+    );
     try fixture.temporary.dir.writeFile(io, .{ .sub_path = "mirror/demo.pkg.tar.zst", .data = "package" });
     const server = try std.fmt.allocPrint(a, "file://{s}/cache-server", .{fixture.path});
     defer a.free(server);
-    var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache} }, &.{.{ .database_name = "cachyos", .servers = &.{fixture.server}, .cache_servers = &.{ "file:///missing-fixture-directory", server } }});
+    var owner = try rlpm.Owner.init(
+        io,
+        a,
+        .{
+            .root = fixture.path,
+            .database_path = fixture.path,
+            .cache_directories = &.{fixture.cache},
+        },
+        &.{
+            .{
+                .database_name = "cachyos",
+                .servers = &.{fixture.server},
+                .cache_servers = &.{
+                    "file:///missing-fixture-directory",
+                    server,
+                },
+            },
+        },
+    );
     defer owner.deinit() catch unreachable;
     var refresh = try owner.refreshDatabases(io, true);
     defer refresh.deinit();
@@ -273,7 +374,12 @@ test "cache servers precede repository servers and misses fall through" {
     try tx.addTarget("demo");
     try tx.prepare();
     try tx.commit();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(io, tx.downloaded_files.?[0].snapshot.path(), a, .limited(100));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(
+        io,
+        tx.downloaded_files.?[0].snapshot.path(),
+        a,
+        .limited(100),
+    );
     defer a.free(bytes);
     try std.testing.expectEqualStrings("cache!!", bytes);
 }
@@ -283,11 +389,36 @@ test "independent owners see complete published databases with custom extensions
     defer fixture.deinit();
     try fixture.repository("1-1");
     try fixture.temporary.dir.rename("mirror/cachyos.db", fixture.temporary.dir, "mirror/cachyos.files", io);
-    var options: rlpm.OwnerConfiguration = .{ .root = fixture.path, .database_path = fixture.path, .database_extension = ".files", .cache_directories = &.{fixture.cache} };
-    var first = try rlpm.Owner.init(io, a, options, &.{.{ .database_name = "cachyos", .servers = &.{fixture.server} }});
+    var options: rlpm.OwnerConfiguration = .{
+        .root = fixture.path,
+        .database_path = fixture.path,
+        .database_extension = ".files",
+        .cache_directories = &.{fixture.cache},
+    };
+    var first = try rlpm.Owner.init(
+        io,
+        a,
+        options,
+        &.{
+            .{
+                .database_name = "cachyos",
+                .servers = &.{fixture.server},
+            },
+        },
+    );
     defer first.deinit() catch unreachable;
     options.local_database_mode = .read_only;
-    var second = try rlpm.Owner.init(io, a, options, &.{.{ .database_name = "cachyos", .servers = &.{fixture.server} }});
+    var second = try rlpm.Owner.init(
+        io,
+        a,
+        options,
+        &.{
+            .{
+                .database_name = "cachyos",
+                .servers = &.{fixture.server},
+            },
+        },
+    );
     defer second.deinit() catch unreachable;
     var refreshed = try first.refreshDatabases(io, true);
     defer refreshed.deinit();
@@ -311,7 +442,15 @@ test "pinned DOWNLOADONLY and refresh outcomes match the recorded library" {
         if (std.mem.eql(u8, name, "optional-signature")) policy.package = .optional;
         const wrong_digest = std.mem.eql(u8, name, "digest-mismatch");
         if (wrong_digest) {
-            var archive = try Archive.init(&.{.{ .path = "demo-1-1/desc", .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n%FILENAME%\ndemo.pkg.tar.zst\n\n%CSIZE%\n7\n\n%SHA256SUM%\n0000000000000000000000000000000000000000000000000000000000000000\n\n" }}, .none);
+            var archive = try Archive.init(
+                &.{
+                    .{
+                        .path = "demo-1-1/desc",
+                        .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n%FILENAME%\ndemo.pkg.tar.zst\n\n%CSIZE%\n7\n\n%SHA256SUM%\n0000000000000000000000000000000000000000000000000000000000000000\n\n",
+                    },
+                },
+                .none,
+            );
             defer archive.deinit();
             const path = try std.fmt.allocPrint(a, "{s}/mirror/cachyos.db", .{fixture.path});
             defer a.free(path);
@@ -319,7 +458,23 @@ test "pinned DOWNLOADONLY and refresh outcomes match the recorded library" {
         }
         try fixture.temporary.dir.writeFile(io, .{ .sub_path = "mirror/demo.pkg.tar.zst", .data = "package" });
         const disabled = std.mem.eql(u8, name, "refresh-disabled");
-        var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache} }, &.{.{ .database_name = "cachyos", .servers = &.{fixture.server}, .signature_policy = policy, .usage = .{ .sync = !disabled } }});
+        var owner = try rlpm.Owner.init(
+            io,
+            a,
+            .{
+                .root = fixture.path,
+                .database_path = fixture.path,
+                .cache_directories = &.{fixture.cache},
+            },
+            &.{
+                .{
+                    .database_name = "cachyos",
+                    .servers = &.{fixture.server},
+                    .signature_policy = policy,
+                    .usage = .{ .sync = !disabled },
+                },
+            },
+        );
         defer owner.deinit() catch unreachable;
         if (std.mem.eql(u8, name, "refresh-lock")) {
             try fixture.temporary.dir.writeFile(io, .{ .sub_path = "db.lck", .data = "" });
@@ -343,13 +498,26 @@ test "pinned DOWNLOADONLY and refresh outcomes match the recorded library" {
         defer owner.releaseTransaction() catch unreachable;
         try tx.addTarget("demo");
         try tx.prepare();
-        try std.testing.expectEqual(@as(u64, @intCast(value.get("download_size").?.integer)), (try tx.downloadSize()).bytes);
+        try std.testing.expectEqual(
+            @as(u64, @intCast(value.get("download_size").?.integer)),
+            (try tx.downloadSize()).bytes,
+        );
         if (value.get("commit").?.integer == 0) {
             try tx.commit();
         } else {
-            try std.testing.expectError(if (wrong_digest) error.ChecksumMismatch else error.SignatureMissing, tx.commit());
+            try std.testing.expectError(
+                if (wrong_digest) error.ChecksumMismatch else error.SignatureMissing,
+                tx.commit(),
+            );
             // Planned safety difference: rejected bytes stay in private staging.
-            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "cache/demo.pkg.tar.zst", .{}));
+            try std.testing.expectError(
+                error.FileNotFound,
+                fixture.temporary.dir.access(
+                    io,
+                    "cache/demo.pkg.tar.zst",
+                    .{},
+                ),
+            );
         }
         try std.testing.expectEqual(null, try owner.findPackage(owner.localDatabase().?, "demo"));
     }
@@ -363,6 +531,7 @@ const DownloadEvents = struct {
     wrong_thread: bool = false,
     reentry_allowed: bool = false,
     cancel: bool = false,
+
     fn callback(ctx: ?*anyopaque, event: rlpm.Callbacks.Download) void {
         const self: *DownloadEvents = @ptrCast(@alignCast(ctx.?));
         self.wrong_thread = self.wrong_thread or self.thread != std.os.linux.gettid();
@@ -433,12 +602,14 @@ const HttpFixture = struct {
             };
         }
     }
+
     fn respond(self: *@This(), stream: std.Io.net.Stream) void {
         defer stream.close(io);
         self.respondInner(stream) catch |err| {
             if (err != error.Canceled) self.failed.store(true, .release);
         };
     }
+
     fn respondInner(self: *@This(), stream: std.Io.net.Stream) !void {
         var read_buffer: [2048]u8 = undefined;
         var reader = stream.reader(io, &read_buffer);
@@ -474,11 +645,16 @@ const HttpFixture = struct {
         var write_buffer: [256]u8 = undefined;
         var writer = stream.writer(io, &write_buffer);
         if (missing or signature) {
-            try writer.interface.writeAll("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            try writer.interface.writeAll(
+                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
         } else {
             if (self.unknown_length) {
                 try writer.interface.writeAll("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
-            } else try writer.interface.print("HTTP/1.1 200 OK\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{self.body.len});
+            } else try writer.interface.print(
+                "HTTP/1.1 200 OK\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n",
+                .{self.body.len},
+            );
             try writer.interface.writeAll(self.body);
         }
         try writer.interface.flush();
@@ -486,52 +662,87 @@ const HttpFixture = struct {
 };
 
 test "package and repository HTTP queues bound overlapping payload signature and mirror requests" {
-    var archive = try Archive.init(&.{.{ .path = "demo-1-1/desc", .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n" }}, .none);
+    var archive = try Archive.init(
+        &.{
+            .{
+                .path = "demo-1-1/desc",
+                .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n",
+            },
+        },
+        .none,
+    );
     defer archive.deinit();
     const bytes = try std.Io.Dir.cwd().readFileAlloc(io, archive.path, a, .limited(1024 * 1024));
     defer a.free(bytes);
-    for ([_]u8{ 1, 3, 10 }) |limit| for ([_]bool{ false, true }) |database| {
-        var fixture = try Fixture.init();
-        defer fixture.deinit();
-        const address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
-        var server: HttpFixture = .{ .server = try address.listen(io, .{ .reuse_address = true }), .body = bytes };
-        defer server.server.deinit(io);
-        var serving = try io.concurrent(HttpFixture.serve, .{&server});
-        defer _ = serving.cancel(io) catch {};
-        var arena = std.heap.ArenaAllocator.init(a);
-        defer arena.deinit();
-        const alloc = arena.allocator();
-        const port = server.server.socket.address.getPort();
-        const mirrors = [_][]const u8{
-            try std.fmt.allocPrint(alloc, "http://127.0.0.1:{d}/missing", .{port}),
-            try std.fmt.allocPrint(alloc, "http://127.0.0.1:{d}/good", .{port}),
+    for ([_]u8{ 1, 3, 10 }) |limit|
+        for ([_]bool{ false, true }) |database| {
+            var fixture = try Fixture.init();
+            defer fixture.deinit();
+            const address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
+            var server: HttpFixture = .{
+                .server = try address.listen(io, .{ .reuse_address = true }),
+                .body = bytes,
+            };
+            defer server.server.deinit(io);
+            var serving = try io.concurrent(HttpFixture.serve, .{&server});
+            defer _ = serving.cancel(io) catch {};
+            var arena = std.heap.ArenaAllocator.init(a);
+            defer arena.deinit();
+            const alloc = arena.allocator();
+            const port = server.server.socket.address.getPort();
+            const mirrors = [_][]const u8{
+                try std.fmt.allocPrint(alloc, "http://127.0.0.1:{d}/missing", .{port}),
+                try std.fmt.allocPrint(alloc, "http://127.0.0.1:{d}/good", .{port}),
+            };
+            const policy: rlpm.SignaturePolicy = .{ .package = .optional, .database = .optional };
+            var owner = try rlpm.Owner.init(
+                io,
+                a,
+                .{
+                    .root = fixture.path,
+                    .database_path = fixture.path,
+                    .cache_directories = &.{fixture.cache},
+                    .parallel_downloads = limit,
+                },
+                &.{},
+            );
+            defer owner.deinit() catch unreachable;
+            var requests: [12]rlpm.Downloads.Request = undefined;
+            for (&requests, 0..) |*request, index| {
+                const name = try std.fmt.allocPrint(alloc, "repo{d}", .{index});
+                if (database)
+                    _ = try owner.registerDatabase(
+                        .{
+                            .database_name = name,
+                            .servers = &mirrors,
+                            .signature_policy = policy,
+                        },
+                    );
+                request.* = .{
+                    .name = try std.fmt.allocPrint(alloc, "{s}.pkg", .{name}),
+                    .servers = mirrors[1..],
+                    .cache_servers = mirrors[0..1],
+                    .policy = policy,
+                };
+            }
+            if (database) {
+                var result = try owner.refreshDatabases(io, true);
+                defer result.deinit();
+                try result.check();
+                try std.testing.expectEqual(12, result.databases.len);
+            } else {
+                const files = try rlpm.Downloads.acquire(&owner, io, &requests);
+                defer a.free(files);
+                for (files) |*file|
+                    file.deinit();
+            }
+            const peak = server.peak.load(.acquire);
+            try std.testing.expect(peak <= limit);
+            try std.testing.expect(if (limit == 1) peak == 1 else peak > 1);
+            try std.testing.expectEqual(12, server.signatures.load(.acquire));
+            try std.testing.expectEqual(36, server.requests.load(.acquire));
+            try std.testing.expect(!server.failed.load(.acquire));
         };
-        const policy: rlpm.SignaturePolicy = .{ .package = .optional, .database = .optional };
-        var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache}, .parallel_downloads = limit }, &.{});
-        defer owner.deinit() catch unreachable;
-        var requests: [12]rlpm.Downloads.Request = undefined;
-        for (&requests, 0..) |*request, index| {
-            const name = try std.fmt.allocPrint(alloc, "repo{d}", .{index});
-            if (database) _ = try owner.registerDatabase(.{ .database_name = name, .servers = &mirrors, .signature_policy = policy });
-            request.* = .{ .name = try std.fmt.allocPrint(alloc, "{s}.pkg", .{name}), .servers = mirrors[1..], .cache_servers = mirrors[0..1], .policy = policy };
-        }
-        if (database) {
-            var result = try owner.refreshDatabases(io, true);
-            defer result.deinit();
-            try result.check();
-            try std.testing.expectEqual(12, result.databases.len);
-        } else {
-            const files = try rlpm.Downloads.acquire(&owner, io, &requests);
-            defer a.free(files);
-            for (files) |*file| file.deinit();
-        }
-        const peak = server.peak.load(.acquire);
-        try std.testing.expect(peak <= limit);
-        try std.testing.expect(if (limit == 1) peak == 1 else peak > 1);
-        try std.testing.expectEqual(12, server.signatures.load(.acquire));
-        try std.testing.expectEqual(36, server.requests.load(.acquire));
-        try std.testing.expect(!server.failed.load(.acquire));
-    };
 }
 
 test "fast transfer completion reaches the owner before a slow response is released" {
@@ -542,6 +753,7 @@ test "fast transfer completion reaches the owner before a slow response is relea
         transferred: usize = 0,
         accepted: usize = 0,
         wrong_thread: bool = false,
+
         fn receive(data: ?*anyopaque, value: rlpm.Callbacks.Download) void {
             const self: *@This() = @ptrCast(@alignCast(data.?));
             self.wrong_thread = self.wrong_thread or self.thread != std.os.linux.gettid();
@@ -549,7 +761,11 @@ test "fast transfer completion reaches the owner before a slow response is relea
                 .transferred => |update| {
                     std.testing.expectEqual(0, self.accepted) catch unreachable;
                     self.transferred += 1;
-                    if (std.mem.startsWith(u8, update.name, "fast.")) self.server.fast_reported.store(true, .release);
+                    if (std.mem.startsWith(u8, update.name, "fast."))
+                        self.server.fast_reported.store(
+                            true,
+                            .release,
+                        );
                 },
                 .completed => self.accepted += 1,
                 .progress => |update| if (std.mem.startsWith(u8, update.name, "fast.")) {
@@ -560,7 +776,15 @@ test "fast transfer completion reaches the owner before a slow response is relea
             std.testing.expectError(error.CallbackReentry, self.owner.setCallbacks(.{})) catch unreachable;
         }
     };
-    var archive = try Archive.init(&.{.{ .path = "demo-1-1/desc", .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n" }}, .none);
+    var archive = try Archive.init(
+        &.{
+            .{
+                .path = "demo-1-1/desc",
+                .contents = "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n",
+            },
+        },
+        .none,
+    );
     defer archive.deinit();
     const bytes = try std.Io.Dir.cwd().readFileAlloc(io, archive.path, a, .limited(1024 * 1024));
     defer a.free(bytes);
@@ -568,28 +792,66 @@ test "fast transfer completion reaches the owner before a slow response is relea
         var fixture = try Fixture.init();
         defer fixture.deinit();
         const address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
-        var server: HttpFixture = .{ .server = try address.listen(io, .{ .reuse_address = true }), .body = bytes, .gate_slow = true, .unknown_length = true };
+        var server: HttpFixture = .{
+            .server = try address.listen(io, .{ .reuse_address = true }),
+            .body = bytes,
+            .gate_slow = true,
+            .unknown_length = true,
+        };
         defer server.server.deinit(io);
         var serving = try io.concurrent(HttpFixture.serve, .{&server});
         defer _ = serving.cancel(io) catch {};
-        const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}", .{server.server.socket.address.getPort()});
+        const url = try std.fmt.allocPrint(
+            a,
+            "http://127.0.0.1:{d}",
+            .{server.server.socket.address.getPort()},
+        );
         defer a.free(url);
-        var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache}, .parallel_downloads = 3 }, &.{});
+        var owner = try rlpm.Owner.init(
+            io,
+            a,
+            .{
+                .root = fixture.path,
+                .database_path = fixture.path,
+                .cache_directories = &.{fixture.cache},
+                .parallel_downloads = 3,
+            },
+            &.{},
+        );
         defer owner.deinit() catch unreachable;
-        var capture: Capture = .{ .server = &server, .owner = &owner, .thread = std.os.linux.gettid() };
+        var capture: Capture = .{
+            .server = &server,
+            .owner = &owner,
+            .thread = std.os.linux.gettid(),
+        };
         try owner.setCallbacks(.{ .download = Capture.receive, .download_context = &capture });
         if (database) {
-            for ([_][]const u8{ "slow", "fast" }) |name| _ = try owner.registerDatabase(.{ .database_name = name, .servers = &.{url} });
+            for ([_][]const u8{ "slow", "fast" }) |name|
+                _ = try owner.registerDatabase(
+                    .{
+                        .database_name = name,
+                        .servers = &.{url},
+                    },
+                );
             var result = try owner.refreshDatabases(io, true);
             defer result.deinit();
             try result.check();
         } else {
             const files = try rlpm.Downloads.acquire(&owner, io, &.{
-                .{ .name = "slow.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
-                .{ .name = "fast.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
+                .{
+                    .name = "slow.pkg",
+                    .servers = &.{url},
+                    .policy = rlpm.OwnerConfiguration.disabled_signatures,
+                },
+                .{
+                    .name = "fast.pkg",
+                    .servers = &.{url},
+                    .policy = rlpm.OwnerConfiguration.disabled_signatures,
+                },
             });
             defer a.free(files);
-            for (files) |*file| file.deinit();
+            for (files) |*file|
+                file.deinit();
         }
         try std.testing.expectEqual(2, capture.transferred);
         try std.testing.expectEqual(2, capture.accepted);
@@ -607,6 +869,7 @@ const AcceptanceEvents = struct {
     last_attempt: u32 = 0,
     cancel_stage: ?@FieldType(@FieldType(rlpm.Callbacks.Download, "processing"), "stage") = null,
     cancel_retry: bool = false,
+
     fn receive(data: ?*anyopaque, value: rlpm.Callbacks.Download) void {
         const self: *@This() = @ptrCast(@alignCast(data.?));
         switch (value) {
@@ -620,8 +883,10 @@ const AcceptanceEvents = struct {
                 if (update.result != .failed) self.transferred += 1;
             },
             .processing => |update| {
-                if (update.stage == .verification and update.boundary == .failed) self.verification_failures += 1;
-                if (self.cancel_stage == update.stage and update.boundary == .start) self.owner.requestCancellation();
+                if (update.stage == .verification and update.boundary == .failed)
+                    self.verification_failures += 1;
+                if (self.cancel_stage == update.stage and update.boundary == .start)
+                    self.owner.requestCancellation();
             },
             .completed => |update| {
                 self.completed += 1;
@@ -641,7 +906,21 @@ test "rejected database candidates reopen a transfer attempt and retain one acqu
         try fixture.temporary.dir.writeFile(io, .{ .sub_path = "bad/cachyos.db", .data = "invalid archive" });
         const bad = try std.fmt.allocPrint(a, "file://{s}/bad", .{fixture.path});
         defer a.free(bad);
-        var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache} }, &.{.{ .database_name = "cachyos", .servers = &.{ bad, fixture.server } }});
+        var owner = try rlpm.Owner.init(
+            io,
+            a,
+            .{
+                .root = fixture.path,
+                .database_path = fixture.path,
+                .cache_directories = &.{fixture.cache},
+            },
+            &.{
+                .{
+                    .database_name = "cachyos",
+                    .servers = &.{ bad, fixture.server },
+                },
+            },
+        );
         defer owner.deinit() catch unreachable;
         var capture: AcceptanceEvents = .{ .owner = &owner, .cancel_retry = cancel };
         try owner.setCallbacks(.{ .download = AcceptanceEvents.receive, .download_context = &capture });
@@ -650,7 +929,14 @@ test "rejected database candidates reopen a transfer attempt and retain one acqu
         if (cancel) {
             try std.testing.expectError(error.Cancelled, result.check());
             try std.testing.expectEqual(0, capture.accepted);
-            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "sync/cachyos.db", .{}));
+            try std.testing.expectError(
+                error.FileNotFound,
+                fixture.temporary.dir.access(
+                    io,
+                    "sync/cachyos.db",
+                    .{},
+                ),
+            );
         } else {
             try result.check();
             try std.testing.expectEqual(1, capture.accepted);
@@ -672,10 +958,30 @@ test "transferred packages with bad digests fail acceptance without publishing c
     defer owner.deinit() catch unreachable;
     var version = try rlpm.Version.init("1-1", a);
     defer version.deinit(a);
-    const package: rlpm.Package = .{ .name = "demo", .version = version, .database_name = "core", .compressed_size = 7, .sha256_sum = "0000000000000000000000000000000000000000000000000000000000000000" };
+    const package: rlpm.Package = .{
+        .name = "demo",
+        .version = version,
+        .database_name = "core",
+        .compressed_size = 7,
+        .sha256_sum = "0000000000000000000000000000000000000000000000000000000000000000",
+    };
     var capture: AcceptanceEvents = .{ .owner = &owner };
     try owner.setCallbacks(.{ .download = AcceptanceEvents.receive, .download_context = &capture });
-    try std.testing.expectError(error.ChecksumMismatch, rlpm.Downloads.acquire(&owner, io, &.{.{ .name = "demo.pkg", .package = &package, .servers = &.{fixture.server}, .policy = rlpm.OwnerConfiguration.disabled_signatures }}));
+    try std.testing.expectError(
+        error.ChecksumMismatch,
+        rlpm.Downloads.acquire(
+            &owner,
+            io,
+            &.{
+                .{
+                    .name = "demo.pkg",
+                    .package = &package,
+                    .servers = &.{fixture.server},
+                    .policy = rlpm.OwnerConfiguration.disabled_signatures,
+                },
+            },
+        ),
+    );
     try std.testing.expectEqual(1, capture.transferred);
     try std.testing.expectEqual(1, capture.verification_failures);
     try std.testing.expectEqual(1, capture.completed);
@@ -685,37 +991,53 @@ test "transferred packages with bad digests fail acceptance without publishing c
 
 test "cancellation at verification and publication boundaries leaves packages and databases unpublished" {
     const Stage = @FieldType(@FieldType(rlpm.Callbacks.Download, "processing"), "stage");
-    for ([_]Stage{ .verification, .publication }) |stage| for ([_]bool{ false, true }) |database| {
-        var fixture = try Fixture.init();
-        defer fixture.deinit();
-        try fixture.repository("1-1");
-        try fixture.temporary.dir.writeFile(io, .{ .sub_path = "mirror/demo.pkg", .data = "package" });
-        var owner = try fixture.owner();
-        defer owner.deinit() catch unreachable;
-        var capture: AcceptanceEvents = .{ .owner = &owner, .cancel_stage = stage };
-        try owner.setCallbacks(.{ .download = AcceptanceEvents.receive, .download_context = &capture });
-        if (database) {
-            var result = try owner.refreshDatabases(io, true);
-            defer result.deinit();
-            try std.testing.expectError(error.Cancelled, result.check());
-            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "db.lck", .{}));
-            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "sync/cachyos.db", .{}));
-        } else {
-            const url = try std.fmt.allocPrint(a, "{s}/demo.pkg", .{fixture.server});
-            defer a.free(url);
-            try std.testing.expectError(error.Cancelled, owner.fetchPackage(io, url));
-            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "cache/demo.pkg", .{}));
-        }
-        try std.testing.expectEqual(1, capture.transferred);
-        try std.testing.expectEqual(1, capture.completed);
-        try std.testing.expectEqual(0, capture.accepted);
-    };
+    for ([_]Stage{ .verification, .publication }) |stage|
+        for ([_]bool{ false, true }) |database| {
+            var fixture = try Fixture.init();
+            defer fixture.deinit();
+            try fixture.repository("1-1");
+            try fixture.temporary.dir.writeFile(io, .{ .sub_path = "mirror/demo.pkg", .data = "package" });
+            var owner = try fixture.owner();
+            defer owner.deinit() catch unreachable;
+            var capture: AcceptanceEvents = .{ .owner = &owner, .cancel_stage = stage };
+            try owner.setCallbacks(.{ .download = AcceptanceEvents.receive, .download_context = &capture });
+            if (database) {
+                var result = try owner.refreshDatabases(io, true);
+                defer result.deinit();
+                try std.testing.expectError(error.Cancelled, result.check());
+                try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "db.lck", .{}));
+                try std.testing.expectError(
+                    error.FileNotFound,
+                    fixture.temporary.dir.access(
+                        io,
+                        "sync/cachyos.db",
+                        .{},
+                    ),
+                );
+            } else {
+                const url = try std.fmt.allocPrint(a, "{s}/demo.pkg", .{fixture.server});
+                defer a.free(url);
+                try std.testing.expectError(error.Cancelled, owner.fetchPackage(io, url));
+                try std.testing.expectError(
+                    error.FileNotFound,
+                    fixture.temporary.dir.access(
+                        io,
+                        "cache/demo.pkg",
+                        .{},
+                    ),
+                );
+            }
+            try std.testing.expectEqual(1, capture.transferred);
+            try std.testing.expectEqual(1, capture.completed);
+            try std.testing.expectEqual(0, capture.accepted);
+        };
 }
 
 test "cancellation interrupts an active HTTP request and leaves queued acquisitions unpublished" {
     const Cancel = struct {
         server: *HttpFixture,
         owner: *rlpm.Owner,
+
         fn run(self: *@This()) void {
             const start = std.Io.Clock.awake.now(io);
             while (self.server.active.load(.acquire) == 0) {
@@ -729,13 +1051,31 @@ test "cancellation interrupts an active HTTP request and leaves queued acquisiti
         var fixture = try Fixture.init();
         defer fixture.deinit();
         const address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
-        var server: HttpFixture = .{ .server = try address.listen(io, .{ .reuse_address = true }), .body = "unused", .gate_slow = true };
+        var server: HttpFixture = .{
+            .server = try address.listen(io, .{ .reuse_address = true }),
+            .body = "unused",
+            .gate_slow = true,
+        };
         defer server.server.deinit(io);
         var serving = try io.concurrent(HttpFixture.serve, .{&server});
         defer _ = serving.cancel(io) catch {};
-        const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}", .{server.server.socket.address.getPort()});
+        const url = try std.fmt.allocPrint(
+            a,
+            "http://127.0.0.1:{d}",
+            .{server.server.socket.address.getPort()},
+        );
         defer a.free(url);
-        var owner = try rlpm.Owner.init(io, a, .{ .root = fixture.path, .database_path = fixture.path, .cache_directories = &.{fixture.cache}, .parallel_downloads = 1 }, &.{});
+        var owner = try rlpm.Owner.init(
+            io,
+            a,
+            .{
+                .root = fixture.path,
+                .database_path = fixture.path,
+                .cache_directories = &.{fixture.cache},
+                .parallel_downloads = 1,
+            },
+            &.{},
+        );
         defer owner.deinit() catch unreachable;
         var capture: DownloadEvents = .{ .owner = &owner, .thread = std.os.linux.gettid() };
         try owner.setCallbacks(.{ .download = DownloadEvents.callback, .download_context = &capture });
@@ -743,18 +1083,40 @@ test "cancellation interrupts an active HTTP request and leaves queued acquisiti
         var cancelling = try io.concurrent(Cancel.run, .{&cancel});
         defer cancelling.await(io);
         if (database) {
-            for ([_][]const u8{ "slow", "queued" }) |name| _ = try owner.registerDatabase(.{ .database_name = name, .servers = &.{url} });
+            for ([_][]const u8{ "slow", "queued" }) |name|
+                _ = try owner.registerDatabase(
+                    .{
+                        .database_name = name,
+                        .servers = &.{url},
+                    },
+                );
             var result = try owner.refreshDatabases(io, true);
             defer result.deinit();
             try std.testing.expectError(error.Cancelled, result.check());
-            for (result.databases) |entry| try std.testing.expectEqual(.failed, entry.outcome);
+            for (result.databases) |entry|
+                try std.testing.expectEqual(.failed, entry.outcome);
             try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "db.lck", .{}));
         } else {
             try std.testing.expectError(error.Cancelled, rlpm.Downloads.acquire(&owner, io, &.{
-                .{ .name = "slow.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
-                .{ .name = "queued.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
+                .{
+                    .name = "slow.pkg",
+                    .servers = &.{url},
+                    .policy = rlpm.OwnerConfiguration.disabled_signatures,
+                },
+                .{
+                    .name = "queued.pkg",
+                    .servers = &.{url},
+                    .policy = rlpm.OwnerConfiguration.disabled_signatures,
+                },
             }));
-            try std.testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "cache/queued.pkg", .{}));
+            try std.testing.expectError(
+                error.FileNotFound,
+                fixture.temporary.dir.access(
+                    io,
+                    "cache/queued.pkg",
+                    .{},
+                ),
+            );
         }
         try std.testing.expectEqual(1, server.requests.load(.acquire));
         try std.testing.expectEqual(2, capture.initialized);

@@ -1,5 +1,6 @@
-const Version = @This();
 const std = @import("std");
+
+const Version = @This();
 
 pub const CompareResults = enum(i8) {
     lessThan = -1,
@@ -73,8 +74,16 @@ pub fn deinit(self: *Version, allocator: std.mem.Allocator) void {
 /// Compare two versions using the same ordering rules as alpm_pkg_vercmp.
 pub fn compareVersions(v1: Version, v2: Version) CompareResults {
     return compareParts(
-        .{ .epoch = v1.epoch, .pkgver = v1.pkgver, .pkgrel = v1.pkgrel },
-        .{ .epoch = v2.epoch, .pkgver = v2.pkgver, .pkgrel = v2.pkgrel },
+        .{
+            .epoch = v1.epoch,
+            .pkgver = v1.pkgver,
+            .pkgrel = v1.pkgrel,
+        },
+        .{
+            .epoch = v2.epoch,
+            .pkgver = v2.pkgver,
+            .pkgrel = v2.pkgrel,
+        },
     );
 }
 
@@ -318,19 +327,71 @@ test "Version compareVersions matches libalpm ordering" {
         v1: []const u8,
         v2: []const u8,
     }{
-        .{ .expected = .equal, .v1 = "0:1.0-1", .v2 = "0:1.0-1" },
-        .{ .expected = .greaterThan, .v1 = "2:1.0-1", .v2 = "1:99.0-9" },
-        .{ .expected = .greaterThan, .v1 = "0:1.10-1", .v2 = "0:1.2-1" },
-        .{ .expected = .equal, .v1 = "0:1.001-1", .v2 = "0:1.1-1" },
-        .{ .expected = .greaterThan, .v1 = "0:1.99999999999999999999-1", .v2 = "0:1.10-1" },
-        .{ .expected = .lessThan, .v1 = "0:1.0alpha-1", .v2 = "0:1.0-1" },
-        .{ .expected = .lessThan, .v1 = "0:1.0-1", .v2 = "0:1.0.1-1" },
-        .{ .expected = .greaterThan, .v1 = "0:1.1-1", .v2 = "0:1.a-1" },
-        .{ .expected = .greaterThan, .v1 = "0:1..0-1", .v2 = "0:1.0-1" },
-        .{ .expected = .equal, .v1 = "0:1_0-1", .v2 = "0:1.0-1" },
-        .{ .expected = .greaterThan, .v1 = "0:1.0-2", .v2 = "0:1.0-1" },
-        .{ .expected = .equal, .v1 = "0:1.0", .v2 = "0:1.0-99" },
-        .{ .expected = .greaterThan, .v1 = "0:1.beta-1", .v2 = "0:1.alpha-1" },
+        .{
+            .expected = .equal,
+            .v1 = "0:1.0-1",
+            .v2 = "0:1.0-1",
+        },
+        .{
+            .expected = .greaterThan,
+            .v1 = "2:1.0-1",
+            .v2 = "1:99.0-9",
+        },
+        .{
+            .expected = .greaterThan,
+            .v1 = "0:1.10-1",
+            .v2 = "0:1.2-1",
+        },
+        .{
+            .expected = .equal,
+            .v1 = "0:1.001-1",
+            .v2 = "0:1.1-1",
+        },
+        .{
+            .expected = .greaterThan,
+            .v1 = "0:1.99999999999999999999-1",
+            .v2 = "0:1.10-1",
+        },
+        .{
+            .expected = .lessThan,
+            .v1 = "0:1.0alpha-1",
+            .v2 = "0:1.0-1",
+        },
+        .{
+            .expected = .lessThan,
+            .v1 = "0:1.0-1",
+            .v2 = "0:1.0.1-1",
+        },
+        .{
+            .expected = .greaterThan,
+            .v1 = "0:1.1-1",
+            .v2 = "0:1.a-1",
+        },
+        .{
+            .expected = .greaterThan,
+            .v1 = "0:1..0-1",
+            .v2 = "0:1.0-1",
+        },
+        .{
+            .expected = .equal,
+            .v1 = "0:1_0-1",
+            .v2 = "0:1.0-1",
+        },
+        .{
+            .expected = .greaterThan,
+            .v1 = "0:1.0-2",
+            .v2 = "0:1.0-1",
+        },
+        .{
+            .expected = .equal,
+            .v1 = "0:1.0",
+            .v2 = "0:1.0-99",
+        },
+        .{
+            .expected = .greaterThan,
+            .v1 = "0:1.beta-1",
+            .v2 = "0:1.alpha-1",
+        },
     };
 
     for (cases) |case| {
@@ -345,26 +406,83 @@ test "Version compareVersions matches libalpm ordering" {
 }
 
 test "Version splits permissive inputs without losing empty components" {
-    const cases = [_]struct { raw: []const u8, expected: Parts }{
-        .{ .raw = "2:1.0-3", .expected = .{ .epoch = "2", .pkgver = "1.0", .pkgrel = "3" } },
-        .{ .raw = "", .expected = .{ .epoch = "0", .pkgver = "", .pkgrel = null } },
-        .{ .raw = ":1.0", .expected = .{ .epoch = "0", .pkgver = "1.0", .pkgrel = null } },
-        .{ .raw = "1:", .expected = .{ .epoch = "1", .pkgver = "", .pkgrel = null } },
-        .{ .raw = "1:-", .expected = .{ .epoch = "1", .pkgver = "", .pkgrel = "" } },
-        .{ .raw = "-", .expected = .{ .epoch = "0", .pkgver = "", .pkgrel = "" } },
-        .{ .raw = "1.0-", .expected = .{ .epoch = "0", .pkgver = "1.0", .pkgrel = "" } },
-        .{ .raw = "alpha:1.0", .expected = .{ .epoch = "0", .pkgver = "alpha:1.0", .pkgrel = null } },
-        .{ .raw = "+1:1.0", .expected = .{ .epoch = "0", .pkgver = "+1:1.0", .pkgrel = null } },
-        .{ .raw = "1_0:1.0", .expected = .{ .epoch = "0", .pkgver = "1_0:1.0", .pkgrel = null } },
-        .{ .raw = "01:2:3-a-b", .expected = .{ .epoch = "01", .pkgver = "2:3-a", .pkgrel = "b" } },
-        .{ .raw = "18446744073709551616:1", .expected = .{ .epoch = "18446744073709551616", .pkgver = "1", .pkgrel = null } },
+    const cases = [_]struct {
+        raw: []const u8,
+        expected: Parts,
+    }{
+        .{ .raw = "2:1.0-3", .expected = .{
+            .epoch = "2",
+            .pkgver = "1.0",
+            .pkgrel = "3",
+        } },
+        .{ .raw = "", .expected = .{
+            .epoch = "0",
+            .pkgver = "",
+            .pkgrel = null,
+        } },
+        .{ .raw = ":1.0", .expected = .{
+            .epoch = "0",
+            .pkgver = "1.0",
+            .pkgrel = null,
+        } },
+        .{ .raw = "1:", .expected = .{
+            .epoch = "1",
+            .pkgver = "",
+            .pkgrel = null,
+        } },
+        .{ .raw = "1:-", .expected = .{
+            .epoch = "1",
+            .pkgver = "",
+            .pkgrel = "",
+        } },
+        .{ .raw = "-", .expected = .{
+            .epoch = "0",
+            .pkgver = "",
+            .pkgrel = "",
+        } },
+        .{ .raw = "1.0-", .expected = .{
+            .epoch = "0",
+            .pkgver = "1.0",
+            .pkgrel = "",
+        } },
+        .{ .raw = "alpha:1.0", .expected = .{
+            .epoch = "0",
+            .pkgver = "alpha:1.0",
+            .pkgrel = null,
+        } },
+        .{ .raw = "+1:1.0", .expected = .{
+            .epoch = "0",
+            .pkgver = "+1:1.0",
+            .pkgrel = null,
+        } },
+        .{ .raw = "1_0:1.0", .expected = .{
+            .epoch = "0",
+            .pkgver = "1_0:1.0",
+            .pkgrel = null,
+        } },
+        .{ .raw = "01:2:3-a-b", .expected = .{
+            .epoch = "01",
+            .pkgver = "2:3-a",
+            .pkgrel = "b",
+        } },
+        .{
+            .raw = "18446744073709551616:1",
+            .expected = .{
+                .epoch = "18446744073709551616",
+                .pkgver = "1",
+                .pkgrel = null,
+            },
+        },
     };
     for (cases) |case| {
         const actual = parseParts(case.raw);
         try std.testing.expectEqualStrings(case.expected.epoch, actual.epoch);
         try std.testing.expectEqualStrings(case.expected.pkgver, actual.pkgver);
         if (case.expected.pkgrel) |release| {
-            try std.testing.expectEqualStrings(release, actual.pkgrel orelse return error.TestUnexpectedResult);
+            try std.testing.expectEqualStrings(
+                release,
+                actual.pkgrel orelse return error.TestUnexpectedResult,
+            );
         } else {
             try std.testing.expect(actual.pkgrel == null);
         }
@@ -391,61 +509,281 @@ test "Version comparison matches libalpm expected results" {
     // Expected signs recorded from libalpm 16.0.1 (CachyOS pacman
     // 7.1.0.r9.g54d9411-4). See version-compatibility.md for provenance.
     // These are fixed expectations: this test does not call or link libalpm.
-    const cases = [_]struct { left: []const u8, right: []const u8, expected: i8 }{
-        .{ .left = "18446744073709551616:1.0", .right = "18446744073709551615:1.0", .expected = 1 },
-        .{ .left = "alpha:1.0", .right = "alpha.1.0", .expected = 0 },
-        .{ .left = "+1:1.0", .right = "1:1.0", .expected = -1 },
-        .{ .left = "1_0:1.0", .right = "10:1.0", .expected = -1 },
-        .{ .left = ":1.0", .right = "1.0", .expected = 0 },
-        .{ .left = "1.0-", .right = "1.0", .expected = 0 },
-        .{ .left = "", .right = "1.0", .expected = -1 },
-        .{ .left = "1.0:", .right = "1.0", .expected = 1 },
-        .{ .left = "", .right = "", .expected = 0 },
-        .{ .left = "", .right = "a", .expected = 1 },
-        .{ .left = "", .right = ".", .expected = -1 },
-        .{ .left = ":", .right = "", .expected = 0 },
-        .{ .left = "1:", .right = "1:0", .expected = -1 },
-        .{ .left = "1:-", .right = "1:", .expected = 0 },
-        .{ .left = "-", .right = "", .expected = 0 },
-        .{ .left = "--", .right = "-", .expected = 1 },
-        .{ .left = "1.0-", .right = "1.0-0", .expected = -1 },
-        .{ .left = "1.0-", .right = "1.0-a", .expected = 1 },
-        .{ .left = "1.0", .right = "1.0-1", .expected = 0 },
-        .{ .left = "1.0", .right = "1.0-2", .expected = 0 },
-        .{ .left = "1.0-1", .right = "1.0-2", .expected = -1 },
-        .{ .left = "000:1.0", .right = "1.0", .expected = 0 },
-        .{ .left = "000000000000000000000000000001:1.0", .right = "1:1.0", .expected = 0 },
-        .{ .left = "99999999999999999999999999999999999999999999999999:0", .right = "2:999", .expected = 1 },
-        .{ .left = "00018446744073709551616:1", .right = "18446744073709551616:1", .expected = 0 },
-        .{ .left = "1.0000000000000000000000000000000000000001", .right = "1.1", .expected = 0 },
-        .{ .left = "1.A", .right = "1.a", .expected = -1 },
-        .{ .left = "1.rc1", .right = "1", .expected = 1 },
-        .{ .left = "1~rc1", .right = "1", .expected = 1 },
-        .{ .left = "1+git", .right = "1.git", .expected = 0 },
-        .{ .left = "1..0", .right = "1.0", .expected = 1 },
-        .{ .left = "1...", .right = "1.", .expected = 0 },
-        .{ .left = "1.", .right = "1", .expected = 1 },
-        .{ .left = "1..a", .right = "1.a", .expected = 1 },
-        .{ .left = "1a", .right = "1", .expected = -1 },
-        .{ .left = "1", .right = "1a", .expected = 1 },
-        .{ .left = "1a", .right = "1.0", .expected = -1 },
-        .{ .left = "1a1", .right = "1a2", .expected = -1 },
-        .{ .left = "1aa", .right = "1a", .expected = 1 },
-        .{ .left = "1-2-3", .right = "1-2-4", .expected = -1 },
-        .{ .left = "1:2:3-4", .right = "1:2.3-4", .expected = 0 },
-        .{ .left = "a:2-3", .right = "a.2-3", .expected = 0 },
-        .{ .left = "1::", .right = "1:", .expected = 1 },
-        .{ .left = "01:", .right = "1:", .expected = 0 },
-        .{ .left = "001", .right = "1", .expected = 0 },
-        .{ .left = "0", .right = "00", .expected = 0 },
-        .{ .left = "1-00000000000000000000000000000000002", .right = "1-1", .expected = 1 },
-        .{ .left = " 1", .right = "1", .expected = 1 },
-        .{ .left = "1\t2", .right = "1.2", .expected = 0 },
-        .{ .left = "1\n2", .right = "1.2", .expected = 0 },
-        .{ .left = "1/2", .right = "1.2", .expected = 0 },
-        .{ .left = "1=2", .right = "1.2", .expected = 0 },
-        .{ .left = "1:2-3-", .right = "1:2-3", .expected = 1 },
-        .{ .left = "0:", .right = "", .expected = 0 },
+    const cases = [_]struct {
+        left: []const u8,
+        right: []const u8,
+        expected: i8,
+    }{
+        .{
+            .left = "18446744073709551616:1.0",
+            .right = "18446744073709551615:1.0",
+            .expected = 1,
+        },
+        .{
+            .left = "alpha:1.0",
+            .right = "alpha.1.0",
+            .expected = 0,
+        },
+        .{
+            .left = "+1:1.0",
+            .right = "1:1.0",
+            .expected = -1,
+        },
+        .{
+            .left = "1_0:1.0",
+            .right = "10:1.0",
+            .expected = -1,
+        },
+        .{
+            .left = ":1.0",
+            .right = "1.0",
+            .expected = 0,
+        },
+        .{
+            .left = "1.0-",
+            .right = "1.0",
+            .expected = 0,
+        },
+        .{
+            .left = "",
+            .right = "1.0",
+            .expected = -1,
+        },
+        .{
+            .left = "1.0:",
+            .right = "1.0",
+            .expected = 1,
+        },
+        .{
+            .left = "",
+            .right = "",
+            .expected = 0,
+        },
+        .{
+            .left = "",
+            .right = "a",
+            .expected = 1,
+        },
+        .{
+            .left = "",
+            .right = ".",
+            .expected = -1,
+        },
+        .{
+            .left = ":",
+            .right = "",
+            .expected = 0,
+        },
+        .{
+            .left = "1:",
+            .right = "1:0",
+            .expected = -1,
+        },
+        .{
+            .left = "1:-",
+            .right = "1:",
+            .expected = 0,
+        },
+        .{
+            .left = "-",
+            .right = "",
+            .expected = 0,
+        },
+        .{
+            .left = "--",
+            .right = "-",
+            .expected = 1,
+        },
+        .{
+            .left = "1.0-",
+            .right = "1.0-0",
+            .expected = -1,
+        },
+        .{
+            .left = "1.0-",
+            .right = "1.0-a",
+            .expected = 1,
+        },
+        .{
+            .left = "1.0",
+            .right = "1.0-1",
+            .expected = 0,
+        },
+        .{
+            .left = "1.0",
+            .right = "1.0-2",
+            .expected = 0,
+        },
+        .{
+            .left = "1.0-1",
+            .right = "1.0-2",
+            .expected = -1,
+        },
+        .{
+            .left = "000:1.0",
+            .right = "1.0",
+            .expected = 0,
+        },
+        .{
+            .left = "000000000000000000000000000001:1.0",
+            .right = "1:1.0",
+            .expected = 0,
+        },
+        .{
+            .left = "99999999999999999999999999999999999999999999999999:0",
+            .right = "2:999",
+            .expected = 1,
+        },
+        .{
+            .left = "00018446744073709551616:1",
+            .right = "18446744073709551616:1",
+            .expected = 0,
+        },
+        .{
+            .left = "1.0000000000000000000000000000000000000001",
+            .right = "1.1",
+            .expected = 0,
+        },
+        .{
+            .left = "1.A",
+            .right = "1.a",
+            .expected = -1,
+        },
+        .{
+            .left = "1.rc1",
+            .right = "1",
+            .expected = 1,
+        },
+        .{
+            .left = "1~rc1",
+            .right = "1",
+            .expected = 1,
+        },
+        .{
+            .left = "1+git",
+            .right = "1.git",
+            .expected = 0,
+        },
+        .{
+            .left = "1..0",
+            .right = "1.0",
+            .expected = 1,
+        },
+        .{
+            .left = "1...",
+            .right = "1.",
+            .expected = 0,
+        },
+        .{
+            .left = "1.",
+            .right = "1",
+            .expected = 1,
+        },
+        .{
+            .left = "1..a",
+            .right = "1.a",
+            .expected = 1,
+        },
+        .{
+            .left = "1a",
+            .right = "1",
+            .expected = -1,
+        },
+        .{
+            .left = "1",
+            .right = "1a",
+            .expected = 1,
+        },
+        .{
+            .left = "1a",
+            .right = "1.0",
+            .expected = -1,
+        },
+        .{
+            .left = "1a1",
+            .right = "1a2",
+            .expected = -1,
+        },
+        .{
+            .left = "1aa",
+            .right = "1a",
+            .expected = 1,
+        },
+        .{
+            .left = "1-2-3",
+            .right = "1-2-4",
+            .expected = -1,
+        },
+        .{
+            .left = "1:2:3-4",
+            .right = "1:2.3-4",
+            .expected = 0,
+        },
+        .{
+            .left = "a:2-3",
+            .right = "a.2-3",
+            .expected = 0,
+        },
+        .{
+            .left = "1::",
+            .right = "1:",
+            .expected = 1,
+        },
+        .{
+            .left = "01:",
+            .right = "1:",
+            .expected = 0,
+        },
+        .{
+            .left = "001",
+            .right = "1",
+            .expected = 0,
+        },
+        .{
+            .left = "0",
+            .right = "00",
+            .expected = 0,
+        },
+        .{
+            .left = "1-00000000000000000000000000000000002",
+            .right = "1-1",
+            .expected = 1,
+        },
+        .{
+            .left = " 1",
+            .right = "1",
+            .expected = 1,
+        },
+        .{
+            .left = "1\t2",
+            .right = "1.2",
+            .expected = 0,
+        },
+        .{
+            .left = "1\n2",
+            .right = "1.2",
+            .expected = 0,
+        },
+        .{
+            .left = "1/2",
+            .right = "1.2",
+            .expected = 0,
+        },
+        .{
+            .left = "1=2",
+            .right = "1.2",
+            .expected = 0,
+        },
+        .{
+            .left = "1:2-3-",
+            .right = "1:2-3",
+            .expected = 1,
+        },
+        .{
+            .left = "0:",
+            .right = "",
+            .expected = 0,
+        },
     };
     for (cases) |case| {
         try std.testing.expectEqual(case.expected, @intFromEnum(compareStrings(case.left, case.right)));

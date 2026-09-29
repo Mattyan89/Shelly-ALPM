@@ -4,6 +4,7 @@ const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
 const Fixture = @import("actions_fixture.zig");
 const Archive = @import("archive_fixture.zig");
+
 const io = std.testing.io;
 const a = std.testing.allocator;
 const c = @cImport({
@@ -12,6 +13,7 @@ const c = @cImport({
     @cInclude("unistd.h");
     @cInclude("errno.h");
 });
+
 fn commit(owner: *rlpm.Owner, archive: []const u8, flags: rlpm.TransactionFlags) !void {
     const tx = try owner.initializeTransaction(io, flags);
     defer owner.releaseTransaction() catch unreachable;
@@ -29,16 +31,43 @@ test "actual commit replays native scripts hooks DBONLY and DOWNLOADONLY traces"
         defer f.deinit();
         try f.shell();
         try f.hook("fixture.hook", obj.get("hook").?.string);
-        if (obj.get("old_version")) |old| try f.installed("demo", old.string, "", "pre_remove() { exit 99; }\n");
+        if (obj.get("old_version")) |old|
+            try f.installed(
+                "demo",
+                old.string,
+                "",
+                "pre_remove() { exit 99; }\n",
+            );
         var entries: std.ArrayList(Archive.Entry) = .empty;
         defer entries.deinit(a);
-        try entries.append(a, .{ .path = ".PKGINFO", .contents = "pkgname = demo\npkgver = 2-1\narch = any\n" });
-        if (obj.get("script")) |script| try entries.append(a, .{ .path = ".INSTALL", .contents = script.string });
+        try entries.append(
+            a,
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = demo\npkgver = 2-1\narch = any\n",
+            },
+        );
+        if (obj.get("script")) |script|
+            try entries.append(
+                a,
+                .{
+                    .path = ".INSTALL",
+                    .contents = script.string,
+                },
+            );
         var archive = try Archive.init(entries.items, .none);
         defer archive.deinit();
         var owner = try f.owner();
         defer owner.deinit() catch unreachable;
-        const tx = try owner.initializeTransaction(io, try rlpm.TransactionFlags.fromBits(if (obj.get("flags")) |value| @intCast(value.integer) else 0));
+        const tx = try owner.initializeTransaction(
+            io,
+            try rlpm.TransactionFlags.fromBits(
+                if (obj.get("flags")) |value|
+                    @intCast(value.integer)
+                else
+                    0,
+            ),
+        );
         defer owner.releaseTransaction() catch unreachable;
         try Fixture.add(tx, archive.path);
         try tx.prepare();
@@ -65,15 +94,57 @@ test "payload attributes hardlinks xattrs fifo and shared directory metadata" {
     @memcpy(sparse[sparse.len - 4 ..], "tail");
     var archive = try Archive.init(&.{
         .{ .path = ".PKGINFO", .contents = "pkgname = attrs\npkgver = 1-1\narch = any\n" },
-        .{ .path = "shared/", .kind = .directory, .mode = 0o700, .mtime = 12 },
-        .{ .path = "private/", .kind = .directory, .mode = 0o750, .mtime = 13 },
-        .{ .path = "payload", .contents = "contents", .mode = 0o4751, .mtime = 123456789, .xattr = "fixture-value" },
-        .{ .path = "link", .kind = .hardlink, .target = "payload" },
-        .{ .path = "absolute", .kind = .symlink, .target = "/payload", .mtime = 12345 },
-        .{ .path = "pipe", .kind = .fifo, .mode = 0o620 },
-        .{ .path = "sparse", .contents = sparse, .sparse = true },
-        .{ .path = "caps", .contents = "executable", .mode = 0o755, .capabilities = true },
-        .{ .path = "acl", .contents = "acl", .acl = true },
+        .{
+            .path = "shared/",
+            .kind = .directory,
+            .mode = 0o700,
+            .mtime = 12,
+        },
+        .{
+            .path = "private/",
+            .kind = .directory,
+            .mode = 0o750,
+            .mtime = 13,
+        },
+        .{
+            .path = "payload",
+            .contents = "contents",
+            .mode = 0o4751,
+            .mtime = 123456789,
+            .xattr = "fixture-value",
+        },
+        .{
+            .path = "link",
+            .kind = .hardlink,
+            .target = "payload",
+        },
+        .{
+            .path = "absolute",
+            .kind = .symlink,
+            .target = "/payload",
+            .mtime = 12345,
+        },
+        .{
+            .path = "pipe",
+            .kind = .fifo,
+            .mode = 0o620,
+        },
+        .{
+            .path = "sparse",
+            .contents = sparse,
+            .sparse = true,
+        },
+        .{
+            .path = "caps",
+            .contents = "executable",
+            .mode = 0o755,
+            .capabilities = true,
+        },
+        .{
+            .path = "acl",
+            .contents = "acl",
+            .acl = true,
+        },
     }, .none);
     defer archive.deinit();
     var owner = try f.owner();
@@ -131,14 +202,26 @@ test "hooks and scripts change backup inputs before extraction and post hooks se
     defer f.deinit();
     try f.shell();
     try f.installed("demo", "1-1", "conf", null);
-    try f.write("db/local/demo-1-1/files", "%FILES%\nconf\n\n%BACKUP%\nconf\t149603e6c03516362a8da23f624db945\n\n");
+    try f.write(
+        "db/local/demo-1-1/files",
+        "%FILES%\nconf\n\n%BACKUP%\nconf\t149603e6c03516362a8da23f624db945\n\n",
+    );
     try f.write("root/conf", "old");
-    try f.hook("post.hook", "[Trigger]\nOperation=Upgrade\nType=Package\nTarget=demo\n[Action]\nWhen=PostTransaction\nDepends=demo=2-1\nExec=/usr/bin/bash -c 'printf post >> /trace'\n");
-    var archive = try Archive.init(&.{
-        .{ .path = ".PKGINFO", .contents = "pkgname = demo\npkgver = 2-1\narch = any\nbackup = conf\n" },
-        .{ .path = ".INSTALL", .contents = "pre_upgrade() { printf edited > /conf; }\npost_upgrade() { printf installed >> /trace; }\n" },
-        .{ .path = "conf", .contents = "new" },
-    }, .none);
+    try f.hook(
+        "post.hook",
+        "[Trigger]\nOperation=Upgrade\nType=Package\nTarget=demo\n[Action]\nWhen=PostTransaction\nDepends=demo=2-1\nExec=/usr/bin/bash -c 'printf post >> /trace'\n",
+    );
+    var archive = try Archive.init(
+        &.{
+            .{ .path = ".PKGINFO", .contents = "pkgname = demo\npkgver = 2-1\narch = any\nbackup = conf\n" },
+            .{
+                .path = ".INSTALL",
+                .contents = "pre_upgrade() { printf edited > /conf; }\npost_upgrade() { printf installed >> /trace; }\n",
+            },
+            .{ .path = "conf", .contents = "new" },
+        },
+        .none,
+    );
     defer archive.deinit();
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
@@ -159,7 +242,16 @@ test "out of space during extraction preserves coherent database and cleans stag
     const bytes = try a.alloc(u8, 8 * 1024 * 1024);
     defer a.free(bytes);
     @memset(bytes, 'x');
-    var archive = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = full\npkgver = 1-1\narch = any\n" }, .{ .path = "big", .contents = bytes } }, .zstd);
+    var archive = try Archive.init(
+        &.{
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = full\npkgver = 1-1\narch = any\n",
+            },
+            .{ .path = "big", .contents = bytes },
+        },
+        .zstd,
+    );
     defer archive.deinit();
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
@@ -188,7 +280,25 @@ test "supported device nodes are created only inside the disposable mount" {
     defer f.deinit();
     try std.testing.expectEqual(0, mount.mount("tmpfs", f.root, "tmpfs", mount.MS_NODEV, "size=4m"));
     defer _ = mount.umount2(f.root, mount.MNT_DETACH);
-    var archive = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = devices\npkgver = 1-1\narch = any\n" }, .{ .path = "character", .kind = .character, .mode = 0o600 }, .{ .path = "block", .kind = .block, .mode = 0o600 } }, .none);
+    var archive = try Archive.init(
+        &.{
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = devices\npkgver = 1-1\narch = any\n",
+            },
+            .{
+                .path = "character",
+                .kind = .character,
+                .mode = 0o600,
+            },
+            .{
+                .path = "block",
+                .kind = .block,
+                .mode = 0o600,
+            },
+        },
+        .none,
+    );
     defer archive.deinit();
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
@@ -231,7 +341,10 @@ test "pre-remove script can create a previously absent backup and it is saved" {
     defer f.deinit();
     try f.shell();
     try f.installed("demo", "1-1", "conf", "pre_remove() { printf edited > /conf; }\n");
-    try f.write("db/local/demo-1-1/files", "%FILES%\nconf\n\n%BACKUP%\nconf\t149603e6c03516362a8da23f624db945\n\n");
+    try f.write(
+        "db/local/demo-1-1/files",
+        "%FILES%\nconf\n\n%BACKUP%\nconf\t149603e6c03516362a8da23f624db945\n\n",
+    );
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
     const tx = try owner.initializeTransaction(io, .{});

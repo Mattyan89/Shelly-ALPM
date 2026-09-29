@@ -8,11 +8,22 @@ pub fn main(init: std.process.Init) !void {
     var output = std.Io.File.Writer.init(.stdout(), init.io, &buffer);
     const writer = &output.interface;
     if (args.len == 1 or (args.len == 2 and std.mem.eql(u8, args[1], "--help"))) {
-        try writer.writeAll("Usage: Shelly_Rlpm ROOT DBPATH\nRead local package names and versions without modifying the database.\n");
+        try writer.writeAll(
+            "Usage: Shelly_Rlpm ROOT DBPATH\nRead local package names and versions without modifying the database.\n",
+        );
     } else if (args.len != 3) {
         return error.InvalidArguments;
     } else {
-        var owner = try rlpm.Owner.init(init.io, init.gpa, .{ .root = args[1], .database_path = args[2], .local_database_mode = .read_only }, &.{});
+        var owner = try rlpm.Owner.init(
+            init.io,
+            init.gpa,
+            .{
+                .root = args[1],
+                .database_path = args[2],
+                .local_database_mode = .read_only,
+            },
+            &.{},
+        );
         defer owner.deinit() catch unreachable;
         const local = owner.localDatabase().?;
         for (try owner.packageIds(local)) |id| {

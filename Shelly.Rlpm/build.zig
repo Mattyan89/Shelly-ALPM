@@ -27,7 +27,10 @@ pub fn build(b: *std.Build) void {
     const download = b.dependency("shelly_download", .{ .target = target, .optimize = optimize });
     mod.addImport("Shelly_Download", download.module("Shelly_Download"));
     const worker_options = b.addOptions();
-    worker_options.addOptionPath("worker_path", download.artifact("shelly-download-worker").getEmittedBin());
+    worker_options.addOptionPath(
+        "worker_path",
+        download.artifact("shelly-download-worker").getEmittedBin(),
+    );
     mod.addOptions("download_worker", worker_options);
     b.installArtifact(download.artifact("shelly-download-worker"));
     mod.addImport("Shelly_Key", shelly_key.module("Shelly_Key"));
@@ -65,9 +68,16 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
     const run_public = b.addRunArtifact(public_tests);
-    public_tests.root_module.addCSourceFile(.{ .file = b.path("src/tests/lock_process.c"), .flags = &.{"-std=c11"} });
+    public_tests.root_module.addCSourceFile(
+        .{
+            .file = b.path("src/tests/lock_process.c"),
+            .flags = &.{"-std=c11"},
+        },
+    );
     test_step.dependOn(&run_public.step);
-    b.step("test-public-api", "Exercise the exported API from a separate importing module").dependOn(&run_public.step);
+    b.step("test-public-api", "Exercise the exported API from a separate importing module").dependOn(
+        &run_public.step,
+    );
 
     const metadata_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/metadata.zig"),
@@ -75,7 +85,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-metadata", "Run metadata, archive, relation and reference fixtures").dependOn(&b.addRunArtifact(metadata_tests).step);
+    b.step("test-metadata", "Run metadata, archive, relation and reference fixtures").dependOn(
+        &b.addRunArtifact(metadata_tests).step,
+    );
 
     const database_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/database.zig"),
@@ -83,7 +95,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-database", "Run local, tar/SQLite, query, reload and allocation fixtures").dependOn(&b.addRunArtifact(database_tests).step);
+    b.step("test-database", "Run local, tar/SQLite, query, reload and allocation fixtures").dependOn(
+        &b.addRunArtifact(database_tests).step,
+    );
 
     const verification_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/verification.zig"),
@@ -91,7 +105,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-verification", "Run integrity, trust, status, import and immutable-file fixtures").dependOn(&b.addRunArtifact(verification_tests).step);
+    b.step("test-verification", "Run integrity, trust, status, import and immutable-file fixtures").dependOn(
+        &b.addRunArtifact(verification_tests).step,
+    );
 
     const resolver_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/resolver.zig"),
@@ -99,7 +115,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-resolver", "Run resolution, removal, system-upgrade and reference fixtures").dependOn(&b.addRunArtifact(resolver_tests).step);
+    b.step("test-resolver", "Run resolution, removal, system-upgrade and reference fixtures").dependOn(
+        &b.addRunArtifact(resolver_tests).step,
+    );
 
     const executor_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/executor.zig"),
@@ -108,7 +126,9 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
     const run_executor_tests = b.addRunArtifact(executor_tests);
-    b.step("test-executor", "Run disposable-root payload and database transactions").dependOn(&run_executor_tests.step);
+    b.step("test-executor", "Run disposable-root payload and database transactions").dependOn(
+        &run_executor_tests.step,
+    );
     test_step.dependOn(&run_executor_tests.step);
     const hook_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/hooks.zig"),
@@ -116,14 +136,18 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-hooks", "Run hermetic hook parser, discovery, matching and ownership fixtures").dependOn(&b.addRunArtifact(hook_tests).step);
+    b.step("test-hooks", "Run hermetic hook parser, discovery, matching and ownership fixtures").dependOn(
+        &b.addRunArtifact(hook_tests).step,
+    );
     const preflight_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/preflight.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-preflight", "Run private-root archive, conflict, backup and space fixtures").dependOn(&b.addRunArtifact(preflight_tests).step);
+    b.step("test-preflight", "Run private-root archive, conflict, backup and space fixtures").dependOn(
+        &b.addRunArtifact(preflight_tests).step,
+    );
     const sandbox_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/download_sandbox.zig"),
         .target = target,
@@ -132,23 +156,39 @@ pub fn build(b: *std.Build) void {
     }) });
     const sandbox_run = b.addRunArtifact(sandbox_tests);
     sandbox_run.has_side_effects = true;
-    b.step("test-download-sandbox", "Opt-in root-only sandbox integration, private /tmp roots").dependOn(&sandbox_run.step);
-    b.step("check-download-sandbox", "Compile the root-only integration fixture").dependOn(&sandbox_tests.step);
+    b.step("test-download-sandbox", "Opt-in root-only sandbox integration, private /tmp roots").dependOn(
+        &sandbox_run.step,
+    );
+    b.step("check-download-sandbox", "Compile the root-only integration fixture").dependOn(
+        &sandbox_tests.step,
+    );
     const download_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/download.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    b.step("test-download", "Run private-cache, acquisition, refresh and DOWNLOADONLY fixtures").dependOn(&b.addRunArtifact(download_tests).step);
+    b.step("test-download", "Run private-cache, acquisition, refresh and DOWNLOADONLY fixtures").dependOn(
+        &b.addRunArtifact(download_tests).step,
+    );
     const transaction_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/transaction.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
-    transaction_tests.root_module.addCSourceFile(.{ .file = b.path("src/tests/lock_process.c"), .flags = &.{"-std=c11"} });
-    b.step("test-transaction", "Run private-root lifecycle, lock, ownership, cancellation and reference fixtures").dependOn(&b.addRunArtifact(transaction_tests).step);
+    transaction_tests.root_module.addCSourceFile(
+        .{
+            .file = b.path("src/tests/lock_process.c"),
+            .flags = &.{"-std=c11"},
+        },
+    );
+    b.step(
+        "test-transaction",
+        "Run private-root lifecycle, lock, ownership, cancellation and reference fixtures",
+    ).dependOn(
+        &b.addRunArtifact(transaction_tests).step,
+    );
 
     const ledger_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/compatibility.zig"),
@@ -157,7 +197,12 @@ pub fn build(b: *std.Build) void {
     }) });
     const run_ledger = b.addRunArtifact(ledger_tests);
     test_step.dependOn(&run_ledger.step);
-    b.step("test-compatibility", "Validate the pinned API inventory and coverage ledger (not full behavioral parity)").dependOn(&run_ledger.step);
+    b.step(
+        "test-compatibility",
+        "Validate the pinned API inventory and coverage ledger (not full behavioral parity)",
+    ).dependOn(
+        &run_ledger.step,
+    );
 
     const version_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/structs/Version.zig"),
@@ -174,12 +219,21 @@ pub fn build(b: *std.Build) void {
     });
     package_mod.linkSystemLibrary("archive", .{});
     const package_tests = b.addTest(.{ .root_module = package_mod });
-    b.step("test-package", "Run hermetic package archive tests").dependOn(&b.addRunArtifact(package_tests).step);
+    b.step("test-package", "Run hermetic package archive tests").dependOn(
+        &b.addRunArtifact(package_tests).step,
+    );
 
     // Native integrations are opt-in and always rerun. Their output includes
     // subprocess diagnostics/previews, which require the terminal test runner.
     const terminal_runner: std.Build.Step.Compile.TestRunner = .{
-        .path = .{ .cwd_relative = b.pathJoin(&.{ b.graph.zig_lib_directory.path.?, "compiler/test_runner.zig" }) },
+        .path = .{
+            .cwd_relative = b.pathJoin(
+                &.{
+                    b.graph.zig_lib_directory.path.?,
+                    "compiler/test_runner.zig",
+                },
+            ),
+        },
         .mode = .simple,
     };
     const payload_benchmark = b.addTest(.{ .root_module = b.createModule(.{
@@ -191,7 +245,12 @@ pub fn build(b: *std.Build) void {
     const run_payload_benchmark = b.addRunArtifact(payload_benchmark);
     run_payload_benchmark.stdio = .inherit;
     run_payload_benchmark.has_side_effects = true;
-    b.step("bench-payload", "Compare payload durability policies in disposable roots (RLPM_PAYLOAD_BENCH_* settings)").dependOn(&run_payload_benchmark.step);
+    b.step(
+        "bench-payload",
+        "Compare payload durability policies in disposable roots (RLPM_PAYLOAD_BENCH_* settings)",
+    ).dependOn(
+        &run_payload_benchmark.step,
+    );
     const executor_driver = b.addExecutable(.{ .name = "rlpm-executor-fixture", .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/executor_driver.zig"),
         .target = target,
@@ -204,7 +263,12 @@ pub fn build(b: *std.Build) void {
     interop.addArtifactArg(executor_driver);
     interop.stdio = .inherit;
     interop.has_side_effects = true;
-    b.step("test-executor-interop", "Alternate RLPM and pinned native libalpm against private databases").dependOn(&interop.step);
+    b.step(
+        "test-executor-interop",
+        "Alternate RLPM and pinned native libalpm against private databases",
+    ).dependOn(
+        &interop.step,
+    );
     const executor_integration = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/executor_integration.zig"),
         .target = target,
@@ -215,7 +279,12 @@ pub fn build(b: *std.Build) void {
     run_executor.addArtifactArg(executor_integration);
     run_executor.stdio = .inherit;
     run_executor.has_side_effects = true;
-    b.step("test-executor-integration", "Run full executor processes and attributes in disposable roots").dependOn(&run_executor.step);
+    b.step(
+        "test-executor-integration",
+        "Run full executor processes and attributes in disposable roots",
+    ).dependOn(
+        &run_executor.step,
+    );
     const action_filter = b.addExecutable(.{ .name = "rlpm-action-filter-fixture", .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/action_filter.zig"),
         .target = target,
@@ -239,12 +308,26 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }), .test_runner = terminal_runner });
     action_tests.root_module.addOptions("action_fixtures", action_fixture_options);
-    const run_actions = b.addSystemCommand(&.{ "unshare", "--user", "--map-root-user", "--mount", "env", "BASH_ENV=/injected-startup", "SHLVL=7" });
+    const run_actions = b.addSystemCommand(
+        &.{
+            "unshare",
+            "--user",
+            "--map-root-user",
+            "--mount",
+            "env",
+            "BASH_ENV=/injected-startup",
+            "SHLVL=7",
+        },
+    );
     run_actions.addArtifactArg(action_tests);
     run_actions.stdio = .inherit;
     run_actions.has_side_effects = true;
-    b.step("test-actions", "Run real actions in disposable chroots under a user namespace").dependOn(&run_actions.step);
-    b.step("check-actions", "Compile action integration tests without executing them").dependOn(&action_tests.step);
+    b.step("test-actions", "Run real actions in disposable chroots under a user namespace").dependOn(
+        &run_actions.step,
+    );
+    b.step("check-actions", "Compile action integration tests without executing them").dependOn(
+        &action_tests.step,
+    );
     const signature_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/tests/signature.zig"),
@@ -257,7 +340,9 @@ pub fn build(b: *std.Build) void {
     const run_signature = b.addRunArtifact(signature_tests);
     run_signature.stdio = .inherit;
     run_signature.has_side_effects = true;
-    b.step("test-signature", "Run real GPG integration; unavailable tools/agent are failures").dependOn(&run_signature.step);
+    b.step("test-signature", "Run real GPG integration; unavailable tools/agent are failures").dependOn(
+        &run_signature.step,
+    );
 
     const host_mod = b.createModule(.{
         .root_source_file = b.path("src/host_tests.zig"),
@@ -277,5 +362,7 @@ pub fn build(b: *std.Build) void {
     const run_host = b.addRunArtifact(host_tests);
     run_host.stdio = .inherit;
     run_host.has_side_effects = true;
-    b.step("test-host-readonly", "Opt in to reading /var/lib/pacman; never a release parity gate").dependOn(&run_host.step);
+    b.step("test-host-readonly", "Opt in to reading /var/lib/pacman; never a release parity gate").dependOn(
+        &run_host.step,
+    );
 }

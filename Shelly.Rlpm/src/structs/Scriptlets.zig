@@ -6,9 +6,18 @@ const Root = @import("RootPath.zig");
 const c = @import("../actions/protocol.zig").c;
 const Process = @import("ActionProcess.zig");
 const Owner = @import("Owner.zig");
+const Package = @import("Package.zig");
+const MemberReader = @import("MemberReader.zig");
+
 pub const Function = enum { pre_install, post_install, pre_upgrade, post_upgrade, pre_remove, post_remove };
-pub const Source = union(enum) { package: *const @import("Package.zig"), file: []const u8 };
-pub const Result = struct { process: ?Process.Result = null, cleanup_failed: bool = false };
+
+pub const Source = union(enum) { package: *const Package, file: []const u8 };
+
+pub const Result = struct {
+    process: ?Process.Result = null,
+    cleanup_failed: bool = false,
+};
+
 /// Preserve the native inexpensive, comment-stripping, 1023-byte line scan.
 pub fn contains(contents: []const u8, function: Function) bool {
     var offset: usize = 0;
@@ -22,10 +31,12 @@ pub fn contains(contents: []const u8, function: Function) bool {
     }
     return false;
 }
+
 const Temporary = struct {
     parent: c_int,
     directory: c_int,
     name: [38:0]u8,
+
     fn create(io: std.Io, root: *const Root, contents: []const u8) !Temporary {
         if (try root.open("tmp", true)) |fd| {
             _ = c.close(fd);
@@ -55,7 +66,12 @@ const Temporary = struct {
         const directory = c.openat(parent, &name, c.O_RDONLY | c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC);
         if (directory < 0) return error.ScriptletTemporaryFailed;
         errdefer _ = c.close(directory);
-        const file = c.openat(directory, ".INSTALL", c.O_WRONLY | c.O_CREAT | c.O_EXCL | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c_uint, 0o644));
+        const file = c.openat(
+            directory,
+            ".INSTALL",
+            c.O_WRONLY | c.O_CREAT | c.O_EXCL | c.O_CLOEXEC | c.O_NOFOLLOW,
+            @as(c_uint, 0o644),
+        );
         if (file < 0) return error.ScriptletTemporaryFailed;
         defer _ = c.close(file);
         errdefer _ = c.unlinkat(directory, ".INSTALL", 0);
@@ -66,8 +82,13 @@ const Temporary = struct {
             if (count <= 0) return error.ScriptletTemporaryFailed;
             offset += @intCast(count);
         }
-        return .{ .parent = parent, .directory = directory, .name = name };
+        return .{
+            .parent = parent,
+            .directory = directory,
+            .name = name,
+        };
     }
+
     fn cleanup(self: *Temporary) bool {
         defer _ = c.close(self.directory);
         defer _ = c.close(self.parent);
@@ -75,15 +96,33 @@ const Temporary = struct {
         // Do not delete a replacement directory if the script renamed ours.
         var current: c.struct_stat = undefined;
         var held: c.struct_stat = undefined;
-        if (c.fstat(self.directory, &held) != 0 or c.fstatat(self.parent, &self.name, &current, c.AT_SYMLINK_NOFOLLOW) != 0 or held.st_ino != current.st_ino or held.st_dev != current.st_dev) return false;
+        if (c.fstat(self.directory, &held) != 0 or
+            c.fstatat(
+                self.parent,
+                &self.name,
+                &current,
+                c.AT_SYMLINK_NOFOLLOW,
+            ) != 0 or
+            held.st_ino != current.st_ino or
+            held.st_dev != current.st_dev)
+            return false;
         return c.unlinkat(self.parent, &self.name, c.AT_REMOVEDIR) == 0 and removed;
     }
 };
-pub fn run(owner: *Owner, io: std.Io, root: *const Root, source: Source, function: Function, version: []const u8, old_version: ?[]const u8) !Result {
+
+pub fn run(
+    owner: *Owner,
+    io: std.Io,
+    root: *const Root,
+    source: Source,
+    function: Function,
+    version: []const u8,
+    old_version: ?[]const u8,
+) !Result {
     try owner.checkCancelled();
     var reader = (switch (source) {
         .package => |package| package.openMember(owner.allocator, .install),
-        .file => |path| @import("MemberReader.zig").openFile(owner.allocator, path),
+        .file => |path| MemberReader.openFile(owner.allocator, path),
     } catch |err| switch (err) {
         error.AccessDenied => return .{},
         else => return err,
@@ -113,7 +152,14 @@ pub fn run(owner: *Owner, io: std.Io, root: *const Root, source: Source, functio
         try command.append(owner.allocator, ' ');
         try quote(owner.allocator, &command, old);
     }
-    const process = try Process.run(owner, io, .{ .root = root, .argv = &.{ "/usr/bin/bash", "-c", command.items } });
+    const process = try Process.run(
+        owner,
+        io,
+        .{
+            .root = root,
+            .argv = &.{ "/usr/bin/bash", "-c", command.items },
+        },
+    );
     const success = temporary.cleanup();
     cleaned = true;
     return .{ .process = process, .cleanup_failed = !success };

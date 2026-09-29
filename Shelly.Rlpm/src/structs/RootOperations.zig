@@ -2,10 +2,13 @@
 //! single names through held descriptors. Never change the caller's cwd/umask.
 const std = @import("std");
 const Root = @import("RootPath.zig");
+const PayloadDurability = @import("PayloadDurability.zig");
+
 pub const c = Root.c;
+
 pub const Durability = union(enum) {
     immediate,
-    batch: *@import("PayloadDurability.zig"),
+    batch: *PayloadDurability,
 
     fn before(self: Durability, fd: c_int) !void {
         switch (self) {
@@ -13,21 +16,26 @@ pub const Durability = union(enum) {
             .batch => |tracker| try tracker.registerBeforeMutation(fd),
         }
     }
+
     fn after(self: Durability, fd: c_int) !void {
         if (self == .immediate) try sync(fd);
     }
 };
+
 pub const Parent = struct {
     fd: c_int,
     buffer: [std.fs.max_path_bytes]u8 = undefined,
     len: usize,
+
     pub fn name(self: *const Parent) [:0]const u8 {
         return self.buffer[0..self.len :0];
     }
+
     pub fn deinit(self: *Parent) void {
         _ = c.close(self.fd);
     }
 };
+
 pub fn parent(root: *const Root, path: []const u8) !Parent {
     _ = try Root.normalize(path);
     const leaf = std.fs.path.basename(path);
@@ -39,6 +47,7 @@ pub fn parent(root: *const Root, path: []const u8) !Parent {
     result.buffer[leaf.len] = 0;
     return result;
 }
+
 pub fn failure() anyerror {
     return switch (std.c._errno().*) {
         c.ENOMEM => error.OutOfMemory,
@@ -53,6 +62,7 @@ pub fn failure() anyerror {
         else => error.FilesystemWriteFailed,
     };
 }
+
 pub fn sync(fd: c_int) !void {
     // O_PATH descriptors cannot be fsynced. Reopen the held directory itself.
     const writable = c.openat(fd, ".", c.O_RDONLY | c.O_DIRECTORY | c.O_CLOEXEC);
@@ -60,9 +70,11 @@ pub fn sync(fd: c_int) !void {
     defer _ = c.close(writable);
     if (c.fsync(writable) != 0) return failure();
 }
+
 pub fn mkdirs(root: *const Root, path: []const u8) !void {
     return mkdirsWithDurability(root, path, .immediate);
 }
+
 pub fn mkdirsWithDurability(root: *const Root, path: []const u8, durability: Durability) !void {
     _ = try Root.normalize(path);
     var end: usize = 0;
@@ -85,10 +97,17 @@ pub fn mkdirsWithDurability(root: *const Root, path: []const u8, durability: Dur
         end += 1;
     }
 }
+
 pub fn remove(root: *const Root, path: []const u8, directory: bool) !void {
     return removeWithDurability(root, path, directory, .immediate);
 }
-pub fn removeWithDurability(root: *const Root, path: []const u8, directory: bool, durability: Durability) !void {
+
+pub fn removeWithDurability(
+    root: *const Root,
+    path: []const u8,
+    directory: bool,
+    durability: Durability,
+) !void {
     var p = parent(root, path) catch |err| switch (err) {
         error.ParentNotFound => return,
         else => return err,
@@ -102,10 +121,17 @@ pub fn removeWithDurability(root: *const Root, path: []const u8, directory: bool
     }
     try durability.after(p.fd);
 }
+
 pub fn rename(root: *const Root, from: []const u8, to: []const u8) !void {
     return renameWithDurability(root, from, to, .immediate);
 }
-pub fn renameWithDurability(root: *const Root, from: []const u8, to: []const u8, durability: Durability) !void {
+
+pub fn renameWithDurability(
+    root: *const Root,
+    from: []const u8,
+    to: []const u8,
+    durability: Durability,
+) !void {
     var source = try parent(root, from);
     defer source.deinit();
     var target = try parent(root, to);
@@ -116,8 +142,14 @@ pub fn renameWithDurability(root: *const Root, from: []const u8, to: []const u8,
     try durability.after(source.fd);
     try durability.after(target.fd);
 }
+
 pub fn write(fd: c_int, name: [:0]const u8, bytes: []const u8) !void {
-    const file = c.openat(fd, name, c.O_WRONLY | c.O_CREAT | c.O_EXCL | c.O_NOFOLLOW | c.O_CLOEXEC, @as(c_uint, 0o600));
+    const file = c.openat(
+        fd,
+        name,
+        c.O_WRONLY | c.O_CREAT | c.O_EXCL | c.O_NOFOLLOW | c.O_CLOEXEC,
+        @as(c_uint, 0o600),
+    );
     if (file < 0) return failure();
     defer _ = c.close(file);
     var offset: usize = 0;
@@ -132,6 +164,7 @@ pub fn write(fd: c_int, name: [:0]const u8, bytes: []const u8) !void {
     }
     if (c.fchmod(file, 0o644) != 0 or c.fsync(file) != 0) return failure();
 }
+
 /// A private sibling directory on the destination mount. libarchive only sees
 /// /proc/self/fd/<held-stage>/entry; archive names and hardlinks never reach it.
 pub const Stage = struct {
@@ -139,10 +172,17 @@ pub const Stage = struct {
     fd: c_int,
     label: [48:0]u8,
     durability: Durability,
+
     pub fn init(root: *const Root, io: std.Io, path: []const u8) !Stage {
         return initWithDurability(root, io, path, .immediate);
     }
-    pub fn initWithDurability(root: *const Root, io: std.Io, path: []const u8, durability: Durability) !Stage {
+
+    pub fn initWithDurability(
+        root: *const Root,
+        io: std.Io,
+        path: []const u8,
+        durability: Durability,
+    ) !Stage {
         var p = try parent(root, path);
         errdefer p.deinit();
         var random: [16]u8 = undefined;
@@ -154,8 +194,14 @@ pub const Stage = struct {
         errdefer _ = c.unlinkat(p.fd, &label, c.AT_REMOVEDIR);
         const fd = c.openat(p.fd, &label, c.O_RDONLY | c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC);
         if (fd < 0) return failure();
-        return .{ .destination = p, .fd = fd, .label = label, .durability = durability };
+        return .{
+            .destination = p,
+            .fd = fd,
+            .label = label,
+            .durability = durability,
+        };
     }
+
     pub fn deinit(self: *Stage) !void {
         defer self.destination.deinit();
         defer _ = c.close(self.fd);
@@ -165,8 +211,10 @@ pub const Stage = struct {
         if (c.unlinkat(self.destination.fd, &self.label, c.AT_REMOVEDIR) != 0) return failure();
         try self.durability.after(self.destination.fd);
     }
+
     pub fn publish(self: *Stage) !void {
-        if (c.renameat(self.fd, "entry", self.destination.fd, self.destination.name()) != 0) return failure();
+        if (c.renameat(self.fd, "entry", self.destination.fd, self.destination.name()) != 0)
+            return failure();
         try self.durability.after(self.fd);
         try self.durability.after(self.destination.fd);
     }
@@ -174,17 +222,33 @@ pub const Stage = struct {
 
 /// Native pacsave rotations, enumerated after scripts so newly created suffixes
 /// participate too. All operations remain within the held parent/root.
-pub fn rotatePacsave(root: *const Root, io: std.Io, a: std.mem.Allocator, destination: []const u8) !void {
+pub fn rotatePacsave(
+    root: *const Root,
+    io: std.Io,
+    a: std.mem.Allocator,
+    destination: []const u8,
+) !void {
     return rotatePacsaveWithDurability(root, io, a, destination, .immediate);
 }
-pub fn rotatePacsaveWithDurability(root: *const Root, io: std.Io, a: std.mem.Allocator, destination: []const u8, durability: Durability) !void {
+
+pub fn rotatePacsaveWithDurability(
+    root: *const Root,
+    io: std.Io,
+    a: std.mem.Allocator,
+    destination: []const u8,
+    durability: Durability,
+) !void {
     var p = try parent(root, destination);
     defer p.deinit();
     const fd = c.openat(p.fd, ".", c.O_RDONLY | c.O_DIRECTORY | c.O_CLOEXEC);
     if (fd < 0) return failure();
     var dir: std.Io.Dir = .{ .handle = fd };
     defer dir.close(io);
-    const Item = struct { number: u64, name: []const u8 };
+
+    const Item = struct {
+        number: u64,
+        name: []const u8,
+    };
     var entries: std.ArrayList(Item) = .empty;
     defer entries.deinit(a);
     const prefix = try std.fmt.allocPrint(a, "{s}.", .{p.name()});
@@ -198,7 +262,8 @@ pub fn rotatePacsaveWithDurability(root: *const Root, io: std.Io, a: std.mem.All
         errdefer a.free(name);
         try entries.append(a, .{ .number = n, .name = name });
     }
-    defer for (entries.items) |item| a.free(item.name);
+    defer for (entries.items) |item|
+        a.free(item.name);
     std.mem.sort(Item, entries.items, {}, struct {
         fn less(_: void, left: Item, right: Item) bool {
             return left.number > right.number;

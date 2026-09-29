@@ -1,20 +1,24 @@
 //! Borrowed configuration input. Owner copies all strings/lists; callback contexts
 //! remain borrowed. Runtime effects are documented in options.md.
-const OwnerConfiguration = @This();
 const std = @import("std");
 const SignaturePolicy = @import("SignaturePolicy.zig");
 const PackageRelation = @import("PackageRelation.zig");
 const Callbacks = @import("Callbacks.zig");
+const Backend = @import("Backend.zig");
+const Verification = @import("Verification.zig");
+const transport = @import("Shelly_Download");
+
+const OwnerConfiguration = @This();
 
 root: []const u8,
 database_path: []const u8,
 /// Create an absent/empty local database as libalpm does; read_only never writes.
-local_database_mode: @import("Backend.zig").Mode = .create,
+local_database_mode: Backend.Mode = .create,
 cache_directories: []const []const u8 = &.{},
 /// null selects <root>/usr/share/libalpm/hooks; an empty list disables discovery.
 hook_directories: ?[]const []const u8 = null,
 gpg_directory: ?[]const u8 = null,
-key_acquisition: @import("Verification.zig").KeyAcquisition = .{},
+key_acquisition: Verification.KeyAcquisition = .{},
 log_file: ?[]const u8 = null,
 use_syslog: bool = false,
 architectures: []const []const u8 = &.{},
@@ -32,7 +36,7 @@ local_file_signature_policy: ?SignaturePolicy = disabled_signatures,
 remote_file_signature_policy: ?SignaturePolicy = disabled_signatures,
 disable_download_timeout: bool = false,
 parallel_downloads: u32 = 1,
-address_family_policy: @import("Shelly_Download").AddressFamilyPolicy = .prefer_ipv4,
+address_family_policy: transport.AddressFamilyPolicy = .prefer_ipv4,
 sandbox_user: ?[]const u8 = null,
 /// Installed worker override; default resolves the matching build artifact.
 download_worker: ?[]const u8 = null,
@@ -42,6 +46,7 @@ sandbox: Sandbox = .{},
 callbacks: Callbacks = .{},
 
 pub const disabled_signatures: SignaturePolicy = .{ .package = .disabled, .database = .disabled };
+
 pub const StringList = enum {
     cache_directories,
     hook_directories,
@@ -52,6 +57,7 @@ pub const StringList = enum {
     no_extract,
     overwrite_files,
 };
+
 pub const Sandbox = struct {
     disable_filesystem: bool = false,
     disable_syscalls: bool = false,
@@ -59,8 +65,13 @@ pub const Sandbox = struct {
 
     /// CachyOS's global setter changes all three independent switches.
     pub fn setDisabled(self: *Sandbox, disabled: bool) void {
-        self.* = .{ .disable_filesystem = disabled, .disable_syscalls = disabled, .disable_network = disabled };
+        self.* = .{
+            .disable_filesystem = disabled,
+            .disable_syscalls = disabled,
+            .disable_network = disabled,
+        };
     }
+
     /// The pinned legacy aggregate getter counts filesystem/syscall only.
     pub fn legacyDisabledState(self: Sandbox) u2 {
         return @as(u2, @intFromBool(self.disable_filesystem)) + @as(u2, @intFromBool(self.disable_syscalls));
@@ -70,11 +81,16 @@ pub const Sandbox = struct {
 pub fn effectiveLocalSignaturePolicy(self: OwnerConfiguration) SignaturePolicy {
     return self.local_file_signature_policy orelse self.default_signature_policy;
 }
+
 pub fn effectiveRemoteSignaturePolicy(self: OwnerConfiguration) SignaturePolicy {
     return self.remote_file_signature_policy orelse self.default_signature_policy;
 }
+
 pub fn list(self: OwnerConfiguration, comptime field: StringList) []const []const u8 {
-    return if (field == .hook_directories) self.hook_directories orelse &.{} else @field(self, @tagName(field));
+    return if (field == .hook_directories)
+        self.hook_directories orelse &.{}
+    else
+        @field(self, @tagName(field));
 }
 
 /// The allocator must be an enclosing arena; Owner uses a candidate arena so
@@ -87,8 +103,20 @@ pub fn copy(self: OwnerConfiguration, allocator: std.mem.Allocator, io: std.Io) 
     result.root = try existingDirectory(allocator, io, self.root);
     result.database_path = try existingDirectory(allocator, io, self.database_path);
     result.database_extension = try allocator.dupe(u8, self.database_extension);
-    inline for (.{ "cache_directories", "architectures", "ignore_packages", "ignore_groups", "no_upgrade", "no_extract", "overwrite_files" }) |field| {
-        @field(result, field) = try copyStrings(allocator, @field(self, field), std.mem.eql(u8, field, "cache_directories"));
+    inline for (.{
+        "cache_directories",
+        "architectures",
+        "ignore_packages",
+        "ignore_groups",
+        "no_upgrade",
+        "no_extract",
+        "overwrite_files",
+    }) |field| {
+        @field(result, field) = try copyStrings(
+            allocator,
+            @field(self, field),
+            std.mem.eql(u8, field, "cache_directories"),
+        );
     }
     result.hook_directories = if (self.hook_directories) |paths|
         try copyStrings(allocator, paths, true)
@@ -115,12 +143,22 @@ pub fn copy(self: OwnerConfiguration, allocator: std.mem.Allocator, io: std.Io) 
 }
 
 pub fn validateString(value: []const u8, allow_empty: bool) !void {
-    if ((!allow_empty and value.len == 0) or std.mem.indexOfScalar(u8, value, 0) != null) return error.InvalidOption;
+    if ((!allow_empty and value.len == 0) or std.mem.indexOfScalar(u8, value, 0) != null)
+        return error.InvalidOption;
 }
+
 pub fn directoryString(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     validateString(value, false) catch return error.InvalidPath;
-    return if (std.mem.endsWith(u8, value, "/")) allocator.dupe(u8, value) else std.fmt.allocPrint(allocator, "{s}/", .{value});
+    return if (std.mem.endsWith(u8, value, "/"))
+        allocator.dupe(u8, value)
+    else
+        std.fmt.allocPrint(
+            allocator,
+            "{s}/",
+            .{value},
+        );
 }
+
 fn existingDirectory(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]const u8 {
     validateString(path, false) catch return error.InvalidPath;
     var directory = try std.Io.Dir.cwd().openDir(io, path, .{});
@@ -128,6 +166,7 @@ fn existingDirectory(allocator: std.mem.Allocator, io: std.Io, path: []const u8)
     const resolved = try directory.realPathFileAlloc(io, ".", allocator);
     return directoryString(allocator, resolved);
 }
+
 fn copyOptional(allocator: std.mem.Allocator, value: ?[]const u8) !?[]const u8 {
     if (value) |text| {
         try validateString(text, true);
@@ -135,7 +174,12 @@ fn copyOptional(allocator: std.mem.Allocator, value: ?[]const u8) !?[]const u8 {
     }
     return null;
 }
-pub fn copyStrings(allocator: std.mem.Allocator, values: []const []const u8, directories: bool) ![]const []const u8 {
+
+pub fn copyStrings(
+    allocator: std.mem.Allocator,
+    values: []const []const u8,
+    directories: bool,
+) ![]const []const u8 {
     const owned = try allocator.alloc([]const u8, values.len);
     for (values, owned) |value, *item| {
         try validateString(value, !directories);

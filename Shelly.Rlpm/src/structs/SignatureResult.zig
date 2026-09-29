@@ -1,11 +1,28 @@
 //! GnuPG's machine-readable status protocol. Crypto validity, key status, trust,
 //! and process failures remain independent; every signature must pass policy.
-const SignatureResult = @This();
 const std = @import("std");
 const SignaturePolicy = @import("SignaturePolicy.zig");
-pub const Status = enum { valid, key_expired, signature_expired, key_unknown, key_disabled, key_revoked, invalid };
+
+const SignatureResult = @This();
+
+pub const Status = enum {
+    valid,
+    key_expired,
+    signature_expired,
+    key_unknown,
+    key_disabled,
+    key_revoked,
+    invalid,
+};
+
 pub const Trust = enum { full, marginal, unknown, never };
-pub const KeyOperation = struct { termination: std.process.Child.Term, status_output: []const u8, diagnostics: []const u8 };
+
+pub const KeyOperation = struct {
+    termination: std.process.Child.Term,
+    status_output: []const u8,
+    diagnostics: []const u8,
+};
+
 pub const Signature = struct {
     status: Status = .invalid,
     trust: Trust = .unknown,
@@ -51,19 +68,34 @@ key_operations: std.ArrayList(KeyOperation) = .empty,
 
 pub fn recordKeyOperation(self: *SignatureResult, operation: KeyOperation) !void {
     const owned = self.arena.allocator();
-    try self.key_operations.append(owned, .{ .termination = operation.termination, .status_output = try owned.dupe(u8, operation.status_output), .diagnostics = try owned.dupe(u8, operation.diagnostics) });
+    try self.key_operations.append(
+        owned,
+        .{
+            .termination = operation.termination,
+            .status_output = try owned.dupe(u8, operation.status_output),
+            .diagnostics = try owned.dupe(u8, operation.diagnostics),
+        },
+    );
 }
 
 pub fn deinit(self: *SignatureResult) void {
     self.arena.deinit();
     self.* = undefined;
 }
+
 pub fn check(self: *const SignatureResult, trust: SignaturePolicy.Trust) !void {
     if (self.process_failure) return error.GpgFailed;
     if (self.malformed_status or self.no_data or self.signatures.len == 0) return error.InvalidSignature;
-    for (self.signatures) |signature| if (!signature.accepted(trust)) return error.InvalidSignature;
+    for (self.signatures) |signature|
+        if (!signature.accepted(trust)) return error.InvalidSignature;
 }
-pub fn parse(allocator: std.mem.Allocator, status: []const u8, diagnostics: []const u8, term: std.process.Child.Term) !SignatureResult {
+
+pub fn parse(
+    allocator: std.mem.Allocator,
+    status: []const u8,
+    diagnostics: []const u8,
+    term: std.process.Child.Term,
+) !SignatureResult {
     var result: SignatureResult = .{
         .arena = std.heap.ArenaAllocator.init(allocator),
         .signatures = &.{},
@@ -99,7 +131,12 @@ pub fn parse(allocator: std.mem.Allocator, status: []const u8, diagnostics: []co
             if (!std.mem.startsWith(u8, args, "gpg-exit ")) result.process_failure = true;
             continue;
         }
-        if (std.mem.eql(u8, name, "GOODSIG") or std.mem.eql(u8, name, "BADSIG") or std.mem.eql(u8, name, "EXPSIG") or std.mem.eql(u8, name, "EXPKEYSIG") or std.mem.eql(u8, name, "REVKEYSIG") or std.mem.eql(u8, name, "ERRSIG")) {
+        if (std.mem.eql(u8, name, "GOODSIG") or std.mem.eql(u8, name, "BADSIG") or
+            std.mem.eql(u8, name, "EXPSIG") or
+            std.mem.eql(u8, name, "EXPKEYSIG") or
+            std.mem.eql(u8, name, "REVKEYSIG") or
+            std.mem.eql(u8, name, "ERRSIG"))
+        {
             if (current == null) current = .{};
             if (current.?.primary_status_seen) result.malformed_status = true;
             current.?.primary_status_seen = true;
@@ -123,7 +160,15 @@ pub fn parse(allocator: std.mem.Allocator, status: []const u8, diagnostics: []co
                 result.malformed_status = true;
                 continue;
             }
-            current.?.trust = if (std.mem.eql(u8, name, "TRUST_FULLY") or std.mem.eql(u8, name, "TRUST_ULTIMATE")) .full else if (std.mem.eql(u8, name, "TRUST_MARGINAL")) .marginal else if (std.mem.eql(u8, name, "TRUST_NEVER")) .never else .unknown;
+            current.?.trust = if (std.mem.eql(u8, name, "TRUST_FULLY") or
+                std.mem.eql(u8, name, "TRUST_ULTIMATE"))
+                .full
+            else if (std.mem.eql(u8, name, "TRUST_MARGINAL"))
+                .marginal
+            else if (std.mem.eql(u8, name, "TRUST_NEVER"))
+                .never
+            else
+                .unknown;
         }
     }
     if (current) |signature| try signatures.append(owned, signature);
@@ -135,40 +180,70 @@ pub fn parse(allocator: std.mem.Allocator, status: []const u8, diagnostics: []co
             if (code != 0) {
                 var explained = result.no_data;
                 for (result.signatures) |signature| {
-                    if (signature.primary_status_seen and signature.status != .valid and signature.status != .key_expired) explained = true;
+                    if (signature.primary_status_seen and signature.status != .valid and
+                        signature.status != .key_expired)
+                        explained = true;
                 }
                 if (!explained) result.process_failure = true;
             }
         },
         else => result.process_failure = true,
     }
-    for (result.signatures) |signature| if (!signature.primary_status_seen) {
-        result.malformed_status = true;
-    };
+    for (result.signatures) |signature|
+        if (!signature.primary_status_seen) {
+            result.malformed_status = true;
+        };
     return result;
 }
+
 pub fn validIdentifier(value: []const u8) bool {
     if (value.len != 16 and value.len != 32 and value.len != 40 and value.len != 64) return false;
-    for (value) |byte| if (!std.ascii.isHex(byte)) return false;
+    for (value) |byte|
+        if (!std.ascii.isHex(byte)) return false;
     return true;
 }
-fn parsePrimary(allocator: std.mem.Allocator, signature: *Signature, name: []const u8, args: []const u8) !void {
+
+fn parsePrimary(
+    allocator: std.mem.Allocator,
+    signature: *Signature,
+    name: []const u8,
+    args: []const u8,
+) !void {
     var words = std.mem.tokenizeScalar(u8, args, ' ');
     const id = words.next() orelse return error.InvalidStatus;
     if (!validIdentifier(id)) return error.InvalidStatus;
     signature.key_id = id;
-    signature.status = if (std.mem.eql(u8, name, "GOODSIG")) .valid else if (std.mem.eql(u8, name, "EXPSIG")) .signature_expired else if (std.mem.eql(u8, name, "EXPKEYSIG")) .key_expired else if (std.mem.eql(u8, name, "REVKEYSIG")) .key_revoked else .invalid;
+    signature.status = if (std.mem.eql(u8, name, "GOODSIG"))
+        .valid
+    else if (std.mem.eql(u8, name, "EXPSIG"))
+        .signature_expired
+    else if (std.mem.eql(u8, name, "EXPKEYSIG"))
+        .key_expired
+    else if (std.mem.eql(u8, name, "REVKEYSIG"))
+        .key_revoked
+    else
+        .invalid;
     if (std.mem.eql(u8, name, "ERRSIG")) {
-        signature.public_key_algorithm = try std.fmt.parseInt(u16, words.next() orelse return error.InvalidStatus, 10);
-        signature.hash_algorithm = try std.fmt.parseInt(u16, words.next() orelse return error.InvalidStatus, 10);
+        signature.public_key_algorithm = try std.fmt.parseInt(
+            u16,
+            words.next() orelse
+                return error.InvalidStatus,
+            10,
+        );
+        signature.hash_algorithm = try std.fmt.parseInt(
+            u16,
+            words.next() orelse return error.InvalidStatus,
+            10,
+        );
         _ = words.next() orelse return error.InvalidStatus;
         signature.created = try std.fmt.parseInt(u64, words.next() orelse return error.InvalidStatus, 10);
         signature.error_code = try std.fmt.parseInt(u32, words.next() orelse return error.InvalidStatus, 10);
         if (signature.error_code == 9) signature.status = .key_unknown;
-        if (words.next()) |fpr| if (!std.mem.eql(u8, fpr, "-")) {
-            if (!validIdentifier(fpr)) return error.InvalidStatus;
-            signature.fingerprint = fpr;
-        };
+        if (words.next()) |fpr|
+            if (!std.mem.eql(u8, fpr, "-")) {
+                if (!validIdentifier(fpr)) return error.InvalidStatus;
+                signature.fingerprint = fpr;
+            };
     } else {
         const username = std.mem.trimStart(u8, args[id.len..], " ");
         var decoded: std.ArrayList(u8) = .empty;
@@ -184,11 +259,13 @@ fn parsePrimary(allocator: std.mem.Allocator, signature: *Signature, name: []con
         const uid = signature.user_id.?;
         const name_end = std.mem.indexOfAny(u8, uid, "(<") orelse uid.len;
         signature.user_name = std.mem.trim(u8, uid[0..name_end], " \t");
-        if (std.mem.indexOfScalar(u8, uid, '<')) |start| if (std.mem.indexOfScalarPos(u8, uid, start + 1, '>')) |finish| {
-            signature.email = uid[start + 1 .. finish];
-        };
+        if (std.mem.indexOfScalar(u8, uid, '<')) |start|
+            if (std.mem.indexOfScalarPos(u8, uid, start + 1, '>')) |finish| {
+                signature.email = uid[start + 1 .. finish];
+            };
     }
 }
+
 fn parseValid(signature: *Signature, args: []const u8) !void {
     if (signature.cryptographically_valid) return error.InvalidStatus;
     var words = std.mem.tokenizeScalar(u8, args, ' ');
@@ -200,7 +277,11 @@ fn parseValid(signature: *Signature, args: []const u8) !void {
     signature.expires = try std.fmt.parseInt(u64, words.next() orelse return error.InvalidStatus, 10);
     _ = words.next() orelse return error.InvalidStatus;
     _ = words.next() orelse return error.InvalidStatus;
-    signature.public_key_algorithm = try std.fmt.parseInt(u16, words.next() orelse return error.InvalidStatus, 10);
+    signature.public_key_algorithm = try std.fmt.parseInt(
+        u16,
+        words.next() orelse return error.InvalidStatus,
+        10,
+    );
     signature.hash_algorithm = try std.fmt.parseInt(u16, words.next() orelse return error.InvalidStatus, 10);
     _ = words.next() orelse return error.InvalidStatus;
     signature.primary_fingerprint = words.next() orelse fpr;

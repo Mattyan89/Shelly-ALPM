@@ -1,21 +1,40 @@
 //! Parent side of the download worker protocol; no parent credential changes.
 const std = @import("std");
 const transport = @import("Shelly_Download");
-const protocol = transport.WorkerProtocol;
 const Owner = @import("Owner.zig");
 const Publication = @import("Publication.zig");
+const Downloads = @import("Downloads.zig");
+const download_worker_options = @import("download_worker");
+const ImmutableFile = @import("ImmutableFile.zig");
+
+const protocol = transport.WorkerProtocol;
 extern "c" fn rlpm_worker_directory([*:0]const u8, [*:0]const u8) c_int;
 extern "c" fn rlpm_worker_read(c_int, [*]u8, usize) c_int;
+
 pub fn applicable(owner: *const Owner) bool {
     const config = owner.configuration;
     return std.c.getuid() == 0 and config.sandbox_user != null and
-        (!config.sandbox.disable_filesystem or !config.sandbox.disable_syscalls or !config.sandbox.disable_network);
+        (!config.sandbox.disable_filesystem or !config.sandbox.disable_syscalls or
+            !config.sandbox.disable_network);
 }
-pub fn fetch(owner: *Owner, allocator: std.mem.Allocator, io: std.Io, url: []const u8, path: []const u8, force: bool, maximum: ?u64, mtime: ?i128, allow_resume: bool, progress: *std.atomic.Value(u64), effective_url: ?*?[]u8) !void {
+
+pub fn fetch(
+    owner: *Owner,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    url: []const u8,
+    path: []const u8,
+    force: bool,
+    maximum: ?u64,
+    mtime: ?i128,
+    allow_resume: bool,
+    progress: *std.atomic.Value(u64),
+    effective_url: ?*?[]u8,
+) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const directory = try @import("Downloads.zig").uniquePath(a, io, "/tmp", "rlpm-download");
+    const directory = try Downloads.uniquePath(a, io, "/tmp", "rlpm-download");
     try Publication.privateDirectory(directory);
     defer std.Io.Dir.cwd().deleteTree(io, directory) catch {};
     const directory_z = try a.dupeZ(u8, directory);
@@ -24,7 +43,8 @@ pub fn fetch(owner: *Owner, allocator: std.mem.Allocator, io: std.Io, url: []con
     // Payload basenames cannot collide with worker protocol metadata.
     const payload_directory = try std.fs.path.join(a, &.{ directory, "payload" });
     try Publication.privateDirectory(payload_directory);
-    if (rlpm_worker_directory(try a.dupeZ(u8, payload_directory), user) != 0) return error.DownloadSandboxFailed;
+    if (rlpm_worker_directory(try a.dupeZ(u8, payload_directory), user) != 0)
+        return error.DownloadSandboxFailed;
     const output = try std.fs.path.join(a, &.{ payload_directory, std.fs.path.basename(path) });
     const partial = try std.fmt.allocPrint(a, "{s}.part", .{output});
     const parent_partial = try std.fmt.allocPrint(a, "{s}.part", .{path});
@@ -53,17 +73,20 @@ pub fn fetch(owner: *Owner, allocator: std.mem.Allocator, io: std.Io, url: []con
         .partial = if (allow_resume) partial else null,
     };
     const payload = try std.json.Stringify.valueAlloc(a, request, .{});
-    var child = try std.process.spawn(io, .{
-        .argv = &.{owner.configuration.download_worker orelse @import("download_worker").worker_path},
-        .stdin = .pipe,
-        .stdout = .pipe,
-        .stderr = .ignore,
-    });
+    var child = try std.process.spawn(
+        io,
+        .{
+            .argv = &.{owner.configuration.download_worker orelse download_worker_options.worker_path},
+            .stdin = .pipe,
+            .stdout = .pipe,
+            .stderr = .ignore,
+        },
+    );
     var completed = false;
     defer {
         child.kill(io);
         if (!completed and allow_resume) {
-            if (@import("ImmutableFile.zig").copyRegular(io, partial, maximum)) |value| {
+            if (ImmutableFile.copyRegular(io, partial, maximum)) |value| {
                 var snapshot = value;
                 defer snapshot.deinit();
                 Publication.copy(io, snapshot.path(), parent_partial) catch {};
@@ -85,7 +108,8 @@ pub fn fetch(owner: *Owner, allocator: std.mem.Allocator, io: std.Io, url: []con
         if (count != packet.len) continue;
         count = 0;
         if (packet[0] == 0) progress.store(std.mem.readInt(u64, packet[1..9], .little), .release) else {
-            result = std.enums.fromInt(protocol.Result, packet[0] - 1) orelse return error.DownloadWorkerFailed;
+            result = std.enums.fromInt(protocol.Result, packet[0] - 1) orelse
+                return error.DownloadWorkerFailed;
         }
     }
     child.stdout.?.close(io);
@@ -95,19 +119,24 @@ pub fn fetch(owner: *Owner, allocator: std.mem.Allocator, io: std.Io, url: []con
     if (result == .success or result == .unchanged) {
         if (effective_url) |output_url| {
             const metadata = try std.fs.path.join(a, &.{ directory, ".rlpm-effective-url" });
-            const value = @import("ImmutableFile.zig").copyRegular(io, metadata, 16384) catch |err| switch (err) {
+            const value = ImmutableFile.copyRegular(io, metadata, 16384) catch |err| switch (err) {
                 error.FileNotFound => null,
                 else => return err,
             };
             if (value) |file| {
                 var snapshot = file;
                 defer snapshot.deinit();
-                output_url.* = try std.Io.Dir.cwd().readFileAlloc(io, snapshot.path(), allocator, .limited(16385));
+                output_url.* = try std.Io.Dir.cwd().readFileAlloc(
+                    io,
+                    snapshot.path(),
+                    allocator,
+                    .limited(16385),
+                );
             }
         }
     }
     if (result == .success) {
-        var snapshot = try @import("ImmutableFile.zig").copyRegular(io, output, maximum);
+        var snapshot = try ImmutableFile.copyRegular(io, output, maximum);
         defer snapshot.deinit();
         try Publication.copy(io, snapshot.path(), path);
         completed = true;

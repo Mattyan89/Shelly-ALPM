@@ -1,5 +1,6 @@
-const DatabaseUsage = @This();
 const std = @import("std");
+
+const DatabaseUsage = @This();
 
 sync: bool = true,
 search: bool = true,

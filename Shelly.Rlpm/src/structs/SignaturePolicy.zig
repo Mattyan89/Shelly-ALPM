@@ -1,11 +1,13 @@
-const SignaturePolicy = @This();
 const std = @import("std");
+
+const SignaturePolicy = @This();
 
 pub const Verification = enum {
     disabled,
     optional,
     required,
 };
+
 pub const Trust = struct {
     allow_marginal: bool = false,
     allow_unknown: bool = false,

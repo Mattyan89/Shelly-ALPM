@@ -20,6 +20,7 @@ pub const KeyAcquisition = struct {
     allow_keyserver: bool = true,
     keyserver: ?[]const u8 = null,
 };
+
 pub const Context = struct {
     gpg_directory: ?[]const u8 = null,
     acquisition: KeyAcquisition = .{},
@@ -33,7 +34,12 @@ pub const Context = struct {
         if (self.check_cancelled) |check_cancelled| try check_cancelled(self.question_context);
     }
 
-    fn capture(self: Context, allocator: std.mem.Allocator, io: std.Io, args: []const []const u8) !std.process.RunResult {
+    fn capture(
+        self: Context,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        args: []const []const u8,
+    ) !std.process.RunResult {
         try self.checkCancelled();
         const home = self.gpg_directory orelse "/etc/pacman.d/gnupg";
         if (home.len == 0 or std.mem.indexOfScalar(u8, home, 0) != null) return error.InvalidPath;
@@ -41,7 +47,18 @@ pub const Context = struct {
         return (Gpg{ .io = io, .homedir = home }).runCaptureResult(allocator, args);
     }
 };
-const verify_options = [_][]const u8{ "--no-options", "--batch", "--no-tty", "--no-auto-key-retrieve", "--no-auto-key-import", "--auto-key-locate", "clear", "--no-auto-check-trustdb", "--no-autostart", "--proc-all-sigs" };
+const verify_options = [_][]const u8{
+    "--no-options",
+    "--batch",
+    "--no-tty",
+    "--no-auto-key-retrieve",
+    "--no-auto-key-import",
+    "--auto-key-locate",
+    "clear",
+    "--no-auto-check-trustdb",
+    "--no-autostart",
+    "--proc-all-sigs",
+};
 
 pub const Options = struct {
     requirement: Policy.Verification,
@@ -54,15 +71,29 @@ pub const Options = struct {
     /// database/repository verification instead applies the KEY_EXPIRED policy.
     refresh_expired_keys: bool = false,
 };
+
 pub fn clearReport(report: *?Report) void {
     if (report.*) |*old| old.deinit();
     report.* = null;
 }
+
 /// The output report survives policy rejection. I/O/spawn errors propagate;
 /// completed processes retain termination, raw statuses and stderr in the report.
-pub fn check(allocator: std.mem.Allocator, io: std.Io, context: Context, snapshot: *const Snapshot, source: []const u8, options: Options, report: *?Report) !Package.Validation {
+pub fn check(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    context: Context,
+    snapshot: *const Snapshot,
+    source: []const u8,
+    options: Options,
+    report: *?Report,
+) !Package.Validation {
     clearReport(report);
-    const signature = if (options.requirement == .disabled) null else if (options.base64_signature) |encoded| try OpenPgp.decode(allocator, encoded) else switch (options.detached_signature) {
+    const signature = if (options.requirement == .disabled)
+        null
+    else if (options.base64_signature) |encoded|
+        try OpenPgp.decode(allocator, encoded)
+    else switch (options.detached_signature) {
         .read_from_path => try OpenPgp.readDetached(allocator, io, source),
         .bytes => |value| if (value) |bytes| blk: {
             if (bytes.len > OpenPgp.max_signature_size) return error.SignatureTooLarge;
@@ -92,11 +123,21 @@ pub fn check(allocator: std.mem.Allocator, io: std.Io, context: Context, snapsho
                 defer attempted.deinit(allocator);
                 var imported = false;
                 for (report.*.?.signatures) |key| {
-                    if (key.status != .key_unknown and !(key.status == .key_expired and options.refresh_expired_keys)) continue;
+                    if (key.status != .key_unknown and
+                        !(key.status == .key_expired and
+                            options.refresh_expired_keys))
+                        continue;
                     const id = key.fingerprint orelse key.key_id orelse return error.InvalidSignature;
                     const entry = try attempted.getOrPut(allocator, id);
                     if (entry.found_existing) continue;
-                    var question: Callbacks.Question = .{ .import_key = .{ .key = .{ .fingerprint = id, .user_id = key.user_id } } };
+                    var question: Callbacks.Question = .{
+                        .import_key = .{
+                            .key = .{
+                                .fingerprint = id,
+                                .user_id = key.user_id,
+                            },
+                        },
+                    };
                     if (context.question) |ask| try ask(context.question_context, &question);
                     try context.checkCancelled();
                     if (question != .import_key) return error.InvalidAnswer;
@@ -107,7 +148,8 @@ pub fn check(allocator: std.mem.Allocator, io: std.Io, context: Context, snapsho
                 if (imported) {
                     var rechecked = try verify(allocator, io, context, snapshot.path(), detached.path());
                     errdefer rechecked.deinit();
-                    for (report.*.?.key_operations.items) |operation| try rechecked.recordKeyOperation(operation);
+                    for (report.*.?.key_operations.items) |operation|
+                        try rechecked.recordKeyOperation(operation);
                     clearReport(report);
                     report.* = rechecked;
                 }
@@ -120,10 +162,28 @@ pub fn check(allocator: std.mem.Allocator, io: std.Io, context: Context, snapsho
     try context.checkCancelled();
     return performed;
 }
+
 /// Low-level checking preserves all signature outcomes without applying trust.
 /// Inputs should be pinned by the caller; check() supplies sealed snapshots.
-pub fn verify(allocator: std.mem.Allocator, io: std.Io, context: Context, data: []const u8, signature: []const u8) !Report {
-    const result = try context.capture(allocator, io, &(verify_options ++ .{ "--status-fd", "1", "--verify", "--", signature, data }));
+pub fn verify(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    context: Context,
+    data: []const u8,
+    signature: []const u8,
+) !Report {
+    const result = try context.capture(
+        allocator,
+        io,
+        &(verify_options ++ .{
+            "--status-fd",
+            "1",
+            "--verify",
+            "--",
+            signature,
+            data,
+        }),
+    );
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
     var report = try Report.parse(allocator, result.stdout, result.stderr, result.term);
@@ -133,13 +193,33 @@ pub fn verify(allocator: std.mem.Allocator, io: std.Io, context: Context, data: 
     // checks it explicitly via its key object; query the same configured keyring.
     for (report.signatures) |*key| {
         const fingerprint = key.primary_fingerprint orelse continue;
-        const listing = try context.capture(allocator, io, &(verify_options ++ .{ "--with-colons", "--fixed-list-mode", "--list-keys", "--", fingerprint }));
+        const listing = try context.capture(
+            allocator,
+            io,
+            &(verify_options ++ .{
+                "--with-colons",
+                "--fixed-list-mode",
+                "--list-keys",
+                "--",
+                fingerprint,
+            }),
+        );
         defer allocator.free(listing.stdout);
         defer allocator.free(listing.stderr);
-        try report.recordKeyOperation(.{ .termination = listing.term, .status_output = listing.stdout, .diagnostics = listing.stderr });
+        try report.recordKeyOperation(
+            .{
+                .termination = listing.term,
+                .status_output = listing.stdout,
+                .diagnostics = listing.stderr,
+            },
+        );
         if (!succeeded(listing.term)) {
             report.process_failure = true;
-            report.diagnostics = try std.fmt.allocPrint(report.arena.allocator(), "{s}\n{s}", .{ report.diagnostics, listing.stderr });
+            report.diagnostics = try std.fmt.allocPrint(
+                report.arena.allocator(),
+                "{s}\n{s}",
+                .{ report.diagnostics, listing.stderr },
+            );
             continue;
         }
         var lines = std.mem.splitScalar(u8, listing.stdout, '\n');
@@ -158,22 +238,38 @@ pub fn verify(allocator: std.mem.Allocator, io: std.Io, context: Context, data: 
     }
     return report;
 }
+
 fn succeeded(term: std.process.Child.Term) bool {
     return switch (term) {
         .exited => |code| code == 0,
         else => false,
     };
 }
-fn runImport(allocator: std.mem.Allocator, io: std.Io, context: Context, args: []const []const u8, report: *Report) !bool {
+
+fn runImport(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    context: Context,
+    args: []const []const u8,
+    report: *Report,
+) !bool {
     const result = try context.capture(allocator, io, args);
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
-    try report.recordKeyOperation(.{ .termination = result.term, .status_output = result.stdout, .diagnostics = result.stderr });
+    try report.recordKeyOperation(
+        .{
+            .termination = result.term,
+            .status_output = result.stdout,
+            .diagnostics = result.stderr,
+        },
+    );
     return succeeded(result.term);
 }
+
 fn matches(fingerprint: []const u8, requested: []const u8) bool {
     return Report.validIdentifier(fingerprint) and std.ascii.endsWithIgnoreCase(fingerprint, requested);
 }
+
 /// Returns the primary fingerprint owning a requested primary/subkey fingerprint
 /// (or long key ID). Never imports unrelated primary keys from a supplied file.
 fn findPrimary(listing: []const u8, requested: []const u8) ?[]const u8 {
@@ -199,41 +295,103 @@ fn findPrimary(listing: []const u8, requested: []const u8) ?[]const u8 {
     }
     return null;
 }
-fn importKey(allocator: std.mem.Allocator, io: std.Io, context: Context, id: []const u8, uid: ?[]const u8, report: *Report) !void {
+
+fn importKey(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    context: Context,
+    id: []const u8,
+    uid: ?[]const u8,
+    report: *Report,
+) !void {
     if (!Report.validIdentifier(id)) return error.InvalidSignature;
     for (context.acquisition.key_files) |path| {
         var key = try Snapshot.copy(io, path);
         defer key.deinit();
-        const listing = try context.capture(allocator, io, &(verify_options ++ .{ "--with-colons", "--show-keys", "--", key.path() }));
+        const listing = try context.capture(
+            allocator,
+            io,
+            &(verify_options ++ .{
+                "--with-colons",
+                "--show-keys",
+                "--",
+                key.path(),
+            }),
+        );
         defer allocator.free(listing.stdout);
         defer allocator.free(listing.stderr);
-        try report.recordKeyOperation(.{ .termination = listing.term, .status_output = listing.stdout, .diagnostics = listing.stderr });
+        try report.recordKeyOperation(
+            .{
+                .termination = listing.term,
+                .status_output = listing.stdout,
+                .diagnostics = listing.stderr,
+            },
+        );
         if (!succeeded(listing.term)) return error.KeyImportFailed;
         _ = findPrimary(listing.stdout, id) orelse continue;
         var primary_count: usize = 0;
         var lines = std.mem.splitScalar(u8, listing.stdout, '\n');
         while (lines.next()) |line| {
             if (std.mem.startsWith(u8, line, "pub:")) primary_count += 1;
-            if (std.mem.startsWith(u8, line, "sec:") or std.mem.startsWith(u8, line, "ssb:")) return error.InvalidKeySource;
+            if (std.mem.startsWith(u8, line, "sec:") or std.mem.startsWith(u8, line, "ssb:"))
+                return error.InvalidKeySource;
         }
         if (primary_count != 1) return error.InvalidKeySource;
-        if (!try runImport(allocator, io, context, &(verify_options ++ .{ "--import", "--", key.path() }), report)) return error.KeyImportFailed;
+        if (!try runImport(
+            allocator,
+            io,
+            context,
+            &(verify_options ++ .{ "--import", "--", key.path() }),
+            report,
+        ))
+            return error.KeyImportFailed;
         return;
     }
     // Acquisition may use this keyring's gpg.conf/keyserver settings, like the
     // reference. It is never invoked by verify(), only after the question above.
-    const acquire_options = [_][]const u8{ "--batch", "--no-tty", "--no-auto-key-retrieve", "--no-auto-key-import", "--keyserver-options", "only-pubkeys" };
+    const acquire_options = [_][]const u8{
+        "--batch",
+        "--no-tty",
+        "--no-auto-key-retrieve",
+        "--no-auto-key-import",
+        "--keyserver-options",
+        "only-pubkeys",
+    };
     if (context.acquisition.allow_wkd) {
         if (uid) |user_id| {
             if (std.mem.indexOfScalar(u8, user_id, '<')) |start| {
                 if (std.mem.indexOfScalarPos(u8, user_id, start + 1, '>')) |end| {
                     const email = user_id[start + 1 .. end];
-                    if (std.mem.indexOfScalar(u8, email, '@') != null and std.mem.indexOfAny(u8, email, "\x00\r\n") == null) {
-                        if (try runImport(allocator, io, context, &(acquire_options ++ .{ "--auto-key-locate", "clear,wkd", "--locate-external-key", "--", email }), report)) {
-                            const listing = try context.capture(allocator, io, &(verify_options ++ .{ "--with-colons", "--list-keys", "--", id }));
+                    if (std.mem.indexOfScalar(u8, email, '@') != null and
+                        std.mem.indexOfAny(u8, email, "\x00\r\n") == null)
+                    {
+                        if (try runImport(
+                            allocator,
+                            io,
+                            context,
+                            &(acquire_options ++ .{
+                                "--auto-key-locate",
+                                "clear,wkd",
+                                "--locate-external-key",
+                                "--",
+                                email,
+                            }),
+                            report,
+                        )) {
+                            const listing = try context.capture(
+                                allocator,
+                                io,
+                                &(verify_options ++ .{ "--with-colons", "--list-keys", "--", id }),
+                            );
                             defer allocator.free(listing.stdout);
                             defer allocator.free(listing.stderr);
-                            try report.recordKeyOperation(.{ .termination = listing.term, .status_output = listing.stdout, .diagnostics = listing.stderr });
+                            try report.recordKeyOperation(
+                                .{
+                                    .termination = listing.term,
+                                    .status_output = listing.stdout,
+                                    .diagnostics = listing.stderr,
+                                },
+                            );
                             if (succeeded(listing.term) and findPrimary(listing.stdout, id) != null) return;
                         }
                     }
@@ -243,7 +401,19 @@ fn importKey(allocator: std.mem.Allocator, io: std.Io, context: Context, id: []c
     }
     if (context.acquisition.allow_keyserver) {
         const ok = if (context.acquisition.keyserver) |server|
-            try runImport(allocator, io, context, &(acquire_options ++ .{ "--keyserver", server, "--recv-keys", "--", id }), report)
+            try runImport(
+                allocator,
+                io,
+                context,
+                &(acquire_options ++ .{
+                    "--keyserver",
+                    server,
+                    "--recv-keys",
+                    "--",
+                    id,
+                }),
+                report,
+            )
         else
             try runImport(allocator, io, context, &(acquire_options ++ .{ "--recv-keys", "--", id }), report);
         if (!ok) return error.KeyImportFailed;

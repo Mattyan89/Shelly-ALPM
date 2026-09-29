@@ -1,5 +1,6 @@
-const DatabaseStatus = @This();
 const std = @import("std");
+
+const DatabaseStatus = @This();
 
 pub const Presence = enum {
     unknown,

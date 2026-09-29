@@ -2,6 +2,8 @@
 //! never turns successful package publication into a false rollback claim.
 const std = @import("std");
 const Tx = @import("Transaction.zig");
+const Diagnostic = @import("Diagnostic.zig");
+
 const c = @cImport({
     @cUndef("_FORTIFY_SOURCE");
     @cDefine("_FORTIFY_SOURCE", "0");
@@ -10,12 +12,16 @@ const c = @cImport({
     @cInclude("fcntl.h");
     @cInclude("unistd.h");
 });
+
 pub fn log(tx: *Tx, comptime fmt: []const u8, args: anytype) void {
     write(tx, fmt, args) catch |err| {
         if (tx.owned_manifest) |*m| m.warnings.append(m.arena.allocator(), .{ .cause = err }) catch {};
-        tx.owner.transactionEvent(.{ .diagnostic = @import("Diagnostic.zig").init(.transaction, err, null) });
+        tx.owner.transactionEvent(
+            .{ .diagnostic = Diagnostic.init(.transaction, err, null) },
+        );
     };
 }
+
 fn write(tx: *Tx, comptime fmt: []const u8, args: anytype) !void {
     const options = tx.owner.configuration;
     if (options.log_file == null and !options.use_syslog) return;

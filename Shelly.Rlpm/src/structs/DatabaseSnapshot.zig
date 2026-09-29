@@ -3,6 +3,7 @@
 //! rechecking detects out-of-band edits before a reviewed plan can be applied.
 const std = @import("std");
 const Owner = @import("Owner.zig");
+
 const Hash = std.crypto.hash.sha2.Sha256;
 
 const Progress = struct {
@@ -29,9 +30,20 @@ const Progress = struct {
 };
 
 pub fn capture(owner: *Owner, io: std.Io) ![32]u8 {
-    var progress: Progress = .{ .owner = owner, .io = io, .reported = std.Io.Clock.awake.now(io) };
+    var progress: Progress = .{
+        .owner = owner,
+        .io = io,
+        .reported = std.Io.Clock.awake.now(io),
+    };
     const callbacks = owner.configuration.callbacks;
-    if (callbacks.log) |log| log(callbacks.log_context, .{ .level = .function, .message = "Checking package databases" });
+    if (callbacks.log) |log|
+        log(
+            callbacks.log_context,
+            .{
+                .level = .function,
+                .message = "Checking package databases",
+            },
+        );
     var arena = std.heap.ArenaAllocator.init(owner.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -65,7 +77,14 @@ pub fn capture(owner: *Owner, io: std.Io) ![32]u8 {
             try owner.checkCancelled();
             field(&hash, file_path);
             const link_stat = try dir.statFile(io, file_path, .{ .follow_symlinks = false });
-            const stat = if (link_stat.kind == .sym_link) try dir.statFile(io, file_path, .{ .follow_symlinks = true }) else link_stat;
+            const stat = if (link_stat.kind == .sym_link)
+                try dir.statFile(
+                    io,
+                    file_path,
+                    .{ .follow_symlinks = true },
+                )
+            else
+                link_stat;
             // Walker intentionally does not follow directory links. Refuse an
             // incomplete fingerprint rather than omitting their descendants.
             if (link_stat.kind == .sym_link and stat.kind == .directory) return error.InvalidDatabaseEntry;
@@ -93,7 +112,9 @@ pub fn capture(owner: *Owner, io: std.Io) ![32]u8 {
                 progress.report(false);
             }
             const final = try file.stat(io);
-            if (initial.size != final.size or !std.meta.eql(initial.mtime, final.mtime) or !std.meta.eql(initial.ctime, final.ctime)) return error.StaleDatabaseState;
+            if (initial.size != final.size or !std.meta.eql(initial.mtime, final.mtime) or
+                !std.meta.eql(initial.ctime, final.ctime))
+                return error.StaleDatabaseState;
             progress.files += 1;
             progress.report(false);
         }
@@ -101,6 +122,7 @@ pub fn capture(owner: *Owner, io: std.Io) ![32]u8 {
     progress.report(true);
     return hash.finalResult();
 }
+
 fn field(hash: *Hash, bytes: []const u8) void {
     var length: [8]u8 = undefined;
     std.mem.writeInt(u64, &length, bytes.len, .little);

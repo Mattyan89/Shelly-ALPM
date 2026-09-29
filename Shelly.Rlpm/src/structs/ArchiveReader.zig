@@ -1,14 +1,16 @@
 //! Small libarchive reader. Never extracts paths or writes filesystem data.
 //! Entry names/links are borrowed until next(); memory input must outlive deinit.
-const ArchiveReader = @This();
 const std = @import("std");
 const PackageFile = @import("PackageFile.zig");
+
+const ArchiveReader = @This();
 pub const c = @cImport({
     @cInclude("archive.h");
     @cInclude("archive_entry.h");
     @cInclude("sys/stat.h");
     @cInclude("errno.h");
 });
+
 pub const Format = enum { tar, mtree };
 handle: *c.struct_archive,
 /// Borrowed native header, valid until next(). The executor clones it before
@@ -27,24 +29,29 @@ fn init(format: Format) !ArchiveReader {
     if (status != c.ARCHIVE_OK) return failure(handle);
     return .{ .handle = handle };
 }
+
 pub fn openFile(allocator: std.mem.Allocator, path: []const u8) !ArchiveReader {
     if (path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null) return error.InvalidPath;
     const sentinel = try allocator.dupeSentinel(u8, path, 0);
     defer allocator.free(sentinel);
     var result = try init(.tar);
     errdefer result.deinit();
-    if (c.archive_read_open_filename(result.handle, sentinel.ptr, 64 * 1024) != c.ARCHIVE_OK) return failure(result.handle);
+    if (c.archive_read_open_filename(result.handle, sentinel.ptr, 64 * 1024) != c.ARCHIVE_OK)
+        return failure(result.handle);
     var stat: c.struct_stat = undefined;
     if (c.stat(sentinel.ptr, &stat) != 0 or stat.st_size < 0) return error.ArchiveFailed;
     result.file_size = @intCast(stat.st_size);
     return result;
 }
+
 pub fn openMemory(bytes: []const u8, format: Format) !ArchiveReader {
     var result = try init(format);
     errdefer result.deinit();
-    if (c.archive_read_open_memory(result.handle, bytes.ptr, bytes.len) != c.ARCHIVE_OK) return failure(result.handle);
+    if (c.archive_read_open_memory(result.handle, bytes.ptr, bytes.len) != c.ARCHIVE_OK)
+        return failure(result.handle);
     return result;
 }
+
 pub fn next(self: *ArchiveReader) !?PackageFile {
     var entry: ?*c.struct_archive_entry = null;
     const status = c.archive_read_next_header(self.handle, &entry);
@@ -68,15 +75,22 @@ pub fn next(self: *ArchiveReader) !?PackageFile {
             0o120000 => .symlink,
             else => .other,
         },
-        .link_target = if (hardlink != null) std.mem.span(hardlink) else if (symlink != null) std.mem.span(symlink) else null,
+        .link_target = if (hardlink != null)
+            std.mem.span(hardlink)
+        else if (symlink != null)
+            std.mem.span(symlink)
+        else
+            null,
     };
 }
+
 pub fn read(self: *ArchiveReader, buffer: []u8) !usize {
     if (buffer.len == 0) return 0;
     const result = c.archive_read_data(self.handle, buffer.ptr, buffer.len);
     if (result < 0) return failure(self.handle);
     return @intCast(result);
 }
+
 pub fn readAll(self: *ArchiveReader, allocator: std.mem.Allocator, limit: usize) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
@@ -89,19 +103,24 @@ pub fn readAll(self: *ArchiveReader, allocator: std.mem.Allocator, limit: usize)
     }
     return result.toOwnedSlice(allocator);
 }
+
 pub fn skip(self: *ArchiveReader) !void {
     if (c.archive_read_data_skip(self.handle) != c.ARCHIVE_OK) return failure(self.handle);
 }
+
 pub fn finish(self: *ArchiveReader) !void {
     if (c.archive_read_close(self.handle) != c.ARCHIVE_OK) return failure(self.handle);
 }
+
 pub fn deinit(self: *ArchiveReader) void {
     _ = c.archive_read_free(self.handle);
     self.* = undefined;
 }
+
 pub fn normalizedName(path: []const u8) []const u8 {
     var result = path;
-    while (std.mem.startsWith(u8, result, "./")) result = result[2..];
+    while (std.mem.startsWith(u8, result, "./"))
+        result = result[2..];
     return result;
 }
 

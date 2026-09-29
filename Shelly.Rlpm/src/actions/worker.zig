@@ -1,8 +1,10 @@
 //! Fresh executable; no Owner, libcurl, or resolver cleanup after spawning.
 const std = @import("std");
 const protocol = @import("protocol.zig");
+
 const c = protocol.c;
 var control: c_int = 2;
+
 fn report(stage: protocol.Stage, fatal: bool, errno: i32) void {
     var bytes: [8]u8 = @splat(0);
     bytes[0] = @intFromEnum(stage);
@@ -16,10 +18,12 @@ fn report(stage: protocol.Stage, fatal: bool, errno: i32) void {
         offset += @intCast(count);
     }
 }
+
 fn fail(stage: protocol.Stage) noreturn {
     report(stage, true, std.c._errno().*);
     std.process.exit(125);
 }
+
 fn readExact(bytes: []u8) void {
     var offset: usize = 0;
     while (offset < bytes.len) {
@@ -29,10 +33,12 @@ fn readExact(bytes: []u8) void {
         offset += @intCast(count);
     }
 }
+
 fn string(a: std.mem.Allocator, value: []const u8) [:0]const u8 {
     if (std.mem.indexOfScalar(u8, value, 0) != null) fail(.protocol);
     return a.dupeZ(u8, value) catch fail(.protocol);
 }
+
 pub fn main(init: std.process.Init) void {
     control = c.fcntl(2, c.F_DUPFD_CLOEXEC, @as(c_int, 3));
     if (control < 0) {
@@ -53,7 +59,8 @@ pub fn main(init: std.process.Init) void {
     if (root < 0) fail(.root);
     const command = string(a, request.command);
     const argv = a.allocSentinel(?[*:0]const u8, request.argv.len, null) catch fail(.protocol);
-    for (request.argv, argv) |arg, *dest| dest.* = string(a, arg).ptr;
+    for (request.argv, argv) |arg, *dest|
+        dest.* = string(a, arg).ptr;
     // Network isolation precedes chroot. The two download-only restrictions do
     // not apply to package actions. Loopback setup is best effort, as in CachyOS.
     if (request.network != .allowed) {
@@ -88,7 +95,8 @@ pub fn main(init: std.process.Init) void {
     while (signal < c.NSIG) : (signal += 1) {
         _ = c.signal(signal, c.SIG_DFL);
     }
-    if (c.syscall(c.SYS_close_range, @as(c_uint, 3), @as(c_uint, std.math.maxInt(c_uint)), @as(c_uint, 4)) != 0) fail(.descriptors); // CLOSE_RANGE_CLOEXEC
+    if (c.syscall(c.SYS_close_range, @as(c_uint, 3), @as(c_uint, std.math.maxInt(c_uint)), @as(c_uint, 4)) != 0)
+        fail(.descriptors); // CLOSE_RANGE_CLOEXEC
     _ = c.execv(command, @ptrCast(argv.ptr));
     fail(.execute);
 }

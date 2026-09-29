@@ -1,5 +1,6 @@
 //! Independent native package metadata and lifecycle API. Operational capability
 //! reporting is intentionally narrower than the eventual libalpm target.
+const builtin = @import("builtin");
 pub const TransactionActions = @import("structs/TransactionActions.zig");
 pub const Scriptlets = @import("structs/Scriptlets.zig");
 pub const Hooks = @import("structs/Hooks.zig");
@@ -41,6 +42,8 @@ pub const Transaction = @import("structs/Transaction.zig");
 pub const ExecutionManifest = @import("structs/ExecutionManifest.zig");
 pub const PathPatterns = @import("structs/PathPatterns.zig");
 pub const OwnedQuestion = @import("structs/OwnedQuestion.zig");
+const DatabaseValidationTests = @import("structs/DatabaseValidationTests.zig");
+
 pub const version = "0.0.0";
 
 pub const Capabilities = struct {
@@ -48,7 +51,7 @@ pub const Capabilities = struct {
     archive_metadata: bool = true,
     version_comparison: bool = true,
     detached_signature_verification: bool = true,
-    physical_architectures: bool = @import("builtin").os.tag == .linux,
+    physical_architectures: bool = builtin.os.tag == .linux,
     sync_databases: bool = true,
     sqlite_sync_databases: bool = true,
     signature_policy_enforcement: bool = true,
@@ -61,6 +64,7 @@ pub const Capabilities = struct {
     transactions: bool = true,
     localization: bool = false,
 };
+
 pub fn capabilities() Capabilities {
     return .{};
 }
@@ -79,5 +83,5 @@ test {
     _ = SignaturePolicy;
     _ = Database;
     _ = PhysicalArchitectures;
-    _ = @import("structs/DatabaseValidationTests.zig");
+    _ = DatabaseValidationTests;
 }

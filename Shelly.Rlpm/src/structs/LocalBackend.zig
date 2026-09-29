@@ -1,12 +1,21 @@
-const LocalBackend = @This();
 const std = @import("std");
 const Database = @import("Database.zig");
 const Package = @import("Package.zig");
 const Parsed = @import("ParsedDescription.zig");
 const Record = @import("DatabaseRecord.zig");
+const Backend = @import("Backend.zig");
+const Publication = @import("Publication.zig");
+const LocalWriter = @import("LocalWriter.zig");
 
-mode: @import("Backend.zig").Mode = .read_only,
-pub const Metadata = struct { description: bool = true, files: bool = false, members: bool = false };
+const LocalBackend = @This();
+
+mode: Backend.Mode = .read_only,
+
+pub const Metadata = struct {
+    description: bool = true,
+    files: bool = false,
+    members: bool = false,
+};
 
 /// Registration validates/initializes the format, without reading package descs.
 pub fn validate(self: LocalBackend, io: std.Io, db: *Database) !void {
@@ -45,7 +54,8 @@ pub fn validate(self: LocalBackend, io: std.Io, db: *Database) !void {
     const value = if (std.mem.startsWith(u8, trimmed, "+")) trimmed[1..] else trimmed;
     var length: usize = 0;
     while (length < value.len and std.ascii.isDigit(value[length])) : (length += 1) {}
-    if ((std.fmt.parseInt(u64, value[0..length], 10) catch 0) != 9) return error.UnsupportedDatabaseVersion;
+    if ((std.fmt.parseInt(u64, value[0..length], 10) catch 0) != 9)
+        return error.UnsupportedDatabaseVersion;
     db.status.markValid();
 }
 
@@ -54,9 +64,9 @@ pub fn populate(self: LocalBackend, io: std.Io, db: *Database) !void {
     if (db.status.presence == .missing) return;
     var dir = try std.Io.Dir.cwd().openDir(io, db.path, .{ .iterate = true });
     defer dir.close(io);
-    var guard = try @import("Publication.zig").DirectoryLock.acquire(db.path, false, false);
+    var guard = try Publication.DirectoryLock.acquire(db.path, false, false);
     defer guard.deinit();
-    try @import("LocalWriter.zig").ensureReadable(io, db.allocator, db.path);
+    try LocalWriter.ensureReadable(io, db.allocator, db.path);
     const allocator = db.cache_arena.allocator();
     var entries = dir.iterate();
     while (try entries.next(io)) |entry| {
@@ -76,19 +86,47 @@ pub fn populate(self: LocalBackend, io: std.Io, db: *Database) !void {
         }
         const parsed: Parsed = .{ .name = identity.name, .version = identity.version };
         const directory = try std.fs.path.join(allocator, &.{ db.path, entry.name });
-        var package = try parsed.intoPackage(&db.cache_arena, .{ .origin = .local, .database_name = db.name, .metadata_directory = directory });
+        var package = try parsed.intoPackage(
+            &db.cache_arena,
+            .{
+                .origin = .local,
+                .database_name = db.name,
+                .metadata_directory = directory,
+            },
+        );
         package.description_loaded = false;
         try db.addPackage(package);
     }
 }
 
 /// Work on a candidate package and arena; Database publishes them together.
-pub fn loadMetadata(io: std.Io, arena: *std.heap.ArenaAllocator, package: *Package, request: Metadata) !void {
-    var guard = try @import("Publication.zig").DirectoryLock.acquire(std.fs.path.dirname(package.metadata_directory.?).?, false, false);
+pub fn loadMetadata(
+    io: std.Io,
+    arena: *std.heap.ArenaAllocator,
+    package: *Package,
+    request: Metadata,
+) !void {
+    var guard = try Publication.DirectoryLock.acquire(
+        std.fs.path.dirname(
+            package.metadata_directory.?,
+        ).?,
+        false,
+        false,
+    );
     defer guard.deinit();
-    try @import("LocalWriter.zig").ensureReadable(io, arena.allocator(), std.fs.path.dirname(package.metadata_directory.?).?);
+    try LocalWriter.ensureReadable(
+        io,
+        arena.allocator(),
+        std.fs.path.dirname(
+            package.metadata_directory.?,
+        ).?,
+    );
     const allocator = arena.allocator();
-    var dir = try std.Io.Dir.cwd().openDir(io, package.metadata_directory orelse return error.InvalidPath, .{});
+    var dir = try std.Io.Dir.cwd().openDir(
+        io,
+        package.metadata_directory orelse return error.InvalidPath,
+        .{},
+    );
     defer dir.close(io);
     if (request.description and !package.description_loaded) {
         const bytes = try dir.readFileAlloc(io, "desc", allocator, .limited(1 << 20));
@@ -96,7 +134,14 @@ pub fn loadMetadata(io: std.Io, arena: *std.heap.ArenaAllocator, package: *Packa
         defer parsed.deinit(allocator);
         var issues = package.metadata_issues;
         try Record.append(&parsed, allocator, bytes, false, &issues);
-        var candidate = try parsed.intoPackage(arena, .{ .origin = .local, .database_name = package.database_name, .metadata_directory = package.metadata_directory });
+        var candidate = try parsed.intoPackage(
+            arena,
+            .{
+                .origin = .local,
+                .database_name = package.database_name,
+                .metadata_directory = package.metadata_directory,
+            },
+        );
         candidate.files = package.files;
         candidate.backups = package.backups;
         candidate.files_loaded = package.files_loaded;
@@ -108,7 +153,11 @@ pub fn loadMetadata(io: std.Io, arena: *std.heap.ArenaAllocator, package: *Packa
     }
     if (request.files and !package.files_loaded) {
         const bytes = try dir.readFileAlloc(io, "files", allocator, .limited(32 << 20));
-        var parsed: Parsed = .{ .name = package.name, .version = package.version.raw, .files_loaded = true };
+        var parsed: Parsed = .{
+            .name = package.name,
+            .version = package.version.raw,
+            .files_loaded = true,
+        };
         defer parsed.deinit(allocator);
         try Record.append(&parsed, allocator, bytes, false, &package.metadata_issues);
         const candidate = try parsed.intoPackage(arena, .{ .origin = .local });

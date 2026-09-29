@@ -1,14 +1,23 @@
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
 const Fixture = @import("archive_fixture.zig");
+
 const allocator = std.testing.allocator;
 const io = std.testing.io;
 const Value = std.json.Value;
+
 fn reference() !std.json.Parsed(Value) {
     return std.json.parseFromSlice(Value, allocator, @embedFile("fixtures/metadata-reference.json"), .{});
 }
+
 fn equalOptional(expected: Value, actual: ?[]const u8) !void {
-    if (expected == .null) try std.testing.expect(actual == null) else try std.testing.expectEqualStrings(expected.string, actual.?);
+    if (expected == .null)
+        try std.testing.expect(actual == null)
+    else
+        try std.testing.expectEqualStrings(
+            expected.string,
+            actual.?,
+        );
 }
 
 test "relations and formatting match independent libalpm fixtures" {
@@ -30,14 +39,20 @@ test "relations and formatting match independent libalpm fixtures" {
         try std.testing.expectEqual(expected.get("mod").?.integer, mod);
         switch (relation.constraint) {
             .any => try std.testing.expect(expected.get("version").? == .null),
-            inline else => |version| try std.testing.expectEqualStrings(expected.get("version").?.string, version),
+            inline else => |version| try std.testing.expectEqualStrings(
+                expected.get("version").?.string,
+                version,
+            ),
         }
         const formatted = try relation.formatAlloc(allocator);
         defer allocator.free(formatted);
         try std.testing.expectEqualStrings(expected.get("formatted").?.string, formatted);
         const reparsed = try rlpm.PackageRelation.parse(formatted);
         try std.testing.expectEqualStrings(relation.name, reparsed.name);
-        try std.testing.expectEqual(std.meta.activeTag(relation.constraint), std.meta.activeTag(reparsed.constraint));
+        try std.testing.expectEqual(
+            std.meta.activeTag(relation.constraint),
+            std.meta.activeTag(reparsed.constraint),
+        );
     }
 }
 
@@ -54,8 +69,14 @@ test "raw version comparisons preserve byte inputs under C locale" {
         defer allocator.free(b);
         _ = try std.fmt.hexToBytes(a, a_hex);
         _ = try std.fmt.hexToBytes(b, b_hex);
-        try std.testing.expectEqual(expected.get("sign").?.integer, @intFromEnum(rlpm.Version.compareStrings(a, b)));
-        try std.testing.expectEqual(-expected.get("sign").?.integer, @intFromEnum(rlpm.Version.compareStrings(b, a)));
+        try std.testing.expectEqual(
+            expected.get("sign").?.integer,
+            @intFromEnum(rlpm.Version.compareStrings(a, b)),
+        );
+        try std.testing.expectEqual(
+            -expected.get("sign").?.integer,
+            @intFromEnum(rlpm.Version.compareStrings(b, a)),
+        );
     }
 }
 
@@ -79,8 +100,18 @@ test "archive modes, duplicate metadata, mtree inventory and provisions match li
     defer recorded.deinit();
     const manifest = try std.json.parseFromSlice(Value, allocator, @embedFile("reference/manifest.json"), .{});
     defer manifest.deinit();
-    try std.testing.expectEqualStrings(manifest.value.object.get("library").?.object.get("sha256").?.string, recorded.value.object.get("library_sha256").?.string);
-    inline for (.{ .{ "relations", 25 }, .{ "byte_versions", 9 }, .{ "archives", 18 }, .{ "satisfaction", 13 }, .{ "signatures", 6 }, .{ "reasons", 5 } }) |coverage| {
+    try std.testing.expectEqualStrings(
+        manifest.value.object.get("library").?.object.get("sha256").?.string,
+        recorded.value.object.get("library_sha256").?.string,
+    );
+    inline for (.{
+        .{ "relations", 25 },
+        .{ "byte_versions", 9 },
+        .{ "archives", 18 },
+        .{ "satisfaction", 13 },
+        .{ "signatures", 6 },
+        .{ "reasons", 5 },
+    }) |coverage| {
         try std.testing.expectEqual(coverage[1], recorded.value.object.get(coverage[0]).?.array.items.len);
     }
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -91,23 +122,49 @@ test "archive modes, duplicate metadata, mtree inventory and provisions match li
         var fixture = try Fixture.init(entries, .none);
         defer fixture.deinit();
         if (case.get("truncate")) |truncate| {
-            const contents = try fixture.temporary.dir.readFileAlloc(io, "package.tar", allocator, .limited(65536));
+            const contents = try fixture.temporary.dir.readFileAlloc(
+                io,
+                "package.tar",
+                allocator,
+                .limited(65536),
+            );
             defer allocator.free(contents);
-            try fixture.temporary.dir.writeFile(io, .{ .sub_path = "package.tar", .data = contents[0..@intCast(truncate.integer)] });
+            try fixture.temporary.dir.writeFile(
+                io,
+                .{
+                    .sub_path = "package.tar",
+                    .data = contents[0..@intCast(truncate.integer)],
+                },
+            );
         }
         for (case.get("results").?.array.items) |result| {
             const expected = result.object;
             const full = expected.get("full").?.bool;
-            const loaded = rlpm.Package.loadArchive(allocator, fixture.path, .{ .mode = if (full) .full else .metadata });
+            const loaded = rlpm.Package.loadArchive(
+                allocator,
+                fixture.path,
+                .{ .mode = if (full) .full else .metadata },
+            );
             if (!expected.get("success").?.bool) {
                 if (loaded) |unexpected| {
                     var package = unexpected;
                     package.deinit();
                     return error.UnexpectedPackageSuccess;
                 } else |err| {
-                    if (expected.contains("reference_signal")) try std.testing.expectEqual(error.InvalidMtree, err);
+                    if (expected.contains("reference_signal"))
+                        try std.testing.expectEqual(
+                            error.InvalidMtree,
+                            err,
+                        );
                     switch (err) {
-                        error.InvalidVersion, error.InvalidPackageName, error.MissingPackageName, error.MissingPackageVersion, error.InvalidPkginfo, error.ArchiveFailed, error.InvalidMtree => {},
+                        error.InvalidVersion,
+                        error.InvalidPackageName,
+                        error.MissingPackageName,
+                        error.MissingPackageVersion,
+                        error.InvalidPkginfo,
+                        error.ArchiveFailed,
+                        error.InvalidMtree,
+                        => {},
                         else => return err,
                     }
                 }
@@ -124,7 +181,10 @@ test "archive modes, duplicate metadata, mtree inventory and provisions match li
             try equalOptional(expected.get("installed_db").?, package.installed_database);
             try std.testing.expectEqual(expected.get("scriptlet").?.bool, package.has_scriptlet);
             try std.testing.expect(package.validation.none);
-            try std.testing.expectEqual(expected.get("reason").?.integer, @intFromEnum(package.install_reason.?));
+            try std.testing.expectEqual(
+                expected.get("reason").?.integer,
+                @intFromEnum(package.install_reason.?),
+            );
             try std.testing.expectEqual(full, package.files_loaded);
             const stat = try fixture.temporary.dir.statFile(io, "package.tar", .{});
             try std.testing.expectEqual(stat.size, package.compressed_size.?);
@@ -133,7 +193,10 @@ test "archive modes, duplicate metadata, mtree inventory and provisions match li
             try std.testing.expectEqual(files.len, package.files.len);
             for (files, package.files) |file, actual| {
                 try std.testing.expectEqualStrings(file.object.get("name").?.string, actual.name);
-                try std.testing.expectEqual(@as(u64, @intCast(file.object.get("size").?.integer)), actual.size.?);
+                try std.testing.expectEqual(
+                    @as(u64, @intCast(file.object.get("size").?.integer)),
+                    actual.size.?,
+                );
                 try std.testing.expectEqual(file.object.get("mode").?.integer, actual.mode.?);
                 try std.testing.expect(package.findFile(actual.name) != null);
             }
@@ -147,7 +210,14 @@ test "archive modes, duplicate metadata, mtree inventory and provisions match li
             if (std.mem.eql(u8, case.get("name").?.string, "plain") and full) {
                 for (recorded.value.object.get("satisfaction").?.array.items) |expectation| {
                     const data = expectation.object;
-                    try std.testing.expectEqual(data.get("matched").?.bool, package.satisfies(try rlpm.PackageRelation.parse(data.get("requirement").?.string)));
+                    try std.testing.expectEqual(
+                        data.get("matched").?.bool,
+                        package.satisfies(
+                            try rlpm.PackageRelation.parse(
+                                data.get("requirement").?.string,
+                            ),
+                        ),
+                    );
                 }
                 try std.testing.expectEqual(.symlink, package.findFile("usr/bin/link").?.kind);
                 try std.testing.expectEqualStrings("demo", package.findFile("usr/bin/link").?.link_target.?);
@@ -249,6 +319,7 @@ fn allocationConversion(failing: std.mem.Allocator) !void {
     const signature = (try package.decodeSignature(failing)).?;
     defer failing.free(signature);
 }
+
 fn allocationArchive(failing: std.mem.Allocator, path: []const u8) !void {
     var package = try rlpm.Package.loadArchive(failing, path, .{ .mode = .full });
     defer package.deinit();
@@ -274,26 +345,47 @@ test "signature decoding and local file metadata match independent captures" {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     for (recorded.value.object.get("reasons").?.array.items) |reason| {
-        const input = try std.fmt.allocPrint(allocator, "%REASON%\n{s}\n", .{reason.object.get("input").?.string});
+        const input = try std.fmt.allocPrint(
+            allocator,
+            "%REASON%\n{s}\n",
+            .{reason.object.get("input").?.string},
+        );
         defer allocator.free(input);
         var parsed_reason = try rlpm.ParsedDescription.parse(allocator, input);
         defer parsed_reason.deinit(allocator);
-        try std.testing.expectEqual(reason.object.get("reason").?.integer, @intFromEnum(parsed_reason.reason.?));
+        try std.testing.expectEqual(
+            reason.object.get("reason").?.integer,
+            @intFromEnum(parsed_reason.reason.?),
+        );
     }
     const expected = recorded.value.object.get("local_metadata").?.object;
-    const input = try std.fmt.allocPrint(allocator, "{s}{s}", .{ expected.get("desc").?.string, expected.get("files_input").?.string });
+    const input = try std.fmt.allocPrint(
+        allocator,
+        "{s}{s}",
+        .{
+            expected.get("desc").?.string,
+            expected.get("files_input").?.string,
+        },
+    );
     defer allocator.free(input);
     var parsed = try rlpm.ParsedDescription.parse(allocator, input);
     defer parsed.deinit(allocator);
     var package = try parsed.intoPackage(&arena, .{ .origin = .local, .database_name = "local" });
     try equalOptional(expected.get("installed_db").?, package.installed_database);
     try std.testing.expectEqual(.local, package.origin);
-    try std.testing.expectEqual(@as(u64, @intCast(expected.get("installed_size").?.integer)), package.installed_size.?);
+    try std.testing.expectEqual(
+        @as(u64, @intCast(expected.get("installed_size").?.integer)),
+        package.installed_size.?,
+    );
     try std.testing.expectEqual(14, expected.get("validation").?.integer);
     try std.testing.expect(package.validation.md5 and package.validation.sha256 and package.validation.pgp);
     try std.testing.expect(!package.validation.none);
     try std.testing.expectEqual(.database, package.files_source);
-    for (expected.get("files").?.array.items, package.files) |file, actual| try std.testing.expectEqualStrings(file.string, actual.name);
+    for (expected.get("files").?.array.items, package.files) |file, actual|
+        try std.testing.expectEqualStrings(
+            file.string,
+            actual.name,
+        );
     const backup = expected.get("backup").?.object;
     try std.testing.expectEqualStrings(backup.get("name").?.string, package.backups[0].name);
     try equalOptional(backup.get("hash").?, package.backups[0].hash);
@@ -335,7 +427,8 @@ test "compressed mtree data, absent streams and bounded metadata errors" {
     var iterator = (try package.openMtree(allocator)).?;
     defer iterator.deinit();
     var count: usize = 0;
-    while (try iterator.next()) |_| count += 1;
+    while (try iterator.next()) |_|
+        count += 1;
     try std.testing.expectEqual(4, count);
     var stream = (try package.openMember(allocator, .changelog)).?;
     defer stream.deinit();
@@ -349,14 +442,34 @@ test "compressed mtree data, absent streams and bounded metadata errors" {
     try std.testing.expectEqual(.absent, minimal.members.changelog);
     var oversized = try Fixture.init(&.{.{ .path = ".PKGINFO", .declared_size = (1 << 20) + 1 }}, .zstd);
     defer oversized.deinit();
-    try std.testing.expectError(error.PkginfoTooLarge, rlpm.Package.loadArchive(allocator, oversized.path, .{ .mode = .full }));
+    try std.testing.expectError(
+        error.PkginfoTooLarge,
+        rlpm.Package.loadArchive(
+            allocator,
+            oversized.path,
+            .{ .mode = .full },
+        ),
+    );
     const long_line = try allocator.alloc(u8, 512 * 1024 + 1);
     defer allocator.free(long_line);
     @memset(long_line, 'a');
     var line_fixture = try Fixture.init(&.{.{ .path = ".PKGINFO", .contents = long_line }}, .zstd);
     defer line_fixture.deinit();
-    try std.testing.expectError(error.MetadataLineTooLong, rlpm.Package.loadArchive(allocator, line_fixture.path, .{}));
-    try std.testing.expectError(error.InvalidBackup, rlpm.ParsedDescription.parse(allocator, "%BACKUP%\nmissing-tab\n"));
+    try std.testing.expectError(
+        error.MetadataLineTooLong,
+        rlpm.Package.loadArchive(
+            allocator,
+            line_fixture.path,
+            .{},
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidBackup,
+        rlpm.ParsedDescription.parse(
+            allocator,
+            "%BACKUP%\nmissing-tab\n",
+        ),
+    );
 }
 
 test "Owner copies permissive assumed-installed relations and rejects embedded NUL" {
@@ -364,8 +477,21 @@ test "Owner copies permissive assumed-installed relations and rejects embedded N
     defer temporary.cleanup();
     const path = try temporary.dir.realPathFileAlloc(io, ".", allocator);
     defer allocator.free(path);
-    const relations = [_]rlpm.PackageRelation{ try .parse("foo=alpha:1.0: description"), try .parse("empty="), try .parse("") };
-    var owner = try rlpm.Owner.init(io, allocator, .{ .root = path, .database_path = path, .assume_installed = &relations }, &.{});
+    const relations = [_]rlpm.PackageRelation{
+        try .parse("foo=alpha:1.0: description"),
+        try .parse("empty="),
+        try .parse(""),
+    };
+    var owner = try rlpm.Owner.init(
+        io,
+        allocator,
+        .{
+            .root = path,
+            .database_path = path,
+            .assume_installed = &relations,
+        },
+        &.{},
+    );
     defer owner.deinit() catch unreachable;
     try std.testing.expectEqualStrings("alpha:1.0", owner.options().assume_installed[0].constraint.equal);
     try std.testing.expectEqualStrings("", owner.options().assume_installed[1].constraint.equal);

@@ -1,6 +1,7 @@
 //! Ordered package executor. Plan/manifest views remain transaction-owned when
 //! local cache generations change. Reports describe partial progress, not rollback.
 const std = @import("std");
+const builtin = @import("builtin");
 const Tx = @import("Transaction.zig");
 const Plan = @import("TransactionPlan.zig");
 const Manifest = @import("ExecutionManifest.zig");
@@ -10,9 +11,31 @@ const Ops = @import("RootOperations.zig");
 pub const PayloadDurability = @import("PayloadDurability.zig");
 const Writer = @import("LocalWriter.zig");
 const Reader = @import("ArchiveReader.zig");
+const Audit = @import("Audit.zig");
+const DatabaseSnapshot = @import("DatabaseSnapshot.zig");
+const Diagnostic = @import("Diagnostic.zig");
+const Callbacks = @import("Callbacks.zig");
+const PathPatterns = @import("PathPatterns.zig");
+const BackupFile = @import("BackupFile.zig");
+const Preflight = @import("Preflight.zig");
+
 const ac = Reader.c;
 const c = Ops.c;
-pub const Boundary = enum { pre_hooks, pre_scriptlet, remove, extract, payload_sync, database_write, database_publish, post_scriptlet, cache_reload, post_hooks, complete };
+
+pub const Boundary = enum {
+    pre_hooks,
+    pre_scriptlet,
+    remove,
+    extract,
+    payload_sync,
+    database_write,
+    database_publish,
+    post_scriptlet,
+    cache_reload,
+    post_hooks,
+    complete,
+};
+
 pub const Report = struct {
     completed: std.ArrayList(Plan.Id) = .empty,
     remaining: []const Plan.Id = &.{},
@@ -32,22 +55,35 @@ pub const Report = struct {
     database_publish_ms: i64 = 0,
 };
 /// Compiled out of production. Deterministic I/O-boundary fault injection.
-pub var test_fault: if (@import("builtin").is_test) ?Boundary else void = if (@import("builtin").is_test) null else {};
+pub var test_fault: if (builtin.is_test) ?Boundary else void = if (builtin.is_test) null else {};
 /// Baseline comparison for the disposable benchmark only; no runtime setting.
-pub var test_immediate_payload_sync: if (@import("builtin").is_test) bool else void = if (@import("builtin").is_test) false else {};
+pub var test_immediate_payload_sync: if (builtin.is_test) bool else void = if (builtin.is_test) false else {};
+
 fn checkpoint(tx: *Tx, boundary: Boundary, path: ?[]const u8) !void {
     tx.execution.boundary = boundary;
     tx.execution.path = if (path) |value| try tx.storage.allocator().dupe(u8, value) else null;
-    if (comptime @import("builtin").is_test) if (test_fault == boundary) return error.InjectedExecutionFailure;
+    if (comptime builtin.is_test)
+        if (test_fault == boundary) return error.InjectedExecutionFailure;
     try tx.owner.checkCancelled();
     try tx.lock.?.validate();
     try tx.manifest().?.revalidateRoots(tx.owner.configuration.root, tx.owner.configuration.database_path);
 }
+
 pub fn run(tx: *Tx) !void {
     errdefer |err| {
         tx.execution.cause = err;
         if (tx.owned_actions) |*actions| {
-            if (actions.started) @import("Audit.zig").log(tx, "transaction {s}", .{if (err == error.Cancelled) "interrupted" else "failed"});
+            if (actions.started)
+                Audit.log(
+                    tx,
+                    "transaction {s}",
+                    .{
+                        if (err == error.Cancelled)
+                            "interrupted"
+                        else
+                            "failed",
+                    },
+                );
             actions.fail();
         }
         // Disk is authoritative even when mutation failed halfway through.
@@ -57,7 +93,8 @@ pub fn run(tx: *Tx) !void {
     const a = tx.storage.allocator();
     const remaining = try a.alloc(Plan.Id, plan.removals.len + plan.additions.len);
     @memcpy(remaining[0..plan.removals.len], plan.removals);
-    for (plan.additions, remaining[plan.removals.len..]) |add, *id| id.* = add.package;
+    for (plan.additions, remaining[plan.removals.len..]) |add, *id|
+        id.* = add.package;
     tx.execution.remaining = remaining;
     try checkpoint(tx, .pre_hooks, null);
     const actions = try tx.startActions();
@@ -77,7 +114,14 @@ pub fn run(tx: *Tx) !void {
         try removePayload(tx, id, &payload);
         try payload.flush();
         progress(tx, id, 100);
-        @import("Audit.zig").log(tx, "removed {s} ({s})", .{ plan.package(id).name, plan.package(id).version.raw });
+        Audit.log(
+            tx,
+            "removed {s} ({s})",
+            .{
+                plan.package(id).name,
+                plan.package(id).version.raw,
+            },
+        );
         try checkpoint(tx, .post_scriptlet, null);
         try actions.afterPackage(id);
         try checkDatabase(tx, observed_database);
@@ -91,7 +135,7 @@ pub fn run(tx: *Tx) !void {
         try record.publish(old, null);
         tx.execution.database_publish_ms += publication_start.untilNow(tx.io, .awake).toMilliseconds();
         tx.execution.database_published = true;
-        observed_database = try @import("DatabaseSnapshot.zig").capture(tx.owner, tx.io);
+        observed_database = try DatabaseSnapshot.capture(tx.owner, tx.io);
         tx.execution.mutations += 1;
         try checkpoint(tx, .cache_reload, null);
         try reload(tx);
@@ -123,14 +167,37 @@ pub fn run(tx: *Tx) !void {
         try record.publish(old, name);
         tx.execution.database_publish_ms += publication_start.untilNow(tx.io, .awake).toMilliseconds();
         tx.execution.database_published = true;
-        observed_database = try @import("DatabaseSnapshot.zig").capture(tx.owner, tx.io);
+        observed_database = try DatabaseSnapshot.capture(tx.owner, tx.io);
         tx.execution.mutations += 1;
         try checkpoint(tx, .cache_reload, null);
         try reload(tx);
         progress(tx, id, 100);
         switch (addition.action) {
-            .install, .reinstall => @import("Audit.zig").log(tx, "{s} {s} ({s})", .{ if (addition.action == .install) "installed" else "reinstalled", package.name, package.version.raw }),
-            .upgrade, .downgrade => @import("Audit.zig").log(tx, "{s} {s} ({s} -> {s})", .{ if (addition.action == .upgrade) "upgraded" else "downgraded", package.name, plan.package(addition.old.?).version.raw, package.version.raw }),
+            .install, .reinstall => Audit.log(
+                tx,
+                "{s} {s} ({s})",
+                .{
+                    if (addition.action == .install)
+                        "installed"
+                    else
+                        "reinstalled",
+                    package.name,
+                    package.version.raw,
+                },
+            ),
+            .upgrade, .downgrade => Audit.log(
+                tx,
+                "{s} {s} ({s} -> {s})",
+                .{
+                    if (addition.action == .upgrade)
+                        "upgraded"
+                    else
+                        "downgraded",
+                    package.name,
+                    plan.package(addition.old.?).version.raw,
+                    package.version.raw,
+                },
+            ),
         }
         try checkpoint(tx, .post_scriptlet, null);
         try actions.afterPackage(id);
@@ -145,14 +212,17 @@ pub fn run(tx: *Tx) !void {
     tx.execution.boundary = .complete;
     tx.execution.path = null;
 }
+
 fn cleanupFailure(tx: *Tx, err: anyerror) void {
     tx.execution.cleanup_failures += 1;
     tx.execution.cleanup_cause = err;
-    tx.owner.transactionEvent(.{ .diagnostic = @import("Diagnostic.zig").init(.transaction, err, null) });
+    tx.owner.transactionEvent(
+        .{ .diagnostic = Diagnostic.init(.transaction, err, null) },
+    );
 }
 
 fn checkDatabase(tx: *Tx, expected: [32]u8) !void {
-    const actual = try @import("DatabaseSnapshot.zig").capture(tx.owner, tx.io);
+    const actual = try DatabaseSnapshot.capture(tx.owner, tx.io);
     if (!std.mem.eql(u8, &expected, &actual)) return error.StaleDatabaseState;
 }
 
@@ -161,13 +231,26 @@ fn reload(tx: *Tx) !void {
     try local.invalidateCache();
     try local.reloadDatabase(tx.io, tx.owner.configuration.gpg_directory);
 }
-fn packageEvent(tx: *Tx, id: Plan.Id, add: ?Plan.Addition, boundary: @import("Callbacks.zig").Boundary) !void {
+
+fn packageEvent(
+    tx: *Tx,
+    id: Plan.Id,
+    add: ?Plan.Addition,
+    boundary: Callbacks.Boundary,
+) !void {
     const plan = tx.plan().?;
     const reference = plan.candidates[@intFromEnum(id)].reference;
     const old_id = if (add) |item| item.old else id;
-    const views = try tx.storage.allocator().alloc(@import("Callbacks.zig").PackageView, if (add != null and old_id != null) 2 else 1);
+    const views = try tx.storage.allocator().alloc(
+        Callbacks.PackageView,
+        if (add != null and old_id != null) 2 else 1,
+    );
     views[0] = .{ .reference = reference, .package = plan.package(id) };
-    if (views.len == 2) views[1] = .{ .reference = plan.candidates[@intFromEnum(old_id.?)].reference, .package = plan.package(old_id.?) };
+    if (views.len == 2)
+        views[1] = .{
+            .reference = plan.candidates[@intFromEnum(old_id.?)].reference,
+            .package = plan.package(old_id.?),
+        };
     tx.owner.transactionEvent(.{ .package_operation = .{
         .operation = if (add) |item| switch (item.action) {
             .install => .install,
@@ -181,14 +264,25 @@ fn packageEvent(tx: *Tx, id: Plan.Id, add: ?Plan.Addition, boundary: @import("Ca
         .views = views,
     } });
 }
+
 fn progress(tx: *Tx, id: Plan.Id, percent: u8) void {
     const cb = tx.owner.configuration.callbacks;
     if (cb.progress) |callback| {
         tx.owner.in_callback = true;
         defer tx.owner.in_callback = false;
-        callback(cb.progress_context, .{ .phase = .transaction, .package = tx.plan().?.candidates[@intFromEnum(id)].reference, .percent = percent, .position = tx.execution.completed.items.len + 1, .total = tx.plan().?.removals.len + tx.plan().?.additions.len });
+        callback(
+            cb.progress_context,
+            .{
+                .phase = .transaction,
+                .package = tx.plan().?.candidates[@intFromEnum(id)].reference,
+                .percent = percent,
+                .position = tx.execution.completed.items.len + 1,
+                .total = tx.plan().?.removals.len + tx.plan().?.additions.len,
+            },
+        );
     }
 }
+
 /// One operation owns both removal and extraction progress and writeback.
 const Payload = struct {
     tx: *Tx,
@@ -202,21 +296,34 @@ const Payload = struct {
 
     fn init(tx: *Tx, id: Plan.Id, old: ?Plan.Id) Payload {
         const now = std.Io.Clock.awake.now(tx.io);
-        var result: Payload = .{ .tx = tx, .id = id, .tracker = .init(tx.owner.allocator), .started = now, .reported = now };
-        if (!tx.flags.database_only) for (tx.owned_manifest.?.entries.items) |entry| {
-            if (entry.package == id or (old != null and entry.package == old.? and entry.archive_index == null)) result.total += 1;
+        var result: Payload = .{
+            .tx = tx,
+            .id = id,
+            .tracker = .init(tx.owner.allocator),
+            .started = now,
+            .reported = now,
         };
+        if (!tx.flags.database_only)
+            for (tx.owned_manifest.?.entries.items) |entry| {
+                if (entry.package == id or
+                    (old != null and entry.package == old.? and entry.archive_index == null))
+                    result.total += 1;
+            };
         progress(tx, id, 0);
         return result;
     }
+
     fn deinit(self: *Payload) void {
         if (self.tracker.system_error) |code| self.tx.execution.system_error = code;
         self.tracker.deinit();
     }
+
     fn policy(self: *Payload) Ops.Durability {
-        if (comptime @import("builtin").is_test) if (test_immediate_payload_sync) return .immediate;
+        if (comptime builtin.is_test)
+            if (test_immediate_payload_sync) return .immediate;
         return .{ .batch = &self.tracker };
     }
+
     fn step(self: *Payload) void {
         self.completed += 1;
         const percent: u8 = @intCast(@min(99, @as(u128, self.completed) * 99 / @max(1, self.total)));
@@ -226,6 +333,7 @@ const Payload = struct {
         self.reported = now;
         progress(self.tx, self.id, percent);
     }
+
     fn flush(self: *Payload) !void {
         const tx = self.tx;
         tx.execution.payload_work_ms += self.started.untilNow(tx.io, .awake).toMilliseconds();
@@ -242,10 +350,24 @@ const Payload = struct {
             tx.execution.payload_sync_targets += 1;
             try tx.owner.checkCancelled();
         }
-        payloadLog(tx, .debug, "Finished writes for {s} in {d} ms", .{ tx.plan().?.package(self.id).name, started.untilNow(tx.io, .awake).toMilliseconds() });
+        payloadLog(
+            tx,
+            .debug,
+            "Finished writes for {s} in {d} ms",
+            .{
+                tx.plan().?.package(self.id).name,
+                started.untilNow(tx.io, .awake).toMilliseconds(),
+            },
+        );
     }
 };
-fn payloadLog(tx: *Tx, level: @import("Callbacks.zig").LogLevel, comptime format: []const u8, args: anytype) void {
+
+fn payloadLog(
+    tx: *Tx,
+    level: Callbacks.LogLevel,
+    comptime format: []const u8,
+    args: anytype,
+) void {
     const callbacks = tx.owner.configuration.callbacks;
     const callback = callbacks.log orelse return;
     const message = std.fmt.allocPrint(tx.owner.allocator, format, args) catch return;
@@ -262,68 +384,115 @@ fn removePayload(tx: *Tx, id: Plan.Id, payload: *Payload) !void {
         if (entry.package != id or entry.archive_index != null) continue;
         defer payload.step();
         const current = (try m.root.inspect(entry.path, false)) orelse continue;
-        if (try @import("PathPatterns.zig").match(tx.owner.allocator, tx.owner.configuration.no_upgrade, entry.file.name) == .matched) continue;
+        if (try PathPatterns.match(
+            tx.owner.allocator,
+            tx.owner.configuration.no_upgrade,
+            entry.file.name,
+        ) == .matched)
+            continue;
         var retained = entry.action == .shared_directory and current.directory();
         const replacement: ?Plan.Id = for (tx.plan().?.additions) |add| {
             if (add.old == id) break add.package;
         } else null;
-        for (m.archives.items) |incoming| if (incoming.find(entry.path)) |file| {
-            if (file.file.kind == .directory and current.directory()) retained = true;
-            if (incoming.id != replacement and !std.mem.endsWith(u8, entry.file.name, "/")) retained = true;
-            if (incoming.id == replacement) for (incoming.package.backups) |backup| {
-                if (std.mem.eql(u8, backup.name, entry.path)) retained = true;
+        for (m.archives.items) |incoming|
+            if (incoming.find(entry.path)) |file| {
+                if (file.file.kind == .directory and current.directory()) retained = true;
+                if (incoming.id != replacement and !std.mem.endsWith(u8, entry.file.name, "/")) retained = true;
+                if (incoming.id == replacement)
+                    for (incoming.package.backups) |backup| {
+                        if (std.mem.eql(u8, backup.name, entry.path)) retained = true;
+                    };
             };
-        };
         if (retained) continue;
         try checkpoint(tx, .remove, entry.path);
         var save = false;
         if (!tx.flags.no_save and !current.directory()) {
-            for (m.locals.items) |local| if (local.id == id) {
-                for (local.package.backups) |backup| if (std.mem.eql(u8, backup.name, entry.path)) {
-                    var hash: [32]u8 = undefined;
-                    if (backup.hash) |old| save = try m.root.hash(tx.io, entry.path, &hash) and !std.mem.eql(u8, old, &hash);
+            for (m.locals.items) |local|
+                if (local.id == id) {
+                    for (local.package.backups) |backup|
+                        if (std.mem.eql(u8, backup.name, entry.path)) {
+                            var hash: [32]u8 = undefined;
+                            if (backup.hash) |old|
+                                save = try m.root.hash(tx.io, entry.path, &hash) and
+                                    !std.mem.eql(u8, old, &hash);
+                        };
                 };
-            };
         }
         if (save) {
             const destination = try std.fmt.allocPrint(tx.storage.allocator(), "{s}.pacsave", .{entry.path});
-            try Ops.rotatePacsaveWithDurability(&m.root, tx.io, tx.owner.allocator, destination, payload.policy());
+            try Ops.rotatePacsaveWithDurability(
+                &m.root,
+                tx.io,
+                tx.owner.allocator,
+                destination,
+                payload.policy(),
+            );
             try Ops.renameWithDurability(&m.root, entry.path, destination, payload.policy());
-            tx.owner.transactionEvent(.{ .pacsave_created = .{ .path = entry.path, .old = tx.plan().?.candidates[@intFromEnum(id)].reference } });
+            tx.owner.transactionEvent(
+                .{
+                    .pacsave_created = .{
+                        .path = entry.path,
+                        .old = tx.plan().?.candidates[@intFromEnum(id)].reference,
+                    },
+                },
+            );
         } else try Ops.removeWithDurability(&m.root, entry.path, current.directory(), payload.policy());
         tx.execution.mutations += 1;
     }
 }
+
 fn install(tx: *Tx, addition: Plan.Addition, record: *Writer.Record, payload: *Payload) !Package {
     const m = &tx.owned_manifest.?;
     var archive: *Manifest.Archive = undefined;
-    for (m.archives.items) |*item| if (item.id == addition.package) {
-        archive = item;
-        break;
-    };
+    for (m.archives.items) |*item|
+        if (item.id == addition.package) {
+            archive = item;
+            break;
+        };
     var result = archive.package;
-    for (m.database_changes.items) |change| if (change.package == addition.package) {
-        result.files = change.files;
-        result.backups = try tx.storage.allocator().dupe(@import("BackupFile.zig"), change.backups);
-        result.install_reason = change.reason;
-        result.installed_database = change.installed_database;
-        break;
-    };
+    for (m.database_changes.items) |change|
+        if (change.package == addition.package) {
+            result.files = change.files;
+            result.backups = try tx.storage.allocator().dupe(BackupFile, change.backups);
+            result.install_reason = change.reason;
+            result.installed_database = change.installed_database;
+            break;
+        };
     result.install_date = @intCast(std.Io.Clock.real.now(tx.io).toSeconds());
     var reader = try Reader.openFile(tx.owner.allocator, archive.package.verified_archive.?.path());
     defer reader.deinit();
     var effects: std.AutoHashMapUnmanaged(usize, *const Manifest.Entry) = .empty;
     defer effects.deinit(tx.owner.allocator);
-    for (m.entries.items) |*entry| if (entry.package == addition.package) {
-        if (entry.archive_index) |index| try effects.put(tx.owner.allocator, index, entry);
-    };
+    for (m.entries.items) |*entry|
+        if (entry.package == addition.package) {
+            if (entry.archive_index) |index| try effects.put(tx.owner.allocator, index, entry);
+        };
     var ordinal: usize = 0;
     while (try reader.next()) |file| : (ordinal += 1) {
         const path = Reader.normalizedName(file.name);
-        const member: ?[:0]const u8 = if (std.mem.eql(u8, path, ".INSTALL")) "install" else if (std.mem.eql(u8, path, ".CHANGELOG")) "changelog" else if (std.mem.eql(u8, path, ".MTREE")) "mtree" else null;
+        const member: ?[:0]const u8 = if (std.mem.eql(u8, path, ".INSTALL"))
+            "install"
+        else if (std.mem.eql(u8, path, ".CHANGELOG"))
+            "changelog"
+        else if (std.mem.eql(u8, path, ".MTREE"))
+            "mtree"
+        else
+            null;
         if (member) |name| {
             try checkpoint(tx, .database_write, path);
-            try writeArchiveEntry(tx, &reader, record.record, name, .{ .package = addition.package, .file = file, .path = path, .action = .install }, true);
+            try writeArchiveEntry(
+                tx,
+                &reader,
+                record.record,
+                name,
+                .{
+                    .package = addition.package,
+                    .file = file,
+                    .path = path,
+                    .action = .install,
+                },
+                true,
+            );
             const fd = c.openat(record.record, name, c.O_RDONLY | c.O_NOFOLLOW | c.O_CLOEXEC);
             if (fd < 0) return Ops.failure();
             defer _ = c.close(fd);
@@ -334,14 +503,16 @@ fn install(tx: *Tx, addition: Plan.Addition, record: *Writer.Record, payload: *P
         if (effects.get(ordinal)) |entry| {
             defer payload.step();
             const hash = try extract(tx, &reader, entry.*, payload);
-            for (@constCast(result.backups)) |*backup| if (std.mem.eql(u8, backup.name, entry.path)) {
-                backup.hash = hash;
-            };
+            for (@constCast(result.backups)) |*backup|
+                if (std.mem.eql(u8, backup.name, entry.path)) {
+                    backup.hash = hash;
+                };
         }
     }
     try reader.finish();
     return result;
 }
+
 fn extract(tx: *Tx, reader: *Reader, entry: Manifest.Entry, payload: *Payload) !?[]const u8 {
     const m = &tx.owned_manifest.?;
     if (entry.action == .no_extract) return null;
@@ -350,27 +521,52 @@ fn extract(tx: *Tx, reader: *Reader, entry: Manifest.Entry, payload: *Payload) !
     var old_hash: ?[]const u8 = null;
     var old_backup = false;
     var new_backup = false;
-    for (tx.plan().?.additions) |add| if (add.package == entry.package) {
-        if (add.old) |old| for (m.locals.items) |local| if (local.id == old) {
-            for (local.package.backups) |backup| if (std.mem.eql(u8, backup.name, entry.path)) {
-                old_backup = true;
-                old_hash = backup.hash;
-            };
+    for (tx.plan().?.additions) |add|
+        if (add.package == entry.package) {
+            if (add.old) |old|
+                for (m.locals.items) |local|
+                    if (local.id == old) {
+                        for (local.package.backups) |backup|
+                            if (std.mem.eql(u8, backup.name, entry.path)) {
+                                old_backup = true;
+                                old_hash = backup.hash;
+                            };
+                    };
         };
-    };
-    for (m.archives.items) |archive| if (archive.id == entry.package) {
-        for (archive.package.backups) |backup| if (std.mem.eql(u8, backup.name, entry.path)) {
-            new_backup = true;
+    for (m.archives.items) |archive|
+        if (archive.id == entry.package) {
+            for (archive.package.backups) |backup|
+                if (std.mem.eql(u8, backup.name, entry.path)) {
+                    new_backup = true;
+                };
         };
-    };
     const existing_file = before != null and !before.?.directory() and entry.file.kind != .directory;
-    const no_upgrade = existing_file and try @import("PathPatterns.zig").match(tx.owner.allocator, tx.owner.configuration.no_upgrade, entry.file.name) == .matched;
+    const no_upgrade = existing_file and
+        try PathPatterns.match(
+            tx.owner.allocator,
+            tx.owner.configuration.no_upgrade,
+            entry.file.name,
+        ) == .matched;
     const backup = existing_file and !no_upgrade and (old_backup or new_backup);
-    const destination = if (no_upgrade or backup) try std.fmt.allocPrint(tx.storage.allocator(), "{s}.pacnew", .{entry.path}) else entry.path;
+    const destination = if (no_upgrade or backup)
+        try std.fmt.allocPrint(
+            tx.storage.allocator(),
+            "{s}.pacnew",
+            .{entry.path},
+        )
+    else
+        entry.path;
     const had_pacnew = (no_upgrade or backup) and try m.root.inspect(destination, false) != null;
     try checkpoint(tx, .extract, destination);
-    if (std.fs.path.dirname(destination)) |path| try Ops.mkdirsWithDurability(&m.root, path, payload.policy());
-    if (before != null and !before.?.directory() and entry.file.kind == .directory) try Ops.removeWithDurability(&m.root, entry.path, false, payload.policy());
+    if (std.fs.path.dirname(destination)) |path|
+        try Ops.mkdirsWithDurability(&m.root, path, payload.policy());
+    if (before != null and !before.?.directory() and entry.file.kind == .directory)
+        try Ops.removeWithDurability(
+            &m.root,
+            entry.path,
+            false,
+            payload.policy(),
+        );
     var stage = try Ops.Stage.initWithDurability(&m.root, tx.io, destination, payload.policy());
     var stage_live = true;
     defer if (stage_live) stage.deinit() catch |err| cleanupFailure(tx, err);
@@ -394,12 +590,18 @@ fn extract(tx: *Tx, reader: *Reader, entry: Manifest.Entry, payload: *Payload) !
     try stage.publish();
     tx.execution.mutations += 1;
     var digest: [32]u8 = undefined;
-    const new_hash = if ((backup or new_backup) and try m.root.hash(tx.io, destination, &digest)) try tx.storage.allocator().dupe(u8, &digest) else null;
+    const new_hash = if ((backup or new_backup) and try m.root.hash(tx.io, destination, &digest))
+        try tx.storage.allocator().dupe(u8, &digest)
+    else
+        null;
     var pacnew = no_upgrade;
     if (backup) {
         var local_digest: [32]u8 = undefined;
-        const local_hash: ?[]const u8 = if (try m.root.hash(tx.io, entry.path, &local_digest)) &local_digest else null;
-        switch (@import("Preflight.zig").backupAction(old_hash, local_hash, new_hash)) {
+        const local_hash: ?[]const u8 = if (try m.root.hash(tx.io, entry.path, &local_digest))
+            &local_digest
+        else
+            null;
+        switch (Preflight.backupAction(old_hash, local_hash, new_hash)) {
             .replace => try Ops.renameWithDurability(&m.root, destination, entry.path, payload.policy()),
             .preserve => if (!had_pacnew) {
                 try Ops.removeWithDurability(&m.root, destination, false, payload.policy());
@@ -411,7 +613,12 @@ fn extract(tx: *Tx, reader: *Reader, entry: Manifest.Entry, payload: *Payload) !
     if (pacnew) tx.owner.transactionEvent(.{ .pacnew_created = .{
         .path = entry.path,
         .old = blk: {
-            for (tx.plan().?.additions) |add| if (add.package == entry.package) break :blk if (add.old) |id| tx.plan().?.candidates[@intFromEnum(id)].reference else null;
+            for (tx.plan().?.additions) |add|
+                if (add.package == entry.package)
+                    break :blk if (add.old) |id|
+                        tx.plan().?.candidates[@intFromEnum(id)].reference
+                    else
+                        null;
             break :blk null;
         },
         .new = tx.plan().?.candidates[@intFromEnum(entry.package)].reference,
@@ -425,7 +632,14 @@ fn extract(tx: *Tx, reader: *Reader, entry: Manifest.Entry, payload: *Payload) !
     return new_hash;
 }
 
-fn writeArchiveEntry(tx: *Tx, reader: *Reader, directory: c_int, name: [:0]const u8, entry: Manifest.Entry, metadata: bool) !void {
+fn writeArchiveEntry(
+    tx: *Tx,
+    reader: *Reader,
+    directory: c_int,
+    name: [:0]const u8,
+    entry: Manifest.Entry,
+    metadata: bool,
+) !void {
     const header = ac.archive_entry_clone(reader.current_entry.?) orelse return error.OutOfMemory;
     defer ac.archive_entry_free(header);
     var buffer: [96]u8 = undefined;
@@ -437,7 +651,11 @@ fn writeArchiveEntry(tx: *Tx, reader: *Reader, directory: c_int, name: [:0]const
     defer _ = ac.archive_write_free(disk);
     // Match add.c's extraction flags. SECURE_SYMLINKS is replaced by held
     // private staging descriptors; ACL is not enabled by the pinned native.
-    if (ac.archive_write_disk_set_options(disk, ac.ARCHIVE_EXTRACT_OWNER | ac.ARCHIVE_EXTRACT_PERM | ac.ARCHIVE_EXTRACT_TIME | ac.ARCHIVE_EXTRACT_UNLINK | ac.ARCHIVE_EXTRACT_XATTR) != ac.ARCHIVE_OK) return error.ExtractionFailed;
+    if (ac.archive_write_disk_set_options(
+        disk,
+        ac.ARCHIVE_EXTRACT_OWNER | ac.ARCHIVE_EXTRACT_PERM | ac.ARCHIVE_EXTRACT_TIME | ac.ARCHIVE_EXTRACT_UNLINK | ac.ARCHIVE_EXTRACT_XATTR,
+    ) != ac.ARCHIVE_OK)
+        return error.ExtractionFailed;
     try archiveStatus(tx, disk, ac.archive_write_header(disk, header), entry);
     while (true) {
         var bytes: ?*const anyopaque = null;
@@ -459,7 +677,8 @@ fn archiveStatus(tx: *Tx, disk: *ac.struct_archive, status: c_int, entry: Manife
     if (status != ac.ARCHIVE_WARN or code == c.ENOSPC) {
         tx.execution.system_error = code;
         const message = ac.archive_error_string(disk);
-        if (message != null) tx.execution.detail = try tx.storage.allocator().dupe(u8, std.mem.span(message));
+        if (message != null)
+            tx.execution.detail = try tx.storage.allocator().dupe(u8, std.mem.span(message));
         return switch (code) {
             c.ENOSPC, c.EDQUOT => error.NoSpaceLeft,
             c.EPERM, c.EACCES => error.PathPermissionDenied,
@@ -469,5 +688,12 @@ fn archiveStatus(tx: *Tx, disk: *ac.struct_archive, status: c_int, entry: Manife
         };
     }
     const m = &tx.owned_manifest.?;
-    try m.warnings.append(m.arena.allocator(), .{ .cause = error.ExtractionWarning, .package = entry.package, .path = entry.path });
+    try m.warnings.append(
+        m.arena.allocator(),
+        .{
+            .cause = error.ExtractionWarning,
+            .package = entry.package,
+            .path = entry.path,
+        },
+    );
 }

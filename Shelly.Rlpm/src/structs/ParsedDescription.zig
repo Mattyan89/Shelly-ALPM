@@ -1,12 +1,13 @@
 //! Parsed strings borrow their input. Conversion deep-copies into an explicit
 //! enclosing arena; releasing that arena reclaims complete or failed conversions.
-const ParsedDescription = @This();
 const std = @import("std");
 const Package = @import("Package.zig");
 const PackageRelation = @import("PackageRelation.zig");
 const Version = @import("Version.zig");
 const PackageFile = @import("PackageFile.zig");
 const BackupFile = @import("BackupFile.zig");
+
+const ParsedDescription = @This();
 
 name: ?[]const u8 = null,
 version: ?[]const u8 = null,
@@ -45,7 +46,11 @@ files_loaded: bool = false,
 /// The arena owns all result fields, including copied input strings. Failed
 /// conversion retains only arena allocations, reclaimed with the enclosing arena.
 /// The parsed input is unchanged, so callers may retry or convert multiple times.
-pub fn intoPackage(self: *const ParsedDescription, arena: *std.heap.ArenaAllocator, source: Package.Source) !Package {
+pub fn intoPackage(
+    self: *const ParsedDescription,
+    arena: *std.heap.ArenaAllocator,
+    source: Package.Source,
+) !Package {
     const allocator = arena.allocator();
     const name = self.name orelse return error.MissingPackageName;
     const raw_version = self.version orelse return error.MissingPackageVersion;
@@ -69,23 +74,50 @@ pub fn intoPackage(self: *const ParsedDescription, arena: *std.heap.ArenaAllocat
         .files_source = if (self.files_loaded) .database else .none,
         .download_size = if (source.origin == .archive or source.origin == .local) 0 else null,
     };
-    inline for (.{ "base", "description", "url", "architecture", "packager", "installed_database", "repository_filename", "md5_sum", "sha256_sum", "base64_signature" }) |field| {
+    inline for (.{
+        "base",
+        "description",
+        "url",
+        "architecture",
+        "packager",
+        "installed_database",
+        "repository_filename",
+        "md5_sum",
+        "sha256_sum",
+        "base64_signature",
+    }) |field| {
         @field(result, field) = try copyOptional(allocator, @field(self, field));
     }
-    inline for (.{ "depends", "optional_depends", "make_depends", "check_depends", "provides", "conflicts", "replaces" }) |field| {
+    inline for (.{
+        "depends",
+        "optional_depends",
+        "make_depends",
+        "check_depends",
+        "provides",
+        "conflicts",
+        "replaces",
+    }) |field| {
         const values = @field(self, field).items;
         const relations = try allocator.alloc(PackageRelation, values.len);
-        for (values, relations) |value, *relation| relation.* = try (try PackageRelation.parse(value)).clone(allocator);
+        for (values, relations) |value, *relation|
+            relation.* = try (try PackageRelation.parse(value)).clone(
+                allocator,
+            );
         @field(result, field) = relations;
     }
     inline for (.{ "groups", "licenses" }) |field| {
         const values = @field(self, field).items;
         const strings = try allocator.alloc([]const u8, values.len);
-        for (values, strings) |value, *string| string.* = try allocator.dupe(u8, value);
+        for (values, strings) |value, *string|
+            string.* = try allocator.dupe(u8, value);
         @field(result, field) = strings;
     }
     const xdata = try allocator.alloc(Package.XData, self.xdata.items.len);
-    for (self.xdata.items, xdata) |item, *owned| owned.* = .{ .name = try allocator.dupe(u8, item.name), .value = try allocator.dupe(u8, item.value) };
+    for (self.xdata.items, xdata) |item, *owned|
+        owned.* = .{
+            .name = try allocator.dupe(u8, item.name),
+            .value = try allocator.dupe(u8, item.value),
+        };
     result.xdata = xdata;
     const files = try allocator.alloc(PackageFile, self.files.items.len);
     for (self.files.items, files) |item, *owned| {
@@ -100,16 +132,36 @@ pub fn intoPackage(self: *const ParsedDescription, arena: *std.heap.ArenaAllocat
     }.less);
     result.files = files;
     const backups = try allocator.alloc(BackupFile, self.backups.items.len);
-    for (self.backups.items, backups) |item, *owned| owned.* = .{ .name = try allocator.dupe(u8, item.name), .hash = try copyOptional(allocator, item.hash) };
+    for (self.backups.items, backups) |item, *owned|
+        owned.* = .{
+            .name = try allocator.dupe(u8, item.name),
+            .hash = try copyOptional(allocator, item.hash),
+        };
     result.backups = backups;
     return result;
 }
+
 fn copyOptional(allocator: std.mem.Allocator, value: ?[]const u8) !?[]const u8 {
     return if (value) |bytes| try allocator.dupe(u8, bytes) else null;
 }
+
 /// Frees parser list storage only. Input buffers and converted packages are independent.
 pub fn deinit(self: *ParsedDescription, allocator: std.mem.Allocator) void {
-    inline for (.{ "groups", "licenses", "depends", "optional_depends", "make_depends", "check_depends", "provides", "conflicts", "replaces", "xdata", "files", "backups" }) |field| @field(self, field).deinit(allocator);
+    inline for (.{
+        "groups",
+        "licenses",
+        "depends",
+        "optional_depends",
+        "make_depends",
+        "check_depends",
+        "provides",
+        "conflicts",
+        "replaces",
+        "xdata",
+        "files",
+        "backups",
+    }) |field|
+        @field(self, field).deinit(allocator);
     self.* = undefined;
 }
 
@@ -166,7 +218,16 @@ pub fn parse(
                 if (result.compressed_size != null) return error.DuplicateValue;
                 result.compressed_size = try std.fmt.parseInt(u64, line, 10);
             },
-            .files => try result.files.append(allocator, .{ .name = line, .kind = if (std.mem.endsWith(u8, line, "/")) .directory else .unknown }),
+            .files => try result.files.append(
+                allocator,
+                .{
+                    .name = line,
+                    .kind = if (std.mem.endsWith(u8, line, "/"))
+                        .directory
+                    else
+                        .unknown,
+                },
+            ),
             .backups => try result.backups.append(allocator, try BackupFile.parseLocal(line)),
             .groups => try result.groups.append(allocator, line),
             .licenses => try result.licenses.append(allocator, line),
@@ -478,8 +539,20 @@ test "ParsedDescription retains large package and provision epochs" {
     const package = try parsed.intoPackage(&arena, .{ .origin = .local, .database_name = "local" });
     try std.testing.expectEqualStrings("18446744073709551616", package.version.epoch);
     try std.testing.expectEqualStrings("00018446744073709551617:2.0", package.provides[0].constraint.equal);
-    try std.testing.expectEqual(.greaterThan, Version.compareStrings(package.provides[0].constraint.equal, package.version.raw));
-    try std.testing.expectEqual(.equal, Version.compareStrings(package.depends[0].constraint.greater_equal, package.version.raw));
+    try std.testing.expectEqual(
+        .greaterThan,
+        Version.compareStrings(
+            package.provides[0].constraint.equal,
+            package.version.raw,
+        ),
+    );
+    try std.testing.expectEqual(
+        .equal,
+        Version.compareStrings(
+            package.depends[0].constraint.greater_equal,
+            package.version.raw,
+        ),
+    );
 }
 
 test "ParsedDescription preserves permissive package and relation versions" {

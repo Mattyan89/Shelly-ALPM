@@ -3,10 +3,12 @@ const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
 const Fixture = @import("actions_fixture.zig");
 const Archive = @import("archive_fixture.zig");
+
 const io = std.testing.io;
 const a = std.testing.allocator;
 const mtree = "#mtree\n./etc type=dir\n./etc/conf type=file\n./usr/data type=file\n./usr/link type=link link=/usr/data\n./usr/hard type=file\n";
 const flags: rlpm.TransactionFlags = .{ .no_hooks = true, .no_scriptlets = true };
+
 fn apply(owner: *rlpm.Owner, path: []const u8, mode: rlpm.TransactionFlags) !void {
     const tx = try owner.initializeTransaction(io, mode);
     defer owner.releaseTransaction() catch unreachable;
@@ -16,8 +18,13 @@ fn apply(owner: *rlpm.Owner, path: []const u8, mode: rlpm.TransactionFlags) !voi
     try std.testing.expectEqual(.completed, tx.state);
     try std.testing.expectEqual(1, tx.result().packages_committed);
 }
+
 fn package(version: []const u8, content: []const u8) !Archive {
-    const info = try std.fmt.allocPrint(a, "pkgname = demo\npkgver = {s}\narch = any\npkgdesc = executor fixture\nsize = 14\nbackup = etc/conf\nxdata = pkgtype=pkg\n", .{version});
+    const info = try std.fmt.allocPrint(
+        a,
+        "pkgname = demo\npkgver = {s}\narch = any\npkgdesc = executor fixture\nsize = 14\nbackup = etc/conf\nxdata = pkgtype=pkg\n",
+        .{version},
+    );
     defer a.free(info);
     return Archive.init(&.{
         .{ .path = ".PKGINFO", .contents = info },
@@ -27,8 +34,16 @@ fn package(version: []const u8, content: []const u8) !Archive {
         .{ .path = "etc/", .kind = .directory },
         .{ .path = "etc/conf", .contents = content },
         .{ .path = "usr/data", .contents = "payload" },
-        .{ .path = "usr/link", .kind = .symlink, .target = "/usr/data" },
-        .{ .path = "usr/hard", .kind = .hardlink, .target = "usr/data" },
+        .{
+            .path = "usr/link",
+            .kind = .symlink,
+            .target = "/usr/data",
+        },
+        .{
+            .path = "usr/hard",
+            .kind = .hardlink,
+            .target = "usr/data",
+        },
     }, .zstd);
 }
 test "install query reinstall upgrade downgrade remove persists to fresh Owners" {
@@ -68,11 +83,14 @@ fn string(obj: std.json.Value, name: []const u8) ?[]const u8 {
     const value = obj.object.get(name) orelse return null;
     return if (value == .null) null else value.string;
 }
+
 fn boolean(obj: std.json.Value, name: []const u8) bool {
     return if (obj.object.get(name)) |v| v.bool else false;
 }
+
 const Events = struct {
     values: std.ArrayList([2]i64) = .empty,
+
     fn callback(context: ?*anyopaque, event: rlpm.Callbacks.Event) void {
         const self: *Events = @ptrCast(@alignCast(context.?));
         const item: [2]i64 = switch (event) {
@@ -127,19 +145,56 @@ test "replays pinned native backup flags removal suffix and event oracle" {
                 try f.write("db/local/demo-1-1/files", bytes);
             }
         }
-        inline for (.{ .{ "local", "root/conf" }, .{ "pacnew", "root/conf.pacnew" }, .{ "pacsave", "root/conf.pacsave" }, .{ "pacsave1", "root/conf.pacsave.1" } }) |pair| if (string(case, pair[0])) |contents| try f.write(pair[1], contents);
-        const info = try std.fmt.allocPrint(a, "pkgname = demo\npkgver = 2-1\narch = any\n{s}", .{if (boolean(case, "backup")) "backup = conf\n" else ""});
+        inline for (.{
+            .{ "local", "root/conf" },
+            .{ "pacnew", "root/conf.pacnew" },
+            .{ "pacsave", "root/conf.pacsave" },
+            .{ "pacsave1", "root/conf.pacsave.1" },
+        }) |pair|
+            if (string(case, pair[0])) |contents|
+                try f.write(pair[1], contents);
+        const info = try std.fmt.allocPrint(
+            a,
+            "pkgname = demo\npkgver = 2-1\narch = any\n{s}",
+            .{
+                if (boolean(case, "backup"))
+                    "backup = conf\n"
+                else
+                    "",
+            },
+        );
         defer a.free(info);
-        var archive = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = info }, .{ .path = "conf", .contents = string(case, "new").? } }, .none);
+        var archive = try Archive.init(
+            &.{
+                .{ .path = ".PKGINFO", .contents = info },
+                .{
+                    .path = "conf",
+                    .contents = string(case, "new").?,
+                },
+            },
+            .none,
+        );
         defer archive.deinit();
         var owner = try f.owner();
         defer owner.deinit() catch unreachable;
-        inline for (.{ .{ "noupgrade", rlpm.OwnerConfiguration.StringList.no_upgrade }, .{ "noextract", rlpm.OwnerConfiguration.StringList.no_extract }, .{ "overwrite", rlpm.OwnerConfiguration.StringList.overwrite_files } }) |pair| if (case.object.get(pair[0])) |list| {
-            const values = try a.alloc([]const u8, list.array.items.len);
-            defer a.free(values);
-            for (values, list.array.items) |*value, item| value.* = item.string;
-            try owner.setList(io, pair[1], values);
-        };
+        inline for (.{
+            .{ "noupgrade", rlpm.OwnerConfiguration.StringList.no_upgrade },
+            .{
+                "noextract",
+                rlpm.OwnerConfiguration.StringList.no_extract,
+            },
+            .{
+                "overwrite",
+                rlpm.OwnerConfiguration.StringList.overwrite_files,
+            },
+        }) |pair|
+            if (case.object.get(pair[0])) |list| {
+                const values = try a.alloc([]const u8, list.array.items.len);
+                defer a.free(values);
+                for (values, list.array.items) |*value, item|
+                    value.* = item.string;
+                try owner.setList(io, pair[1], values);
+            };
         var events: Events = .{};
         defer events.values.deinit(a);
         try owner.setCallbacks(.{ .event = Events.callback, .event_context = &events });
@@ -152,14 +207,33 @@ test "replays pinned native backup flags removal suffix and event oracle" {
         defer owner.releaseTransaction() catch unreachable;
         if (boolean(case, "remove")) try tx.remove("demo") else try Fixture.add(tx, archive.path);
         try tx.prepare();
-        if (string(case, "error") != null) try std.testing.expectError(error.FileConflicts, tx.commit()) else try tx.commit();
+        if (string(case, "error") != null)
+            try std.testing.expectError(error.FileConflicts, tx.commit())
+        else
+            try tx.commit();
         var contents = case.object.get("contents").?.object.iterator();
         while (contents.next()) |item| {
             const path = try std.fmt.allocPrint(a, "root/{s}", .{item.key_ptr.*});
             defer a.free(path);
-            if (item.value_ptr.* == .null) try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, path, .{})) else try f.expect(path, item.value_ptr.string);
+            if (item.value_ptr.* == .null)
+                try std.testing.expectError(
+                    error.FileNotFound,
+                    f.tmp.dir.access(io, path, .{}),
+                )
+            else
+                try f.expect(path, item.value_ptr.string);
         }
-        if (string(case, "inventory")) |bytes| try f.expect("db/local/demo-2-1/files", bytes) else try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "db/local/demo-2-1/files", .{}));
+        if (string(case, "inventory")) |bytes|
+            try f.expect("db/local/demo-2-1/files", bytes)
+        else
+            try std.testing.expectError(
+                error.FileNotFound,
+                f.tmp.dir.access(
+                    io,
+                    "db/local/demo-2-1/files",
+                    .{},
+                ),
+            );
         const expected = case.object.get("events").?.array.items;
         try std.testing.expectEqual(expected.len, events.values.items.len);
         for (expected, events.values.items) |native, actual| {
@@ -194,7 +268,17 @@ test "reason changes persist under lock and invalidate references" {
 
 test "boundary failures retain precise partial results and readable database" {
     const E = rlpm.Transaction.Executor;
-    inline for (.{ E.Boundary.pre_hooks, .pre_scriptlet, .extract, .payload_sync, .database_write, .database_publish, .cache_reload, .post_scriptlet, .post_hooks }) |boundary| {
+    inline for (.{
+        E.Boundary.pre_hooks,
+        .pre_scriptlet,
+        .extract,
+        .payload_sync,
+        .database_write,
+        .database_publish,
+        .cache_reload,
+        .post_scriptlet,
+        .post_hooks,
+    }) |boundary| {
         var f = try Fixture.init();
         defer f.deinit();
         var archive = try package("1-1", "first");
@@ -210,10 +294,20 @@ test "boundary failures retain precise partial results and readable database" {
         try std.testing.expectError(error.InjectedExecutionFailure, tx.commit());
         try std.testing.expectEqual(.failed, tx.state);
         try std.testing.expectEqual(boundary, tx.execution.boundary);
-        try std.testing.expectEqual(boundary == .cache_reload or boundary == .post_scriptlet or boundary == .post_hooks, tx.execution.database_published);
+        try std.testing.expectEqual(
+            boundary == .cache_reload or boundary == .post_scriptlet or
+                boundary == .post_hooks,
+            tx.execution.database_published,
+        );
         var fresh = try f.owner();
         defer fresh.deinit() catch unreachable;
-        try std.testing.expectEqual(tx.execution.database_published, (try fresh.findPackage(fresh.localDatabase().?, "demo")) != null);
+        try std.testing.expectEqual(
+            tx.execution.database_published,
+            (try fresh.findPackage(
+                fresh.localDatabase().?,
+                "demo",
+            )) != null,
+        );
         try std.testing.expectError(error.FileNotFound, f.tmp.dir.access(io, "db/.rlpm-local-stage", .{}));
     }
 }
@@ -222,7 +316,10 @@ test "journal recovery restores coherent old records at each interrupted rename"
     for (0..4) |step| {
         var f = try Fixture.init();
         defer f.deinit();
-        const old_path = if (step == 1 or step == 2) "db/.rlpm-local-stage/old/desc" else "db/local/demo-1-1/desc";
+        const old_path = if (step == 1 or step == 2)
+            "db/.rlpm-local-stage/old/desc"
+        else
+            "db/local/demo-1-1/desc";
         const new_path = if (step == 2) "db/local/demo-2-1/desc" else "db/.rlpm-local-stage/record/desc";
         try f.write(old_path, "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n");
         try f.write(new_path, "%NAME%\ndemo\n\n%VERSION%\n2-1\n\n");
@@ -243,9 +340,31 @@ test "journal recovery restores coherent old records at each interrupted rename"
 test "file-directory transitions retain unowned and shared contents" {
     var f = try Fixture.init();
     defer f.deinit();
-    var old = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = demo\npkgver = 1-1\narch = any\n" }, .{ .path = "path", .contents = "file" } }, .none);
+    var old = try Archive.init(
+        &.{
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = demo\npkgver = 1-1\narch = any\n",
+            },
+            .{ .path = "path", .contents = "file" },
+        },
+        .none,
+    );
     defer old.deinit();
-    var new = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = demo\npkgver = 2-1\narch = any\n" }, .{ .path = "path/", .kind = .directory }, .{ .path = "path/child", .contents = "child" } }, .none);
+    var new = try Archive.init(
+        &.{
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = demo\npkgver = 2-1\narch = any\n",
+            },
+            .{ .path = "path/", .kind = .directory },
+            .{
+                .path = "path/child",
+                .contents = "child",
+            },
+        },
+        .none,
+    );
     defer new.deinit();
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
@@ -268,16 +387,36 @@ test "file-directory transitions retain unowned and shared contents" {
 test "cancellation after one package keeps plan views completed remaining and fresh state" {
     var f = try Fixture.init();
     defer f.deinit();
-    var one = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = one\npkgver = 1-1\narch = any\n" }, .{ .path = "one", .contents = "one" } }, .none);
+    var one = try Archive.init(
+        &.{
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = one\npkgver = 1-1\narch = any\n",
+            },
+            .{ .path = "one", .contents = "one" },
+        },
+        .none,
+    );
     defer one.deinit();
-    var two = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = two\npkgver = 1-1\narch = any\n" }, .{ .path = "two", .contents = "two" } }, .none);
+    var two = try Archive.init(
+        &.{
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = two\npkgver = 1-1\narch = any\n",
+            },
+            .{ .path = "two", .contents = "two" },
+        },
+        .none,
+    );
     defer two.deinit();
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
+
     const Cancel = struct {
         fn event(context: ?*anyopaque, value: rlpm.Callbacks.Event) void {
             const target: *rlpm.Owner = @ptrCast(@alignCast(context.?));
-            if (value == .package_operation and value.package_operation.boundary == .done) target.requestCancellation();
+            if (value == .package_operation and value.package_operation.boundary == .done)
+                target.requestCancellation();
         }
     };
     try owner.setCallbacks(.{ .event = Cancel.event, .event_context = &owner });
@@ -294,8 +433,12 @@ test "cancellation after one package keeps plan views completed remaining and fr
     try std.testing.expectEqual(last, tx.execution.remaining[0]);
     var fresh = try f.owner();
     defer fresh.deinit() catch unreachable;
-    try std.testing.expect((try fresh.findPackage(fresh.localDatabase().?, tx.plan().?.package(first).name)) != null);
-    try std.testing.expect((try fresh.findPackage(fresh.localDatabase().?, tx.plan().?.package(last).name)) == null);
+    try std.testing.expect(
+        (try fresh.findPackage(fresh.localDatabase().?, tx.plan().?.package(first).name)) != null,
+    );
+    try std.testing.expect(
+        (try fresh.findPackage(fresh.localDatabase().?, tx.plan().?.package(last).name)) == null,
+    );
 }
 
 test "actual write failure records path and never publishes a partial package" {
@@ -307,10 +450,16 @@ test "actual write failure records path and never publishes a partial package" {
     defer archive.deinit();
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
+
     const Conflict = struct {
         fn event(context: ?*anyopaque, value: rlpm.Callbacks.Event) void {
             const fixture: *Fixture = @ptrCast(@alignCast(context.?));
-            if (value == .package_operation and value.package_operation.boundary == .start) fixture.tmp.dir.createDirPath(io, "root/usr/data") catch unreachable;
+            if (value == .package_operation and value.package_operation.boundary == .start)
+                fixture.tmp.dir.createDirPath(
+                    io,
+                    "root/usr/data",
+                ) catch
+                    unreachable;
         }
     };
     try owner.setCallbacks(.{ .event = Conflict.event, .event_context = &f });
@@ -337,6 +486,7 @@ test "confined executor rejects replaced roots before any mutation" {
     defer archive.deinit();
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
+
     const Replace = struct {
         fn event(context: ?*anyopaque, value: rlpm.Callbacks.Event) void {
             const fixture: *Fixture = @ptrCast(@alignCast(context.?));
@@ -365,14 +515,27 @@ test "repository commit retains CachyOS installed database validation and instal
     defer archive.deinit();
     try std.Io.Dir.cwd().copyFile(archive.path, f.tmp.dir, "cache/demo.pkg.tar.zst", io, .{});
     const stat = try std.Io.Dir.cwd().statFile(io, archive.path, .{});
-    const metadata = try std.fmt.allocPrint(a, "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n%FILENAME%\ndemo.pkg.tar.zst\n\n%CSIZE%\n{d}\n\n%ISIZE%\n14\n\n%ARCH%\nany\n\n", .{stat.size});
+    const metadata = try std.fmt.allocPrint(
+        a,
+        "%NAME%\ndemo\n\n%VERSION%\n1-1\n\n%FILENAME%\ndemo.pkg.tar.zst\n\n%CSIZE%\n{d}\n\n%ISIZE%\n14\n\n%ARCH%\nany\n\n",
+        .{stat.size},
+    );
     defer a.free(metadata);
     var repository = try Archive.init(&.{.{ .path = "demo-1-1/desc", .contents = metadata }}, .none);
     defer repository.deinit();
     try std.Io.Dir.cwd().copyFile(repository.path, f.tmp.dir, "db/sync/cachyos.db", io, .{});
     const cache = try f.tmp.dir.realPathFileAlloc(io, "cache", a);
     defer a.free(cache);
-    var owner = try rlpm.Owner.init(io, a, .{ .root = f.root, .database_path = f.db, .cache_directories = &.{cache} }, &.{.{ .database_name = "cachyos" }});
+    var owner = try rlpm.Owner.init(
+        io,
+        a,
+        .{
+            .root = f.root,
+            .database_path = f.db,
+            .cache_directories = &.{cache},
+        },
+        &.{.{ .database_name = "cachyos" }},
+    );
     defer owner.deinit() catch unreachable;
     var mode = flags;
     mode.all_dependencies = true;
@@ -394,9 +557,29 @@ test "repository commit retains CachyOS installed database validation and instal
 test "ownership transfer and shared directories survive an ordered multi-package upgrade" {
     var f = try Fixture.init();
     defer f.deinit();
-    var old = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = old\npkgver = 1-1\narch = any\n" }, .{ .path = "shared/", .kind = .directory }, .{ .path = "shared/data", .contents = "old" } }, .none);
+    var old = try Archive.init(
+        &.{
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = old\npkgver = 1-1\narch = any\n",
+            },
+            .{ .path = "shared/", .kind = .directory },
+            .{ .path = "shared/data", .contents = "old" },
+        },
+        .none,
+    );
     defer old.deinit();
-    var replacement = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = new\npkgver = 1-1\narch = any\n" }, .{ .path = "shared/", .kind = .directory }, .{ .path = "shared/data", .contents = "new" } }, .none);
+    var replacement = try Archive.init(
+        &.{
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = new\npkgver = 1-1\narch = any\n",
+            },
+            .{ .path = "shared/", .kind = .directory },
+            .{ .path = "shared/data", .contents = "new" },
+        },
+        .none,
+    );
     defer replacement.deinit();
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
@@ -450,7 +633,21 @@ test "audit writes configured log and absolute symlinks cannot alter external at
     defer a.free(outside);
     var before: c.struct_stat = undefined;
     try std.testing.expectEqual(0, c.stat(outside, &before));
-    var archive = try Archive.init(&.{ .{ .path = ".PKGINFO", .contents = "pkgname = demo\npkgver = 1-1\narch = any\n" }, .{ .path = "external", .kind = .symlink, .target = outside, .mtime = 42 } }, .none);
+    var archive = try Archive.init(
+        &.{
+            .{
+                .path = ".PKGINFO",
+                .contents = "pkgname = demo\npkgver = 1-1\narch = any\n",
+            },
+            .{
+                .path = "external",
+                .kind = .symlink,
+                .target = outside,
+                .mtime = 42,
+            },
+        },
+        .none,
+    );
     defer archive.deinit();
     var owner = try f.owner();
     defer owner.deinit() catch unreachable;
@@ -505,6 +702,7 @@ test "payload tracker holds readable descriptors before writes and releases allo
         try std.testing.expectEqual(1, Durability.test_hooks.flush_calls);
     }
     try std.testing.expectEqual(Durability.test_hooks.opened, Durability.test_hooks.closed);
+
     const Allocation = struct {
         fn run(allocator: std.mem.Allocator, fd: c_int) !void {
             var tracker: Durability = .init(allocator);
@@ -530,7 +728,10 @@ test "payload registration failure precedes mutations and retains errno" {
         try tx.prepare();
         Durability.test_hooks = .{ .registration_error = code };
         defer Durability.test_hooks = .{};
-        try std.testing.expectError(if (code == linux.EMFILE) error.FileDescriptorLimit else error.OutOfMemory, tx.commit());
+        try std.testing.expectError(
+            if (code == linux.EMFILE) error.FileDescriptorLimit else error.OutOfMemory,
+            tx.commit(),
+        );
         try std.testing.expectEqual(code, tx.execution.system_error.?);
         try std.testing.expectEqual(0, tx.execution.mutations);
         try std.testing.expect(!tx.execution.database_published);
@@ -556,7 +757,10 @@ test "payload sync errors keep installed record old after partial upgrade" {
         try tx.prepare();
         Durability.test_hooks = .{ .fail_flush_at = 0, .flush_error = code };
         defer Durability.test_hooks = .{};
-        try std.testing.expectError(if (code == linux.EIO) error.FilesystemWriteFailed else error.NoSpaceLeft, tx.commit());
+        try std.testing.expectError(
+            if (code == linux.EIO) error.FilesystemWriteFailed else error.NoSpaceLeft,
+            tx.commit(),
+        );
         try std.testing.expectEqual(.payload_sync, tx.execution.boundary);
         try std.testing.expectEqual(code, tx.execution.system_error.?);
         try std.testing.expect(tx.execution.path != null);
@@ -576,14 +780,25 @@ test "payload flush follows cleanup and precedes database publication" {
     const Probe = struct {
         var fixture: *Fixture = undefined;
         var transaction: *rlpm.Transaction = undefined;
+
         fn before(fd: c_int) !void {
             try std.testing.expect(!transaction.execution.database_published);
             try fixture.expect("root/etc/conf", "first");
-            try std.testing.expectError(error.FileNotFound, fixture.tmp.dir.access(io, "db/local/demo-1-1", .{}));
+            try std.testing.expectError(
+                error.FileNotFound,
+                fixture.tmp.dir.access(
+                    io,
+                    "db/local/demo-1-1",
+                    .{},
+                ),
+            );
             var directory = try fixture.tmp.dir.openDir(io, "root/etc", .{ .iterate = true });
             defer directory.close(io);
             var iterator = directory.iterate();
-            while (try iterator.next(io)) |entry| try std.testing.expect(!std.mem.startsWith(u8, entry.name, ".rlpm-"));
+            while (try iterator.next(io)) |entry|
+                try std.testing.expect(
+                    !std.mem.startsWith(u8, entry.name, ".rlpm-"),
+                );
             try std.testing.expect(linux.fcntl(fd, linux.F_GETFL) & linux.O_PATH == 0);
         }
     };
@@ -612,6 +827,7 @@ test "payload flush follows cleanup and precedes database publication" {
 test "cancellation after payload flush does not publish the package" {
     const Cancel = struct {
         var owner: *rlpm.Owner = undefined;
+
         fn after() void {
             owner.requestCancellation();
         }
@@ -646,7 +862,11 @@ test "DBONLY needs no payload sync" {
     defer owner.deinit() catch unreachable;
     Durability.test_hooks = .{ .registration_error = linux.EIO };
     defer Durability.test_hooks = .{};
-    try apply(&owner, archive.path, .{ .database_only = true, .no_hooks = true, .no_scriptlets = true });
+    try apply(&owner, archive.path, .{
+        .database_only = true,
+        .no_hooks = true,
+        .no_scriptlets = true,
+    });
     try std.testing.expectEqual(0, Durability.test_hooks.flush_calls);
 }
 
@@ -658,6 +878,7 @@ test "upgrade progress is monotonic and finishing status precedes sync" {
         finished: bool = false,
         status: bool = false,
         invalid: bool = false,
+
         fn update(context: ?*anyopaque, value: rlpm.Callbacks.Progress) void {
             if (value.phase != .transaction) return;
             const self: *@This() = @ptrCast(@alignCast(context.?));
@@ -670,6 +891,7 @@ test "upgrade progress is monotonic and finishing status precedes sync" {
                 if (Durability.test_hooks.flush_calls == 0) self.invalid = true;
             }
         }
+
         fn log(context: ?*anyopaque, value: rlpm.Callbacks.Log) void {
             const self: *@This() = @ptrCast(@alignCast(context.?));
             if (std.mem.startsWith(u8, value.message, "Finishing writes for demo")) {
@@ -705,6 +927,7 @@ test "upgrade progress is monotonic and finishing status precedes sync" {
 test "failed removal flush retains the old record and emits no removal completion" {
     const Capture = struct {
         done: usize = 0,
+
         fn event(context: ?*anyopaque, value: rlpm.Callbacks.Event) void {
             const self: *@This() = @ptrCast(@alignCast(context.?));
             if (value == .package_operation and value.package_operation.boundary == .done) self.done += 1;

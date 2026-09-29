@@ -1,17 +1,23 @@
 //! Owned, read-only resolution result. Treat its views as immutable. It survives
 //! Owner/cache/archive release; deinit exactly once. A failed plan is diagnostic
 //! data, never an executable transaction. Transaction binds review to live state.
-const Plan = @This();
 const std = @import("std");
 const Package = @import("Package.zig");
 const Relation = @import("PackageRelation.zig");
 const Callbacks = @import("Callbacks.zig");
+const PackageRef = @import("PackageRef.zig");
+const TransactionFlags = @import("TransactionFlags.zig");
+
+const Plan = @This();
+
 pub const Id = enum(u32) { _ };
+
 pub const Candidate = struct {
-    reference: @import("PackageRef.zig"),
+    reference: PackageRef,
     package: Package,
     repository: ?usize = null,
 };
+
 pub const Addition = struct {
     package: Id,
     old: ?Id,
@@ -23,6 +29,7 @@ pub const Addition = struct {
     explicit_target: bool,
     installed_database: ?[]const u8,
 };
+
 pub const Edge = struct {
     requiring: Id,
     dependency: Relation,
@@ -31,26 +38,71 @@ pub const Edge = struct {
     provision: ?Relation = null,
     version_ignored: bool = false,
 };
-pub const Missing = struct { requiring: Id, dependency: Relation, causing: ?Id = null };
-pub const Conflict = struct { first: Id, second: Id, reason: Relation };
-pub const Failure = enum { target_not_found, ignored, duplicate_target, invalid_architecture, unsatisfied_dependencies, conflicting_dependencies, duplicate_filename };
+
+pub const Missing = struct {
+    requiring: Id,
+    dependency: Relation,
+    causing: ?Id = null,
+};
+
+pub const Conflict = struct {
+    first: Id,
+    second: Id,
+    reason: Relation,
+};
+
+pub const Failure = enum {
+    target_not_found,
+    ignored,
+    duplicate_target,
+    invalid_architecture,
+    unsatisfied_dependencies,
+    conflicting_dependencies,
+    duplicate_filename,
+};
+
 pub const Issue = union(enum) {
     target: []const u8,
-    duplicate: struct { first: Id, second: Id },
+    duplicate: struct {
+        first: Id,
+        second: Id,
+    },
     architecture: Id,
     missing: Missing,
     conflict: Conflict,
-    filename: struct { first: Id, second: Id, filename: []const u8 },
+    filename: struct {
+        first: Id,
+        second: Id,
+        filename: []const u8,
+    },
 };
+
 pub const Warning = union(enum) {
-    cycle: struct { before: Id, after: Id, removal: bool },
-    local_newer: struct { local: Id, sync: Id },
-    ignored_upgrade: struct { local: Id, sync: Id },
-    provided_target: struct { removed: Id, provider: Id },
+    cycle: struct {
+        before: Id,
+        after: Id,
+        removal: bool,
+    },
+    local_newer: struct {
+        local: Id,
+        sync: Id,
+    },
+    ignored_upgrade: struct {
+        local: Id,
+        sync: Id,
+    },
+    provided_target: struct {
+        removed: Id,
+        provider: Id,
+    },
     skipped_needed: Id,
     skipped_unresolvable: Id,
-    optional_dependency_removed: struct { package: Id, dependency: Relation },
+    optional_dependency_removed: struct {
+        package: Id,
+        dependency: Relation,
+    },
 };
+
 pub const Sizes = struct {
     installed_add: u64 = 0,
     installed_remove: u64 = 0,
@@ -62,7 +114,7 @@ pub const Sizes = struct {
 
 arena: std.heap.ArenaAllocator,
 candidates: []const Candidate = &.{},
-flags: @import("TransactionFlags.zig") = .{},
+flags: TransactionFlags = .{},
 /// Whether target selection left work for native prepare to enter a phase.
 had_prepare_targets: bool = false,
 additions: []const Addition = &.{},
@@ -76,22 +128,26 @@ failure: ?Failure = null,
 sizes: Sizes = .{},
 
 pub fn deinit(self: *Plan) void {
-    for (self.candidates) |candidate| if (candidate.package.verified_archive) |file| {
-        var owned = file;
-        owned.deinit();
-    };
+    for (self.candidates) |candidate|
+        if (candidate.package.verified_archive) |file| {
+            var owned = file;
+            owned.deinit();
+        };
     self.arena.deinit();
     self.* = undefined;
 }
+
 pub fn package(self: *const Plan, id: Id) *const Package {
     return &self.candidates[@intFromEnum(id)].package;
 }
-pub fn findReference(self: *const Plan, reference: @import("PackageRef.zig")) ?Id {
+
+pub fn findReference(self: *const Plan, reference: PackageRef) ?Id {
     for (self.candidates, 0..) |candidate, index| {
         if (std.meta.eql(candidate.reference, reference)) return @enumFromInt(index);
     }
     return null;
 }
+
 pub fn check(self: *const Plan) !void {
     return switch (self.failure orelse return) {
         .target_not_found => error.TargetNotFound,
@@ -109,18 +165,26 @@ pub fn check(self: *const Plan) !void {
 pub fn copyMetadata(allocator: std.mem.Allocator, source: Package) !Package {
     var result: Package = undefined;
     inline for (std.meta.fields(Package)) |field| {
-        if (comptime std.mem.eql(u8, field.name, "archive_arena") or std.mem.eql(u8, field.name, "verified_archive")) {
+        if (comptime std.mem.eql(u8, field.name, "archive_arena") or
+            std.mem.eql(
+                u8,
+                field.name,
+                "verified_archive",
+            ))
+        {
             @field(result, field.name) = null;
         } else @field(result, field.name) = try copyValue(field.type, allocator, @field(source, field.name));
     }
     return result;
 }
+
 pub fn copyValue(comptime T: type, allocator: std.mem.Allocator, value: T) error{OutOfMemory}!T {
     switch (@typeInfo(T)) {
         .pointer => |info| {
             if (info.size != .slice) @compileError("snapshot copy requires slices");
             const result = try allocator.alloc(info.child, value.len);
-            for (value, result) |item, *out| out.* = try copyValue(info.child, allocator, item);
+            for (value, result) |item, *out|
+                out.* = try copyValue(info.child, allocator, item);
             return result;
         },
         .optional => |info| {
@@ -129,7 +193,12 @@ pub fn copyValue(comptime T: type, allocator: std.mem.Allocator, value: T) error
         },
         .@"struct" => {
             var result: T = undefined;
-            inline for (std.meta.fields(T)) |field| @field(result, field.name) = try copyValue(field.type, allocator, @field(value, field.name));
+            inline for (std.meta.fields(T)) |field|
+                @field(result, field.name) = try copyValue(
+                    field.type,
+                    allocator,
+                    @field(value, field.name),
+                );
             return result;
         },
         .@"union" => return switch (value) {

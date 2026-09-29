@@ -1,9 +1,11 @@
 //! A metadata-only snapshot for deferred UI. No borrowed strings, Package
 //! pointers, arenas, or file descriptors survive the originating callback.
-const OwnedQuestion = @This();
 const std = @import("std");
 const C = @import("Callbacks.zig");
 const Plan = @import("TransactionPlan.zig");
+const Package = @import("Package.zig");
+
+const OwnedQuestion = @This();
 arena: std.heap.ArenaAllocator,
 question: C.Question,
 
@@ -18,20 +20,25 @@ pub fn init(allocator: std.mem.Allocator, source: C.Question) !OwnedQuestion {
                 if (comptime std.mem.eql(u8, field.name, "views")) {
                     const views = try a.alloc(C.PackageView, value.views.len);
                     for (views, value.views) |*out, view| {
-                        const pkg = try a.create(@import("Package.zig"));
+                        const pkg = try a.create(Package);
                         pkg.* = try Plan.copyMetadata(a, view.package.*);
                         out.* = .{ .reference = view.reference, .package = pkg };
                     }
                     copied.views = views;
                 } else if (@typeInfo(field.type) == .error_set) {
                     @field(copied, field.name) = @field(value, field.name);
-                } else @field(copied, field.name) = try Plan.copyValue(field.type, a, @field(value, field.name));
+                } else @field(copied, field.name) = try Plan.copyValue(
+                    field.type,
+                    a,
+                    @field(value, field.name),
+                );
             }
             break :blk @unionInit(C.Question, @tagName(tag), copied);
         },
     };
     return .{ .arena = arena, .question = question };
 }
+
 pub fn deinit(self: *OwnedQuestion) void {
     self.arena.deinit();
     self.* = undefined;

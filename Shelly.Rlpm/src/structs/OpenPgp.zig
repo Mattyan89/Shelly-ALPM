@@ -1,6 +1,8 @@
 //! Bounded binary OpenPGP v4 signature inspection, not cryptographic validation.
 const std = @import("std");
+
 pub const max_signature_size = 16384;
+
 pub fn decode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
     const decoder = std.base64.standard.Decoder;
     const length = try decoder.calcSizeForSlice(encoded);
@@ -10,6 +12,7 @@ pub fn decode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
     try decoder.decode(bytes, encoded);
     return bytes;
 }
+
 pub fn readDetached(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !?[]u8 {
     const sigpath = try std.fmt.allocPrint(allocator, "{s}.sig", .{path});
     defer allocator.free(sigpath);
@@ -42,28 +45,35 @@ test "detached signatures accept the size boundary and reject larger files" {
     try temporary.dir.writeFile(io, .{ .sub_path = "package.sig", .data = &bytes });
     try std.testing.expectError(error.SignatureTooLarge, readDetached(a, io, path));
 }
+
 pub const Issuers = struct {
     arena: std.heap.ArenaAllocator,
     key_ids: []const []const u8,
     fingerprints: []const []const u8,
+
     pub fn deinit(self: *Issuers) void {
         self.arena.deinit();
         self.* = undefined;
     }
 };
+
 const Cursor = struct {
     bytes: []const u8,
+
     fn take(self: *Cursor, n: usize) ![]const u8 {
         if (n > self.bytes.len) return error.InvalidSignaturePacket;
         defer self.bytes = self.bytes[n..];
         return self.bytes[0..n];
     }
+
     fn byte(self: *Cursor) !u8 {
         return (try self.take(1))[0];
     }
+
     fn number(self: *Cursor, comptime T: type) !T {
         return std.mem.readInt(T, (try self.take(@sizeOf(T)))[0..@sizeOf(T)], .big);
     }
+
     fn length(self: *Cursor) !usize {
         const first = try self.byte();
         return switch (first) {
@@ -74,7 +84,13 @@ const Cursor = struct {
         };
     }
 };
-fn subpackets(allocator: std.mem.Allocator, data: []const u8, ids: *std.ArrayList([]const u8), fingerprints: *std.ArrayList([]const u8)) !void {
+
+fn subpackets(
+    allocator: std.mem.Allocator,
+    data: []const u8,
+    ids: *std.ArrayList([]const u8),
+    fingerprints: *std.ArrayList([]const u8),
+) !void {
     var cursor: Cursor = .{ .bytes = data };
     var found_id = false;
     while (cursor.bytes.len != 0) {
@@ -83,7 +99,15 @@ fn subpackets(allocator: std.mem.Allocator, data: []const u8, ids: *std.ArrayLis
         switch (packet[0] & 0x7f) {
             16 => {
                 if (packet.len != 9) return error.InvalidSignaturePacket;
-                if (!found_id) try ids.append(allocator, try std.fmt.allocPrint(allocator, "{X}", .{packet[1..]}));
+                if (!found_id)
+                    try ids.append(
+                        allocator,
+                        try std.fmt.allocPrint(
+                            allocator,
+                            "{X}",
+                            .{packet[1..]},
+                        ),
+                    );
                 found_id = true;
             },
             33 => {
@@ -94,6 +118,7 @@ fn subpackets(allocator: std.mem.Allocator, data: []const u8, ids: *std.ArrayLis
         }
     }
 }
+
 /// Key IDs follow the reference's issuer subpackets (including ordered duplicates
 /// across hashed/unhashed sections). Fingerprints expose issuer-fingerprint data.
 pub fn extractIssuers(allocator: std.mem.Allocator, bytes: []const u8) !Issuers {
@@ -124,5 +149,9 @@ pub fn extractIssuers(allocator: std.mem.Allocator, bytes: []const u8) !Issuers 
         _ = try packet.take(2); // Digest prefix; MPI verification belongs to GPG.
         if (packet.bytes.len == 0) return error.InvalidSignaturePacket;
     }
-    return .{ .arena = arena, .key_ids = try ids.toOwnedSlice(owned), .fingerprints = try fingerprints.toOwnedSlice(owned) };
+    return .{
+        .arena = arena,
+        .key_ids = try ids.toOwnedSlice(owned),
+        .fingerprints = try fingerprints.toOwnedSlice(owned),
+    };
 }

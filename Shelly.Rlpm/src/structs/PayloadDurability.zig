@@ -1,13 +1,18 @@
 //! Package payload writeback. Hold a readable directory before any mutation so
 //! syncfs observes writeback errors throughout the operation. Database journals
 //! deliberately retain their separate, immediate fsync ordering.
-const Self = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 const Root = @import("RootPath.zig");
+
+const Self = @This();
 const c = Root.c;
 
-pub const Target = struct { fd: c_int, identity: Root.State, path: []const u8 };
+pub const Target = struct {
+    fd: c_int,
+    identity: Root.State,
+    path: []const u8,
+};
 allocator: std.mem.Allocator,
 targets: std.ArrayList(Target) = .empty,
 system_error: ?c_int = null,
@@ -39,7 +44,8 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn registerBeforeMutation(self: *Self, parent: c_int) !void {
-    if (comptime builtin.is_test) if (test_hooks.registration_error) |code| return self.failure(code);
+    if (comptime builtin.is_test)
+        if (test_hooks.registration_error) |code| return self.failure(code);
     const identity = try Root.state(parent);
     for (self.targets.items) |target| {
         if (target.identity.device != identity.device) continue;
@@ -54,7 +60,8 @@ pub fn registerBeforeMutation(self: *Self, parent: c_int) !void {
     if (comptime builtin.is_test) test_hooks.opened += 1;
     errdefer close(fd);
     const held = try Root.state(fd);
-    if (held.device != identity.device or held.inode != identity.inode or held.mount_id != identity.mount_id) return error.StaleFilesystemState;
+    if (held.device != identity.device or held.inode != identity.inode or held.mount_id != identity.mount_id)
+        return error.StaleFilesystemState;
     var proc_buffer: [64]u8 = undefined;
     const proc_path = try std.fmt.bufPrintZ(&proc_buffer, "/proc/self/fd/{d}", .{fd});
     var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
@@ -62,7 +69,11 @@ pub fn registerBeforeMutation(self: *Self, parent: c_int) !void {
     if (length < 0) return self.failure(std.c._errno().*);
     if (length == path_buffer.len) return error.NameTooLong;
     const path = try self.allocator.dupe(u8, path_buffer[0..@intCast(length)]);
-    self.targets.appendAssumeCapacity(.{ .fd = fd, .identity = held, .path = path });
+    self.targets.appendAssumeCapacity(.{
+        .fd = fd,
+        .identity = held,
+        .path = path,
+    });
 }
 
 /// Flush one target at a time so the executor can check cancellation and retain
@@ -76,7 +87,8 @@ pub fn flushTarget(self: *Self, index: usize) !void {
         if (test_hooks.fail_flush_at == call) return self.failure(test_hooks.flush_error);
     }
     if (c.syncfs(target.fd) != 0) return self.failure(std.c._errno().*);
-    if (comptime builtin.is_test) if (test_hooks.after_flush) |callback| callback();
+    if (comptime builtin.is_test)
+        if (test_hooks.after_flush) |callback| callback();
 }
 
 fn close(fd: c_int) void {

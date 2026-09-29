@@ -1,7 +1,8 @@
 //! Stored diagnostics contain values only; they never retain caller-owned strings.
-const Diagnostic = @This();
 const std = @import("std");
 const DatabaseRef = @import("DatabaseRef.zig");
+
+const Diagnostic = @This();
 
 pub const Operation = enum {
     download,
@@ -17,6 +18,7 @@ pub const Operation = enum {
     transaction,
     callback,
 };
+
 pub const Category = enum {
     memory,
     invalid_argument,
@@ -36,27 +38,79 @@ cause: anyerror,
 database: ?DatabaseRef = null,
 
 pub fn init(operation: Operation, cause: anyerror, database: ?DatabaseRef) Diagnostic {
-    return .{ .operation = operation, .cause = cause, .database = database, .category = switch (cause) {
-        error.FileConflicts => .file_conflict,
-        error.StaleFilesystemState => .stale_reference,
-        error.PackageMetadataMismatch, error.UnsafeArchivePath, error.UnsafeHardlink, error.UnsafeSymlink, error.ArchiveInventoryMismatch, error.DuplicateArchivePath => .integrity,
-        error.OutOfMemory => .memory,
-        error.TargetNotFound, error.PackageIgnored, error.DuplicateTarget, error.InvalidArchitecture, error.UnsatisfiedDependencies, error.ConflictingDependencies, error.DuplicateFilename => .resolution,
-        error.InvalidTransactionFlags, error.InvalidSnapshot => .invalid_argument,
-        error.DatabaseNotFound, error.InvalidDatabase, error.IncompleteMetadata => .database,
-        error.UnsupportedPackageOrigin => .unsupported,
-        error.ChecksumMismatch, error.ChecksumMissing, error.SignatureMissing, error.InvalidSignature, error.SignatureTooLarge, error.KeyImportDeclined, error.KeyImportFailed, error.KeyAcquisitionUnavailable, error.GpgFailed, error.InvalidKeySource, error.PackageIdentityMismatch => .integrity,
-        error.InvalidPath, error.InvalidOption, error.InvalidVersion, error.InvalidCharacter, error.InvalidPackageRelation, error.InvalidDatabaseName, error.ReservedDatabaseName, error.ImmutablePath, error.InvalidAnswer, error.InvalidRegex => .invalid_argument,
-        error.DuplicateDatabase, error.DatabaseNotLoaded, error.DatabaseAlreadyLoaded, error.UnsupportedDatabaseVersion, error.InvalidDatabaseEntry, error.InvalidSqliteDatabase, error.DuplicatePackage, error.InvalidPackageFilename, error.ArchiveFailed => .database,
-        error.ForeignOwner, error.StaleDatabaseReference, error.StalePackageReference => .stale_reference,
-        error.CallbackReentry, error.OwnerBusy, error.TransactionActive, error.DatabaseLocked => .busy,
-        error.InvalidTransactionState, error.TransactionNotInitialized, error.InvalidPackageOwnership, error.TransactionNotLocked => .invalid_argument,
-        error.StaleDatabaseState, error.LockOwnershipLost, error.LockNotHeld => .stale_reference,
-        error.CommitUnavailable => .unsupported,
-        error.Cancelled => .cancelled,
-        error.UnsupportedDatabaseBackend => .unsupported,
-        else => .io,
-    } };
+    return .{
+        .operation = operation,
+        .cause = cause,
+        .database = database,
+        .category = switch (cause) {
+            error.FileConflicts => .file_conflict,
+            error.StaleFilesystemState => .stale_reference,
+            error.PackageMetadataMismatch,
+            error.UnsafeArchivePath,
+            error.UnsafeHardlink,
+            error.UnsafeSymlink,
+            error.ArchiveInventoryMismatch,
+            error.DuplicateArchivePath,
+            => .integrity,
+            error.OutOfMemory => .memory,
+            error.TargetNotFound,
+            error.PackageIgnored,
+            error.DuplicateTarget,
+            error.InvalidArchitecture,
+            error.UnsatisfiedDependencies,
+            error.ConflictingDependencies,
+            error.DuplicateFilename,
+            => .resolution,
+            error.InvalidTransactionFlags, error.InvalidSnapshot => .invalid_argument,
+            error.DatabaseNotFound, error.InvalidDatabase, error.IncompleteMetadata => .database,
+            error.UnsupportedPackageOrigin => .unsupported,
+            error.ChecksumMismatch,
+            error.ChecksumMissing,
+            error.SignatureMissing,
+            error.InvalidSignature,
+            error.SignatureTooLarge,
+            error.KeyImportDeclined,
+            error.KeyImportFailed,
+            error.KeyAcquisitionUnavailable,
+            error.GpgFailed,
+            error.InvalidKeySource,
+            error.PackageIdentityMismatch,
+            => .integrity,
+            error.InvalidPath,
+            error.InvalidOption,
+            error.InvalidVersion,
+            error.InvalidCharacter,
+            error.InvalidPackageRelation,
+            error.InvalidDatabaseName,
+            error.ReservedDatabaseName,
+            error.ImmutablePath,
+            error.InvalidAnswer,
+            error.InvalidRegex,
+            => .invalid_argument,
+            error.DuplicateDatabase,
+            error.DatabaseNotLoaded,
+            error.DatabaseAlreadyLoaded,
+            error.UnsupportedDatabaseVersion,
+            error.InvalidDatabaseEntry,
+            error.InvalidSqliteDatabase,
+            error.DuplicatePackage,
+            error.InvalidPackageFilename,
+            error.ArchiveFailed,
+            => .database,
+            error.ForeignOwner, error.StaleDatabaseReference, error.StalePackageReference => .stale_reference,
+            error.CallbackReentry, error.OwnerBusy, error.TransactionActive, error.DatabaseLocked => .busy,
+            error.InvalidTransactionState,
+            error.TransactionNotInitialized,
+            error.InvalidPackageOwnership,
+            error.TransactionNotLocked,
+            => .invalid_argument,
+            error.StaleDatabaseState, error.LockOwnershipLost, error.LockNotHeld => .stale_reference,
+            error.CommitUnavailable => .unsupported,
+            error.Cancelled => .cancelled,
+            error.UnsupportedDatabaseBackend => .unsupported,
+            else => .io,
+        },
+    };
 }
 
 pub fn format(self: Diagnostic, writer: *std.Io.Writer) std.Io.Writer.Error!void {

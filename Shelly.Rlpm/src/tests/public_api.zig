@@ -1,6 +1,16 @@
 //! A separate consumer module: imports alone do not instantiate lazy function bodies.
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
+const OwnerTests = @import("owner.zig");
+const MetadataTests = @import("metadata.zig");
+const DatabaseTests = @import("database.zig");
+const VerificationTests = @import("verification.zig");
+const ResolverTests = @import("resolver.zig");
+const TransactionTests = @import("transaction.zig");
+const DownloadTests = @import("download.zig");
+const PreflightTests = @import("preflight.zig");
+const HooksTests = @import("hooks.zig");
+const ExecutorTests = @import("executor.zig");
 
 test "public API constructs, compares, and releases versions" {
     var older = try rlpm.Version.init("1:2.0-1", std.testing.allocator);
@@ -39,7 +49,10 @@ test "public Owner retains two repositories and releases their configuration" {
     try std.testing.expectEqual(2, owner.syncDatabases().len);
     try std.testing.expectEqual(0, (try owner.packageIds(owner.localDatabase().?)).len);
     const core = owner.findDatabase("core").?;
-    try std.testing.expectEqualStrings("https://example.invalid/core", (try owner.database(core)).servers.items[0]);
+    try std.testing.expectEqualStrings(
+        "https://example.invalid/core",
+        (try owner.database(core)).servers.items[0],
+    );
     try owner.unregisterDatabase(core);
     try std.testing.expectError(error.StaleDatabaseReference, owner.database(core));
     try std.testing.expectEqualStrings("cachyos", owner.syncDatabases()[0].name);
@@ -52,24 +65,26 @@ test "public Owner retains two repositories and releases their configuration" {
 }
 
 test {
-    _ = @import("owner.zig");
+    _ = OwnerTests;
 }
 
 test {
-    _ = @import("metadata.zig");
+    _ = MetadataTests;
 }
 
 test {
-    _ = @import("database.zig");
-    _ = @import("verification.zig");
-    _ = @import("resolver.zig");
-    _ = @import("transaction.zig");
+    _ = DatabaseTests;
+    _ = VerificationTests;
+    _ = ResolverTests;
+    _ = TransactionTests;
 }
 
 test {
-    _ = @import("download.zig");
-    _ = @import("preflight.zig");
-    _ = @import("hooks.zig");
+    _ = DownloadTests;
+    _ = PreflightTests;
+    _ = HooksTests;
 }
 
-test { _ = @import("executor.zig"); }
+test {
+    _ = ExecutorTests;
+}

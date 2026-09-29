@@ -1,5 +1,6 @@
 //! Fixture executable copied into a disposable root. No package services.
 const std = @import("std");
+
 const c = @cImport({
     @cUndef("_FORTIFY_SOURCE");
     @cDefine("_FORTIFY_SOURCE", "0");
@@ -11,11 +12,13 @@ const c = @cImport({
     @cInclude("netinet/in.h");
     @cInclude("signal.h");
 });
+
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     if (args.len == 2 and std.mem.eql(u8, args[1], "environment")) {
         var cwd: [4096]u8 = undefined;
-        if (c.getcwd(&cwd, cwd.len) == null or !std.mem.eql(u8, std.mem.sliceTo(&cwd, 0), "/")) return error.WrongCwd;
+        if (c.getcwd(&cwd, cwd.len) == null or !std.mem.eql(u8, std.mem.sliceTo(&cwd, 0), "/"))
+            return error.WrongCwd;
         if (c.getenv("BASH_ENV") != null) return error.UnsafeEnvironment;
         const level = c.getenv("SHLVL") orelse return error.MissingShellLevel;
         if (!std.mem.eql(u8, std.mem.span(level), "7")) return error.WrongShellLevel;

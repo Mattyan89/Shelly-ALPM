@@ -1,6 +1,7 @@
 //! Explicit privileged integration target. Never part of the ordinary test step.
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
+
 test "root download sandbox drops credentials and preserves the parent across all switches" {
     if (std.c.getuid() != 0) return error.RootSandboxIntegrationUnavailable;
     const a = std.testing.allocator;
@@ -19,14 +20,23 @@ test "root download sandbox drops credentials and preserves the parent across al
         defer a.free(source);
         const input = try std.Io.Dir.cwd().createFile(io, source, .{ .permissions = .fromMode(0o600) });
         try input.writeStreamingAll(io, "private");
-        try input.setTimestamps(io, .{ .modify_timestamp = .{ .new = .{ .nanoseconds = 1600000000000000000 } } });
+        try input.setTimestamps(
+            io,
+            .{
+                .modify_timestamp = .{ .new = .{ .nanoseconds = 1600000000000000000 } },
+            },
+        );
         input.close(io);
         var owner = try rlpm.Owner.init(io, a, .{
             .root = path,
             .database_path = path,
             .cache_directories = &.{cache},
             .sandbox_user = "nobody",
-            .sandbox = .{ .disable_filesystem = bits & 1 != 0, .disable_syscalls = bits & 2 != 0, .disable_network = bits & 4 != 0 },
+            .sandbox = .{
+                .disable_filesystem = bits & 1 != 0,
+                .disable_syscalls = bits & 2 != 0,
+                .disable_network = bits & 4 != 0,
+            },
         }, &.{});
         defer owner.deinit() catch unreachable;
         const url = try std.fmt.allocPrint(a, "file://{s}", .{source});
