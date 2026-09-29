@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const output = @import("../output/config.zig");
 const colors = @import("../output/colors.zig");
@@ -559,7 +560,7 @@ fn writeFailure(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not fetch Arch Linux news. {0s}\n\nTechnical details: {1s}",
-        .{ @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.cause(err), @errorName(err) },
     );
     if (options.ui_mode)
         try output.writeErrorFrame(context, message)

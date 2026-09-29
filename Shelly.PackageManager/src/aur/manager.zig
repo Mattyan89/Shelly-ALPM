@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 
 const alpm_module = @import("../alpm/manager.zig");
 const alpm_bindings = struct {
@@ -1607,7 +1608,7 @@ pub const Manager = struct {
         const artifacts = self.buildPreparedPackage(dependency, &.{dependency.package_name}, false) catch |err| {
             try self.checkCancelled();
             if (err == error.PkgbuildReviewDeclined and self.upgrade_reviews != null) return err;
-            const failure_message = std.fmt.allocPrint(self.allocator, "Could not build AUR dependency {0f} required by the requested package. {1s} See the dependency build details.\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(dependency.package_name), @import("diagnostics").cause(err), @errorName(err) }) catch null;
+            const failure_message = std.fmt.allocPrint(self.allocator, "Could not build AUR dependency {0f} required by the requested package. {1s} See the dependency build details.\n\nTechnical details: {2s}", .{ diagnostics.safe(dependency.package_name), diagnostics.cause(err), @errorName(err) }) catch null;
             defer if (failure_message) |message| self.allocator.free(message);
             self.raisePackageProgress(.aur_package_failed, dependency.package_name, 1, 1, failure_message orelse "Could not build a required AUR dependency. See the dependency build details.");
             return err;
@@ -1767,7 +1768,7 @@ pub const Manager = struct {
             const providers = self.aur_client.findProviders(name) catch continue;
             defer rpc.deinitStrings(self.allocator, providers);
             const chosen = self.chooseProvider(name, providers) orelse {
-                const message = try std.fmt.allocPrint(self.allocator, "Optional dependency '{0f}' has no selected AUR provider. Select a provider or deselect this optional dependency.", .{@import("diagnostics").safe(name)});
+                const message = try std.fmt.allocPrint(self.allocator, "Optional dependency '{0f}' has no selected AUR provider. Select a provider or deselect this optional dependency.", .{diagnostics.safe(name)});
                 defer self.allocator.free(message);
                 self.dispatcher.raiseError(.{ .message = message });
                 continue;
@@ -2372,10 +2373,10 @@ pub const Manager = struct {
                 self.allocator,
                 "Could not generate .SRCINFO for {f} (exit code {d}).\n{s}{f}",
                 .{
-                    @import("diagnostics").safe(package_name),
+                    diagnostics.safe(package_name),
                     result.exit_code,
                     if (result.stderr.len > 16 * 1024) "[earlier output omitted]\n" else "",
-                    @import("diagnostics").safe(result.stderr[result.stderr.len - @min(result.stderr.len, 16 * 1024) ..]),
+                    diagnostics.safe(result.stderr[result.stderr.len - @min(result.stderr.len, 16 * 1024) ..]),
                 },
             );
             defer self.allocator.free(message);
@@ -2704,7 +2705,7 @@ pub const Manager = struct {
             defer self.allocator.free(path);
             _ = std.Io.Dir.cwd().statFile(self.io(), path, .{}) catch continue;
             if (self.removeCacheDirectory(path) catch false) continue;
-            const message = std.fmt.allocPrint(self.allocator, "Could not remove build artifacts from {0f}. The remaining files can be reviewed after the build.", .{@import("diagnostics").safe(path)}) catch continue;
+            const message = std.fmt.allocPrint(self.allocator, "Could not remove build artifacts from {0f}. The remaining files can be reviewed after the build.", .{diagnostics.safe(path)}) catch continue;
             defer self.allocator.free(message);
             self.raiseInfo(.debug_output, null, message, null, null);
         }
@@ -2975,7 +2976,7 @@ pub const Manager = struct {
     }
 
     fn raiseBestEffortFailure(self: *Self, package_name: []const u8, context: []const u8, err: anyerror) void {
-        const message = std.fmt.allocPrint(self.allocator, "Could not complete optional AUR step {0f} for the requested package. {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(context), @import("diagnostics").cause(err), @errorName(err) }) catch {
+        const message = std.fmt.allocPrint(self.allocator, "Could not complete optional AUR step {0f} for the requested package. {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(context), diagnostics.cause(err), @errorName(err) }) catch {
             self.raiseBuildLine(package_name, "Could not complete an optional AUR step.", true);
             return;
         };

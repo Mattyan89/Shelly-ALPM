@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
@@ -434,7 +435,7 @@ fn writeFailure(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not export the backup to {0f}. {1s}\n\nTechnical details: {2s}",
-        .{ @import("diagnostics").safe(optionValue(invocation, "--directory") orelse "the configured backup directory"), @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.safe(optionValue(invocation, "--directory") orelse "the configured backup directory"), diagnostics.cause(err), @errorName(err) },
     );
     if (invocation.globals.ui_mode)
         try output.writeErrorFrame(context, message)
@@ -450,7 +451,7 @@ fn writeImportFailure(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not import the backup from the configured file. {0s}\n\nTechnical details: {1s}",
-        .{ @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.cause(err), @errorName(err) },
     );
     if (invocation.globals.ui_mode)
         try output.writeErrorFrame(context, message)

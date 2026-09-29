@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const parser = @import("../cli/parser.zig");
 const log = @import("log.zig");
@@ -49,7 +50,7 @@ pub fn unimplemented(
 ) !u8 {
     try context.stderr.print(
         "Command '{0f}' is not implemented in this Shelly version. See 'shelly --help' for supported commands.\n",
-        .{@import("diagnostics").safe(invocation.command.path)},
+        .{diagnostics.safe(invocation.command.path)},
     );
     return 1;
 }

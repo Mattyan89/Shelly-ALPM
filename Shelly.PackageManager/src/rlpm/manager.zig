@@ -1,5 +1,8 @@
 //! RLPM implementation of the native package facade. No libalpm imports.
 const std = @import("std");
+const os_utilities = @import("../alpm/distribution-hooks/os_utilities.zig");
+const update_notice = @import("../alpm/distribution-hooks/CachyOS/update_notice.zig");
+const restart_checks = @import("../alpm/restarts.zig");
 const rlpm = @import("Shelly_Rlpm");
 const types = @import("../alpm/types.zig");
 const contract = @import("../alpm/contract.zig");
@@ -61,7 +64,7 @@ pub const Manager = struct {
             try mapping.preparePreview(self.io(), allocator, &self.config, path);
             self.temporary = true;
         };
-        if (@import("../alpm/distribution-hooks/os_utilities.zig").prettyName(allocator, self.io())) |name| {
+        if (os_utilities.prettyName(allocator, self.io())) |name| {
             defer allocator.free(name);
             self.detected_cachyos = std.ascii.eqlIgnoreCase(name, "cachyos");
         }
@@ -598,12 +601,12 @@ pub const Manager = struct {
             defer operation.finish(.success);
             self.dispatcher.setOperation(&operation);
             defer self.dispatcher.setOperation(null);
-            if (!@import("../alpm/distribution-hooks/CachyOS/update_notice.zig").UpdateNotice.init(self.allocator, self.io()).check(self.environ, &self.dispatcher)) return contract.RestartReport.empty(self.allocator);
+            if (!update_notice.UpdateNotice.init(self.allocator, self.io()).check(self.environ, &self.dispatcher)) return contract.RestartReport.empty(self.allocator);
         }
         try self.sync(true);
         try self.execute(.upgrade, &.{}, flags, .already_approved);
         if (flags.dbonly or flags.downloadonly) return contract.RestartReport.empty(self.allocator);
-        return @import("../alpm/restarts.zig").check(self, .{});
+        return restart_checks.check(self, .{});
     }
     pub fn update_packages(self: *Manager, values: [][:0]const u8, flags: types.TransFlag) !void {
         try self.install_packages(values, flags);

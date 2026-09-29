@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const config_manager = @import("../config/manager.zig");
@@ -225,12 +226,12 @@ pub fn dispatch(
                 try context.stderr.print("{s}\n", .{message});
                 return 1;
             }
-            try context.stderr.print("Could not inspect the Flatpak installation before repair. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not inspect the Flatpak installation before repair. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevate) {
             const elevated_exit = elevation.relaunchIfNeeded(context, invocation.arguments) catch |err| {
-                try context.stderr.print("Could not obtain administrator privileges for Flatpak repair. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+                try context.stderr.print("Could not obtain administrator privileges for Flatpak repair. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
                 return 1;
             };
             if (elevated_exit) |exit_code| return exit_code;
@@ -243,7 +244,7 @@ pub fn dispatch(
             invocation.arguments;
         defer if (carries_aur) context.allocator.free(elevated_arguments);
         const elevated_exit = elevation.relaunchIfNeeded(context, elevated_arguments) catch |err| {
-            try context.stderr.print("Could not obtain administrator privileges for package installation. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not obtain administrator privileges for package installation. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevated_exit) |exit_code| return exit_code;
@@ -281,7 +282,7 @@ fn requestsStandardUpgrade(invocation: *const parser.Invocation) bool {
 
 fn confirmStandardUpgrade(context: *runtime.RuntimeContext) !bool {
     var result = list_updates.collectUpdates(context, .standard, .{}) catch |err| {
-        try context.stderr.print("Could not prepare the full standard-package upgrade before installation. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+        try context.stderr.print("Could not prepare the full standard-package upgrade before installation. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
         try context.stderr.flush();
         return err;
     };
@@ -340,7 +341,7 @@ fn confirmStandardUpgradeUi(context: *runtime.RuntimeContext) !bool {
         const message = try std.fmt.allocPrint(
             context.allocator,
             "Could not prepare the full standard-package upgrade before installation. {0s}\n\nTechnical details: {1s}",
-            .{ @import("diagnostics").cause(err), @errorName(err) },
+            .{ diagnostics.cause(err), @errorName(err) },
         );
         defer context.allocator.free(message);
         output.writeErrorFrame(context, message) catch {};

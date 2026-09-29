@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
@@ -162,7 +163,7 @@ pub fn dispatch(
         const arguments = try elevatedPurifyArguments(context, invocation);
         defer context.allocator.free(arguments);
         const elevated_exit = elevation.relaunchIfNeeded(context, arguments) catch |err| {
-            try context.stderr.print("Could not obtain administrator privileges for unneeded-package removal. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not obtain administrator privileges for unneeded-package removal. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevated_exit) |exit_code| return exit_code;
@@ -363,7 +364,7 @@ fn executeQuiet(
         backend,
         options,
     ) catch |err| {
-        try context.stderr.print("Could not remove unneeded packages. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+        try context.stderr.print("Could not remove unneeded packages. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
         return 1;
     };
     defer result.deinit(context.allocator);
@@ -403,7 +404,7 @@ fn executeUi(
         backend,
         options,
     ) catch |err| {
-        const message = try std.fmt.allocPrint(context.allocator, "Could not remove unneeded packages. {0s}\n\nTechnical details: {1s}", .{ @import("diagnostics").cause(err), @errorName(err) });
+        const message = try std.fmt.allocPrint(context.allocator, "Could not remove unneeded packages. {0s}\n\nTechnical details: {1s}", .{ diagnostics.cause(err), @errorName(err) });
         defer context.allocator.free(message);
         try output.writeErrorFrame(context, message);
         try output.writeAlpmInfoFrame(context, "TransactionFailed", failureMessage(backend));
@@ -556,7 +557,7 @@ fn writePlanFailure(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not determine which {0f} packages can be removed. {1s}\n\nTechnical details: {2s}",
-        .{ @import("diagnostics").safe(@tagName(backend)), @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.safe(@tagName(backend)), diagnostics.cause(err), @errorName(err) },
     );
     defer context.allocator.free(message);
     if (invocation.globals.ui_mode)

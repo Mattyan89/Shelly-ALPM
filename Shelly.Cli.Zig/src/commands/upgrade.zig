@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const config_manager = @import("../config/manager.zig");
@@ -83,7 +84,7 @@ pub fn dispatch(
     const running_as_root = elevation.isRoot();
     if (shouldPrepareAllPreview(invocation, running_as_root)) {
         const preview = prepareAllUpgradePreview(context, invocation) catch |err| {
-            try context.stderr.print("Could not prepare the upgrade plan across the selected package sources. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not prepare the upgrade plan across the selected package sources. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (!preview.proceed or !preview.has_updates) return 0;
@@ -92,7 +93,7 @@ pub fn dispatch(
     if (!invocation.globals.ui_mode and requiresElevation(invocation)) {
         if (shouldPrepareStandardPreview(invocation, running_as_root)) {
             const preview = prepareStandardUpgradePreview(context, invocation) catch |err| {
-                try context.stderr.print("Could not prepare the package upgrade plan. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+                try context.stderr.print("Could not prepare the package upgrade plan. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
                 return 1;
             };
             if (!preview.proceed or !preview.has_updates) return 0;
@@ -100,7 +101,7 @@ pub fn dispatch(
         const elevated_arguments = try elevatedUpgradeArguments(context, invocation);
         defer context.allocator.free(elevated_arguments);
         const elevated_exit = elevation.relaunchIfNeeded(context, elevated_arguments) catch |err| {
-            try context.stderr.print("Could not obtain administrator privileges for the system upgrade. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not obtain administrator privileges for the system upgrade. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevated_exit) |exit_code| return exit_code;
@@ -244,7 +245,7 @@ fn buildAllUpgradePlan(
                     continue;
                 }
             }
-            try context.stdout.print("Could not check for {0f} upgrades. {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(backend.displayName()), @import("diagnostics").cause(err), @errorName(err) });
+            try context.stdout.print("Could not check for {0f} upgrades. {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(backend.displayName()), diagnostics.cause(err), @errorName(err) });
             try context.stdout.flush();
             continue;
         };
@@ -805,7 +806,7 @@ fn rebaseEolFlatpaks(
                 const warning = try std.fmt.allocPrint(
                     context.allocator,
                     "Could not replace end-of-life Flatpak {0f} with {1f}. {2s} Continuing with the remaining upgrades.\n\nTechnical details: {3s}",
-                    .{ @import("diagnostics").safe(status.id), @import("diagnostics").safe(target.id), @import("diagnostics").cause(err), @errorName(err) },
+                    .{ diagnostics.safe(status.id), diagnostics.safe(target.id), diagnostics.cause(err), @errorName(err) },
                 );
                 defer context.allocator.free(warning);
                 PackageManager.flatpak.eol.emitStatus(operation_context, .update, .warning, status.id, warning);
@@ -816,7 +817,7 @@ fn rebaseEolFlatpaks(
             const warning = try std.fmt.allocPrint(
                 context.allocator,
                 "Could not replace end-of-life Flatpak {0f} with {1f}. Continuing with the remaining upgrades.",
-                .{ @import("diagnostics").safe(status.id), @import("diagnostics").safe(target.id) },
+                .{ diagnostics.safe(status.id), diagnostics.safe(target.id) },
             );
             defer context.allocator.free(warning);
             PackageManager.flatpak.eol.emitStatus(operation_context, .update, .warning, status.id, warning);

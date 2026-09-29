@@ -1,4 +1,5 @@
 const std = @import("std");
+const architecture_utils = @import("../alpm/architectures.zig");
 const rlpm = @import("Shelly_Rlpm");
 const Config = @import("../alpm/configuration.zig").Configuration.Config;
 const SigLevel = @import("../alpm/types.zig").SigLevel;
@@ -21,7 +22,7 @@ pub fn createOwner(io: std.Io, allocator: std.mem.Allocator, c: *const Config, p
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    var arches = try @import("../alpm/architectures.zig").expand(a, c.architectures.items, c.architecture);
+    var arches = try architecture_utils.expand(a, c.architectures.items, c.architecture);
     const server_arch = arches.items[0];
     var hooks: std.ArrayList([]const u8) = .empty;
     const system_hooks = try std.fs.path.join(a, &.{ c.root_directory, "usr/share/libalpm/hooks" });

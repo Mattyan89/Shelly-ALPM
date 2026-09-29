@@ -1,5 +1,6 @@
 //! Shared transport extracted from PackageManager; no backend or UI dependency.
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 pub const HttpClient = @import("ShellyHttp");
 const Curl = @import("Curl.zig");
 const HttpDate = @import("HttpDate.zig");
@@ -411,7 +412,7 @@ pub const CoreDownloader = struct {
             self,
         ) catch |err| {
             if (err == error.UnsupportedProxyScheme) return self.curlDownload(url, destination_path, force);
-            self.logErr("Could not prepare the download request to {0f} for {1f}. {2s}\n\nTechnical details: {3s}", .{ @import("diagnostics").safe(url), @import("diagnostics").safe(destination_path), @import("diagnostics").cause(err), @errorName(err) });
+            self.logErr("Could not prepare the download request to {0f} for {1f}. {2s}\n\nTechnical details: {3s}", .{ diagnostics.safe(url), diagnostics.safe(destination_path), diagnostics.cause(err), @errorName(err) });
             return mapRequestError(err);
         };
         defer req.deinit();
@@ -429,7 +430,7 @@ pub const CoreDownloader = struct {
             if (mapped == DownloadError.HeaderTimeout) {
                 self.logErr("Timed out waiting for response headers from {s}", .{url});
             } else {
-                self.logErr("Could not read the download response headers from {0f} for {1f}. {2s}\n\nTechnical details: {3s}", .{ @import("diagnostics").safe(url), @import("diagnostics").safe(destination_path), @import("diagnostics").cause(err), @errorName(err) });
+                self.logErr("Could not read the download response headers from {0f} for {1f}. {2s}\n\nTechnical details: {3s}", .{ diagnostics.safe(url), diagnostics.safe(destination_path), diagnostics.cause(err), @errorName(err) });
             }
             return mapped;
         };
@@ -447,7 +448,7 @@ pub const CoreDownloader = struct {
         switch (status.class()) {
             .success => {},
             .server_error => {
-                self.logErr("Could not download {0f} from {1f}: the server returned HTTP {2d}.", .{ @import("diagnostics").safe(destination_path), @import("diagnostics").safe(url), @intFromEnum(status) });
+                self.logErr("Could not download {0f} from {1f}: the server returned HTTP {2d}.", .{ diagnostics.safe(destination_path), diagnostics.safe(url), @intFromEnum(status) });
                 return DownloadError.NetworkError;
             },
             else => {
@@ -490,7 +491,7 @@ pub const CoreDownloader = struct {
         defer self.allocator.free(part_path);
         var part_exists = false;
         var file = std.Io.Dir.cwd().createFile(self.io, part_path, .{ .exclusive = self.configuration.resume_path == null, .truncate = resume_offset == 0 }) catch |err| {
-            self.logErr("Could not create temporary file {0f}: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(part_path), @import("diagnostics").cause(err), @errorName(err) });
+            self.logErr("Could not create temporary file {0f}: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(part_path), diagnostics.cause(err), @errorName(err) });
             return DownloadError.FileError;
         };
         part_exists = true;
@@ -522,7 +523,7 @@ pub const CoreDownloader = struct {
                     return DownloadError.BodyTimeout; // retryable -> mirror failover / retry
                 },
                 else => {
-                    self.logErr("Could not finish downloading {0f} from {1f}. {2s}", .{ @import("diagnostics").safe(destination_path), @import("diagnostics").safe(url), if (response.bodyErr()) |failure| @import("diagnostics").cause(failure) else @import("diagnostics").unknown_cause });
+                    self.logErr("Could not finish downloading {0f} from {1f}. {2s}", .{ diagnostics.safe(destination_path), diagnostics.safe(url), if (response.bodyErr()) |failure| diagnostics.cause(failure) else diagnostics.unknown_cause });
                     return DownloadError.NetworkError;
                 },
             };
@@ -530,7 +531,7 @@ pub const CoreDownloader = struct {
 
             if (self.configuration.maximum_size) |max| if (n > max -| downloaded) return error.SizeExceeded;
             file.writePositionalAll(self.io, copy_buffer[0..n], downloaded) catch |err| {
-                self.logErr("Could not write to {0f}: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(destination_path), @import("diagnostics").cause(err), @errorName(err) });
+                self.logErr("Could not write to {0f}: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(destination_path), diagnostics.cause(err), @errorName(err) });
                 return DownloadError.FileError;
             };
 
@@ -549,7 +550,7 @@ pub const CoreDownloader = struct {
             if (downloaded != expected) {
                 self.logErr(
                     "Download of {0f} was incomplete: expected {1d} bytes, received {2d}. Download the file again.",
-                    .{ @import("diagnostics").safe(url), expected, downloaded },
+                    .{ diagnostics.safe(url), expected, downloaded },
                 );
                 return DownloadError.NetworkError;
             }
@@ -558,21 +559,21 @@ pub const CoreDownloader = struct {
         if (remote_mtime) |mtime| file.setTimestamps(self.io, .{ .modify_timestamp = .{ .new = mtime } }) catch return error.FileError;
         if (self.configuration.final_permissions) |permissions| {
             file.setPermissions(self.io, permissions) catch |err| {
-                self.logErr("Could not set permissions on temporary file {0f}: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(part_path), @import("diagnostics").cause(err), @errorName(err) });
+                self.logErr("Could not set permissions on temporary file {0f}: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(part_path), diagnostics.cause(err), @errorName(err) });
                 return DownloadError.FileError;
             };
         }
 
         if (self.configuration.file_durability == .sync_before_rename) {
             file.sync(self.io) catch |err| {
-                self.logErr("Could not sync temporary file {0f}: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(part_path), @import("diagnostics").cause(err), @errorName(err) });
+                self.logErr("Could not sync temporary file {0f}: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(part_path), diagnostics.cause(err), @errorName(err) });
                 return DownloadError.FileError;
             };
         }
         file.close(self.io);
         file_open = false;
         std.Io.Dir.cwd().rename(part_path, std.Io.Dir.cwd(), destination_path, self.io) catch |err| {
-            self.logErr("Could not replace {0f} with completed download: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(destination_path), @import("diagnostics").cause(err), @errorName(err) });
+            self.logErr("Could not replace {0f} with completed download: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(destination_path), diagnostics.cause(err), @errorName(err) });
             return DownloadError.FileError;
         };
         part_exists = false;
@@ -658,12 +659,12 @@ pub const CoreDownloader = struct {
     fn normalizeExistingPermissions(self: *CoreDownloader, destination_path: []const u8) DownloadError!void {
         const permissions = self.configuration.final_permissions orelse return;
         var file = std.Io.Dir.cwd().openFile(self.io, destination_path, .{ .mode = .read_write }) catch |err| {
-            self.logErr("Could not open {0f} while normalizing permissions: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(destination_path), @import("diagnostics").cause(err), @errorName(err) });
+            self.logErr("Could not open {0f} while normalizing permissions: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(destination_path), diagnostics.cause(err), @errorName(err) });
             return DownloadError.FileError;
         };
         defer file.close(self.io);
         file.setPermissions(self.io, permissions) catch |err| {
-            self.logErr("Could not normalize permissions on {0f}: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(destination_path), @import("diagnostics").cause(err), @errorName(err) });
+            self.logErr("Could not normalize permissions on {0f}: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(destination_path), diagnostics.cause(err), @errorName(err) });
             return DownloadError.FileError;
         };
     }

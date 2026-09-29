@@ -1,3 +1,4 @@
+const native_backend = @import("../config/native_backend.zig");
 const config = @import("config.zig");
 const downgrade = @import("downgrade.zig");
 const backup = @import("backup.zig");
@@ -28,7 +29,7 @@ pub fn dispatch(
     invocation: *const parser.Invocation,
 ) !u8 {
     if (try config.dispatch(context, invocation)) |exit_code| return exit_code;
-    try @import("../config/native_backend.zig").apply(context);
+    try native_backend.apply(context);
     if (try search_install.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try upgrade.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try sync.dispatch(context, invocation)) |exit_code| return exit_code;

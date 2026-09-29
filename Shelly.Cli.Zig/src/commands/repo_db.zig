@@ -3,6 +3,7 @@
 //! carries progress and results, stderr carries warnings and errors.
 
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const parser = @import("../cli/parser.zig");
 const runtime = @import("../runtime/context.zig");
@@ -128,7 +129,7 @@ fn executeRemove(
         try context.stdout.print("removing '{s}' from repository '{s}'.\n", .{ entry_dir, db.db_filename });
     }
     for (summary.not_found) |name| {
-        try context.stderr.print("Could not remove '{0f}' because it is not present in repository database '{1f}'. Check the package name and database path.\n", .{ @import("diagnostics").safe(name), @import("diagnostics").safe(db.db_filename) });
+        try context.stderr.print("Could not remove '{0f}' because it is not present in repository database '{1f}'. Check the package name and database path.\n", .{ diagnostics.safe(name), diagnostics.safe(db.db_filename) });
     }
     if (summary.not_found.len > 0) {
         try context.stderr.print("The repository database was not modified because the package checks failed. Resolve the reported package errors before trying again.\n", .{});
@@ -212,11 +213,11 @@ fn signerFor(
 fn printFailure(context: *runtime.RuntimeContext, failure: Failure) !void {
     const path = failure.package_path;
     switch (failure.kind) {
-        .missing_file => try context.stderr.print("Could not find package archive '{0f}'. Check the path and try again.\n", .{@import("diagnostics").safe(path)}),
-        .not_a_package => try context.stderr.print("Could not add '{0f}' to the repository because it is not a supported package archive. Select a built package archive.\n", .{@import("diagnostics").safe(path)}),
-        .invalid_package => try context.stderr.print("Could not add '{0f}' to the repository because the archive has no .PKGINFO metadata. Rebuild or obtain a complete package archive.\n", .{@import("diagnostics").safe(path)}),
-        .armored_signature => try context.stderr.print("Could not add the signature for '{0f}' because it is ASCII-armored. Supply a binary detached signature.\n", .{@import("diagnostics").safe(path)}),
-        .oversized_signature => try context.stderr.print("Could not add the signature for '{0f}' because it exceeds the 16,384-byte limit. Supply a supported detached signature.\n", .{@import("diagnostics").safe(path)}),
+        .missing_file => try context.stderr.print("Could not find package archive '{0f}'. Check the path and try again.\n", .{diagnostics.safe(path)}),
+        .not_a_package => try context.stderr.print("Could not add '{0f}' to the repository because it is not a supported package archive. Select a built package archive.\n", .{diagnostics.safe(path)}),
+        .invalid_package => try context.stderr.print("Could not add '{0f}' to the repository because the archive has no .PKGINFO metadata. Rebuild or obtain a complete package archive.\n", .{diagnostics.safe(path)}),
+        .armored_signature => try context.stderr.print("Could not add the signature for '{0f}' because it is ASCII-armored. Supply a binary detached signature.\n", .{diagnostics.safe(path)}),
+        .oversized_signature => try context.stderr.print("Could not add the signature for '{0f}' because it exceeds the 16,384-byte limit. Supply a supported detached signature.\n", .{diagnostics.safe(path)}),
     }
 }
 
@@ -263,28 +264,28 @@ fn reportError(
 ) !u8 {
     switch (err) {
         error.LockHeld => {
-            try context.stderr.print("Could not lock repository database '{0f}' using '{1f}'. If another repository update is running, wait for it to finish.\n", .{ @import("diagnostics").safe(targets.db_path), @import("diagnostics").safe(targets.lock_path) });
+            try context.stderr.print("Could not lock repository database '{0f}' using '{1f}'. If another repository update is running, wait for it to finish.\n", .{ diagnostics.safe(targets.db_path), diagnostics.safe(targets.lock_path) });
             return 2;
         },
         error.DatabaseNotFound => try context.stderr.print(
             "Could not find repository database '{0f}'. Check the path and try again.\n",
-            .{@import("diagnostics").safe(targets.db_path)},
+            .{diagnostics.safe(targets.db_path)},
         ),
         error.UnsupportedExtension => try context.stderr.print(
             "Unsupported repository database filename '{0f}'. Use a filename ending in.db.tar.<compression> with a supported compression format.\n",
-            .{@import("diagnostics").safe(targets.db_path)},
+            .{diagnostics.safe(targets.db_path)},
         ),
         error.DirectoryMissing => try context.stderr.print(
             "Directory '{0f}' does not exist. Create it or select an existing directory.\n",
-            .{@import("diagnostics").safe(targets.db_dir)},
+            .{diagnostics.safe(targets.db_dir)},
         ),
         error.InvalidDatabase => try context.stderr.print(
             "Could not read repository database '{0f}' because it is corrupted. Restore it from a known-good copy or rebuild it from the package archives.\n",
-            .{@import("diagnostics").safe(targets.db_path)},
+            .{diagnostics.safe(targets.db_path)},
         ),
         else => try context.stderr.print(
             "Could not {0f} the package database: {1s}\n\nTechnical details: {2s}\n",
-            .{ @import("diagnostics").safe(verb), @import("diagnostics").cause(err), @errorName(err) },
+            .{ diagnostics.safe(verb), diagnostics.cause(err), @errorName(err) },
         ),
     }
     return 1;

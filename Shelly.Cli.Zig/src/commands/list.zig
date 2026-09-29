@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const config_manager = @import("../config/manager.zig");
@@ -296,7 +297,7 @@ fn writeConfiguredRemoteFailure(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not list Flatpak remotes. {0s}\n\nTechnical details: {1s}",
-        .{ @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.cause(err), @errorName(err) },
     );
     defer context.allocator.free(message);
     if (invocation.globals.ui_mode)
@@ -361,7 +362,7 @@ fn writeRemoteQueryFailure(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not read the AppStream catalog for Flatpak remote '{0f}'. {1s}\n\nTechnical details: {2s}",
-        .{ @import("diagnostics").safe(query), @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.safe(query), diagnostics.cause(err), @errorName(err) },
     );
     defer context.allocator.free(message);
     if (invocation.globals.ui_mode)
@@ -569,7 +570,7 @@ fn writeQueryFailure(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not list installed {0f} objects: {1s}\n\nTechnical details: {2s}",
-        .{ @import("diagnostics").safe(@tagName(backend)), @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.safe(@tagName(backend)), diagnostics.cause(err), @errorName(err) },
     );
     defer context.allocator.free(message);
     if (invocation.globals.ui_mode)

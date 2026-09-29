@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const config_manager = @import("../config/manager.zig");
@@ -93,7 +94,7 @@ fn executeWithRunner(
         const message = try std.fmt.allocPrint(
             context.allocator,
             "Could not {0f} {1f}: {2s}\n\nTechnical details: {3s}",
-            .{ @import("diagnostics").safe(if (kill) "stop" else "launch"), @import("diagnostics").safe(backendName(backend)), @import("diagnostics").cause(err), @errorName(err) },
+            .{ diagnostics.safe(if (kill) "stop" else "launch"), diagnostics.safe(backendName(backend)), diagnostics.cause(err), @errorName(err) },
         );
         defer context.allocator.free(message);
         if (invocation.globals.ui_mode)
@@ -121,7 +122,7 @@ fn listRunningWith(
         return try reportRunValidationFailure(context, invocation, "--list does not accept a package.");
 
     var result = lister.list(context) catch |err| {
-        const message = try std.fmt.allocPrint(context.allocator, "Could not list running Flatpaks: {0s}\n\nTechnical details: {1s}", .{ @import("diagnostics").cause(err), @errorName(err) });
+        const message = try std.fmt.allocPrint(context.allocator, "Could not list running Flatpaks: {0s}\n\nTechnical details: {1s}", .{ diagnostics.cause(err), @errorName(err) });
         defer context.allocator.free(message);
         if (invocation.globals.ui_mode)
             try output.writeErrorFrame(context, message)

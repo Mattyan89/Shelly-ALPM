@@ -5,6 +5,9 @@
 //! repository transaction without depending on the `pacstrap` shell script.
 
 const std = @import("std");
+const backend_selection = @import("backend.zig");
+const diagnostics_module = @import("diagnostics");
+const native_output = @import("native_output");
 const manager_module = @import("manager.zig");
 const events = @import("events.zig");
 const operation_api = @import("operation_context");
@@ -15,7 +18,7 @@ pub const wrapper_argument = "__shellystrap";
 pub const marker_name = ".shelly-bootstrap-root";
 
 pub const Options = struct {
-    backend: ?@import("backend.zig").Backend = null,
+    backend: ?backend_selection.Backend = null,
     root_path: []const u8,
     config_path: []const u8 = "/etc/pacman.conf",
     host_gpg_directory: []const u8 = "/etc/pacman.d/gnupg",
@@ -36,11 +39,11 @@ pub fn runInternal(
     arguments: []const []const u8,
 ) u8 {
     const options = parseArguments(arguments) catch |err| {
-        stderr.print("Could not provision the isolated build root because the bootstrap request is invalid. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) }) catch {};
+        stderr.print("Could not provision the isolated build root because the bootstrap request is invalid. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics_module.cause(err), @errorName(err) }) catch {};
         return 2;
     };
     _ = bootstrapReporting(allocator, io, environ, options, stderr) catch |err| {
-        stderr.print("Could not provision the isolated build root. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) }) catch {};
+        stderr.print("Could not provision the isolated build root. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics_module.cause(err), @errorName(err) }) catch {};
         return 1;
     };
     return 0;
@@ -48,7 +51,7 @@ pub fn runInternal(
 
 pub fn parseArguments(arguments: []const []const u8) !Options {
     var root_path: ?[]const u8 = null;
-    var backend: ?@import("backend.zig").Backend = null;
+    var backend: ?backend_selection.Backend = null;
     var config_path: []const u8 = "/etc/pacman.conf";
     var gpg_directory: []const u8 = "/etc/pacman.d/gnupg";
     var index: usize = 0;
@@ -72,7 +75,7 @@ pub fn parseArguments(arguments: []const []const u8) !Options {
         } else if (std.mem.eql(u8, argument, "--backend")) {
             index += 1;
             if (index >= arguments.len) return error.InvalidBootstrapArguments;
-            backend = try @import("backend.zig").Backend.parse(arguments[index]);
+            backend = try backend_selection.Backend.parse(arguments[index]);
             try backend.?.validate();
         } else if (std.mem.eql(u8, argument, "--config")) {
             index += 1;
@@ -252,7 +255,7 @@ const DiagnosticOutput = struct {
         if (status.level == .debug) return;
         // Hooks and scriptlets also reach the dedicated legacy handlers.
         if (status.code) |code| if (std.mem.eql(u8, code, "alpm.scriptlet")) return;
-        if (status.native_code == @intFromEnum(@import("native_output").EventType.hook_run_start)) return;
+        if (status.native_code == @intFromEnum(native_output.EventType.hook_run_start)) return;
         defer self.stderr.flush() catch {};
         if (status.package_name) |name| {
             self.stderr.print("shellystrap: {s}: {s}\n", .{ name, status.message }) catch {};
@@ -316,7 +319,7 @@ const DiagnosticOutput = struct {
         self.lock();
         defer self.unlock();
         defer self.stderr.flush() catch {};
-        self.stderr.print("Could not provision the isolated build root: {0f}.\n", .{@import("diagnostics").safe(std.mem.trimEnd(u8, args.message, "\r\n"))}) catch {};
+        self.stderr.print("Could not provision the isolated build root: {0f}.\n", .{diagnostics_module.safe(std.mem.trimEnd(u8, args.message, "\r\n"))}) catch {};
     }
 
     fn handleScriptlet(data: ?*anyopaque, args: events.ScriptletArgs) void {
@@ -414,7 +417,7 @@ fn finalizeRoot(
             null,
         ) catch |err| {
             var detail_buffer: [256]u8 = undefined;
-            const detail = std.fmt.bufPrint(&detail_buffer, "Could not start the setup command while preparing the isolated build root. {0s}\n\nTechnical details: {1s}", .{ @import("diagnostics").cause(err), @errorName(err) }) catch
+            const detail = std.fmt.bufPrint(&detail_buffer, "Could not start the setup command while preparing the isolated build root. {0s}\n\nTechnical details: {1s}", .{ diagnostics_module.cause(err), @errorName(err) }) catch
                 "Could not start the setup command while preparing the isolated build root.";
             reportFinalizerFailure(diagnostic_writer, finalizer.name, detail);
             return error.BootstrapFinalizerFailed;

@@ -1,4 +1,7 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
+const restart_checks = @import("restarts.zig");
+const architecture_utils = @import("architectures.zig");
 const native_output = @import("native_output");
 const bindings = @import("bindings.zig");
 const events = @import("events.zig");
@@ -206,13 +209,13 @@ pub const Manager = struct {
 
         self.handle = rawLibalpm.alpm_initialize(self.config.root_directory, self.config.database_path, &err) orelse {
             const code: c_int = @intCast(err);
-            const message = std.fmt.allocPrint(self.allocator, "Could not open the package databases. {0f}", .{@import("diagnostics").safe(std.mem.span(rawLibalpm.alpm_strerror(err)))}) catch "Could not open the package databases. Shelly could not allocate memory for the error details.";
+            const message = std.fmt.allocPrint(self.allocator, "Could not open the package databases. {0f}", .{diagnostics.safe(std.mem.span(rawLibalpm.alpm_strerror(err)))}) catch "Could not open the package databases. Shelly could not allocate memory for the error details.";
             defer self.allocator.free(message);
 
             if (init_operation) |*operation| {
                 operation.reportError(error.InitFailed, message, "alpm", code, false);
             } else {
-                std.log.err("Could not open the package databases. {0f}", .{@import("diagnostics").safe(std.mem.span(rawLibalpm.alpm_strerror(err)))});
+                std.log.err("Could not open the package databases. {0f}", .{diagnostics.safe(std.mem.span(rawLibalpm.alpm_strerror(err)))});
             }
             return error.InitFailed;
         };
@@ -304,11 +307,11 @@ pub const Manager = struct {
         defer self.allocator.free(syncDirectory);
 
         std.Io.Dir.cwd().createDirPath(self.io(), syncDirectory) catch |err| {
-            std.log.err("Could not create database sync directory {0f}: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(syncDirectory), @import("diagnostics").cause(err), @errorName(err) });
+            std.log.err("Could not create database sync directory {0f}: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(syncDirectory), diagnostics.cause(err), @errorName(err) });
             return TransactionError.SyncDbFailed;
         };
         std.Io.Dir.cwd().setFilePermissions(self.io(), syncDirectory, database_directory_permissions, .{}) catch |err| {
-            std.log.err("Could not set database sync directory permissions on {0f}: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(syncDirectory), @import("diagnostics").cause(err), @errorName(err) });
+            std.log.err("Could not set database sync directory permissions on {0f}: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(syncDirectory), diagnostics.cause(err), @errorName(err) });
             return TransactionError.SyncDbFailed;
         };
 
@@ -369,7 +372,7 @@ pub const Manager = struct {
         // without individually forcing a filesystem transaction. Commit the
         // directory entries once after every worker has finished instead.
         syncDatabaseDirectory(self.io(), syncDirectory) catch |err| {
-            std.log.err("Could not synchronize database directory {0f}: {1s}\n\nTechnical details: {2s}", .{ @import("diagnostics").safe(syncDirectory), @import("diagnostics").cause(err), @errorName(err) });
+            std.log.err("Could not synchronize database directory {0f}: {1s}\n\nTechnical details: {2s}", .{ diagnostics.safe(syncDirectory), diagnostics.cause(err), @errorName(err) });
             failed = true;
         };
 
@@ -394,7 +397,7 @@ pub const Manager = struct {
             if (failed_dbs.items.len != 0) {
                 const failed_items = std.mem.join(self.allocator, ", ", failed_dbs.items) catch return TransactionError.OutOfMemory;
                 defer self.allocator.free(failed_items);
-                const error_message = std.fmt.allocPrint(self.allocator, "Could not verify signatures for {0f}. Check the signing keys and obtain valid package signatures before retrying.", .{@import("diagnostics").safe(failed_items)}) catch return TransactionError.OutOfMemory;
+                const error_message = std.fmt.allocPrint(self.allocator, "Could not verify signatures for {0f}. Check the signing keys and obtain valid package signatures before retrying.", .{diagnostics.safe(failed_items)}) catch return TransactionError.OutOfMemory;
                 defer self.allocator.free(error_message);
                 self.dispatcher.raiseError(.{ .message = error_message });
 
@@ -452,7 +455,7 @@ pub const Manager = struct {
         const database = rawLibalpm.alpm_get_localdb(self.handle);
         const package = rawLibalpm.alpm_db_get_pkg(database, package_name.ptr);
         if (package == null) {
-            std.log.debug("Could not find installed package {0f}. Check the installed-package list and package name.", .{@import("diagnostics").safe(package_name)});
+            std.log.debug("Could not find installed package {0f}. Check the installed-package list and package name.", .{diagnostics.safe(package_name)});
             return null;
         }
 
@@ -910,7 +913,7 @@ pub const Manager = struct {
                     const dep_name = deps.name() orelse continue;
                     // looks for local package, then the satisfier, continues on if failes to find.
                     const local_ptr = rawLibalpm.alpm_db_get_pkg(local_db, dep_name.ptr) orelse rawLibalpm.alpm_find_satisfier(rawLibalpm.alpm_db_get_pkgcache(local_db), dep_name.ptr) orelse {
-                        const message = try std.fmt.allocPrint(self.allocator, "Could not find {0f} in the local package database; it was skipped. Check the installed-package list before retrying.", .{@import("diagnostics").safe(dep_name)});
+                        const message = try std.fmt.allocPrint(self.allocator, "Could not find {0f} in the local package database; it was skipped. Check the installed-package list before retrying.", .{diagnostics.safe(dep_name)});
                         defer self.allocator.free(message);
                         self.dispatcher.raiseInformational(.{
                             .event_type = libalpm.EventType.failed_optional_dependency_operation,
@@ -983,7 +986,7 @@ pub const Manager = struct {
             const message = std.fmt.allocPrint(
                 self.allocator,
                 "Could not add {0f} to the removal transaction. {1f}",
-                .{ @import("diagnostics").safe(name), @import("diagnostics").safe(reason) },
+                .{ diagnostics.safe(name), diagnostics.safe(reason) },
             ) catch {
                 self.dispatcher.raiseError(.{
                     .message = "Could not add the requested package to the removal transaction.",
@@ -1089,7 +1092,7 @@ pub const Manager = struct {
     /// reflected by `process_scan_complete`/`skipped_processes`. Allocation is
     /// the only error because restart command failures belong in the report.
     fn checkForRequiredRestarts(self: *Manager, options: RestartCheckOptions) error{OutOfMemory}!RestartReport {
-        return @import("restarts.zig").check(self, options);
+        return restart_checks.check(self, options);
     }
 
     pub fn update_package_reason(self: *Manager, pkg_name: [:0]const u8, reason: libalpm.PackageReason) TransactionError!void {
@@ -1863,7 +1866,7 @@ pub const Manager = struct {
             const message = std.fmt.bufPrint(
                 &message_buffer,
                 "Could not reopen the package database while refreshing package state. {0f}",
-                .{@import("diagnostics").safe(std.mem.span(rawLibalpm.alpm_strerror(err2)))},
+                .{diagnostics.safe(std.mem.span(rawLibalpm.alpm_strerror(err2)))},
             ) catch "Could not reopen the package database while refreshing package state.";
             self.dispatcher.raiseError(.{ .message = message });
             return TransactionError.RefreshFailed;
@@ -2414,7 +2417,7 @@ pub const Manager = struct {
 
         var architecture_arena = std.heap.ArenaAllocator.init(self.allocator);
         defer architecture_arena.deinit();
-        const architectures = try @import("architectures.zig").expand(architecture_arena.allocator(), config.architectures.items, config.architecture);
+        const architectures = try architecture_utils.expand(architecture_arena.allocator(), config.architectures.items, config.architecture);
         const resolved_arch_z = try architecture_arena.allocator().dupeZ(u8, architectures.items[0]);
         for (architectures.items) |architecture| {
             const value = try architecture_arena.allocator().dupeZ(u8, architecture);
@@ -2440,7 +2443,7 @@ pub const Manager = struct {
 
     fn check(self: *Manager, what: [:0]const u8, ret: c_int) void {
         if (ret != 0) {
-            std.log.warn("Could not apply package database setting '{0f}'. {1f}", .{ @import("diagnostics").safe(what), @import("diagnostics").safe(std.mem.span(rawLibalpm.alpm_strerror(rawLibalpm.alpm_errno(self.handle)))) });
+            std.log.warn("Could not apply package database setting '{0f}'. {1f}", .{ diagnostics.safe(what), diagnostics.safe(std.mem.span(rawLibalpm.alpm_strerror(rawLibalpm.alpm_errno(self.handle)))) });
         }
     }
 
@@ -2474,7 +2477,7 @@ pub const Manager = struct {
         defer self.allocator.free(name_z);
 
         const db = rawLibalpm.alpm_register_syncdb(self.handle, name_z.ptr, effective_sig) orelse {
-            std.log.err("Could not register repository {0f} with the package database. {1f}", .{ @import("diagnostics").safe(repo.name), @import("diagnostics").safe(std.mem.span(rawLibalpm.alpm_strerror(rawLibalpm.alpm_errno(self.handle)))) });
+            std.log.err("Could not register repository {0f} with the package database. {1f}", .{ diagnostics.safe(repo.name), diagnostics.safe(std.mem.span(rawLibalpm.alpm_strerror(rawLibalpm.alpm_errno(self.handle)))) });
             return;
         };
 
@@ -3131,7 +3134,7 @@ pub const Manager = struct {
             .SandboxFailed => try details.appendSlice(self.allocator, "Could not apply the package download sandbox.\n"),
         }
 
-        const full_error = try std.fmt.allocPrint(self.allocator, "{f}\nDatabase path: {f}\n\nTechnical details: libalpm ({d}): {f}", .{ @import("diagnostics").safe(details.items), @import("diagnostics").safe(self.config.database_path), error_number, @import("diagnostics").safe(error_msg) });
+        const full_error = try std.fmt.allocPrint(self.allocator, "{f}\nDatabase path: {f}\n\nTechnical details: libalpm ({d}): {f}", .{ diagnostics.safe(details.items), diagnostics.safe(self.config.database_path), error_number, diagnostics.safe(error_msg) });
         defer self.allocator.free(full_error);
         self.dispatcher.raiseError(.{ .message = full_error, .native_code = error_number });
     }

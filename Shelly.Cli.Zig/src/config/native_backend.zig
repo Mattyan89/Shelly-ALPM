@@ -1,4 +1,5 @@
 const std = @import("std");
+const config_manager = @import("manager.zig");
 const PackageManager = @import("PackageManager");
 const model = @import("model.zig");
 const runtime = @import("../runtime/context.zig");
@@ -10,7 +11,7 @@ pub fn fromConfig(config: *const model.Config) !PackageManager.Manager.Backend {
     return backend;
 }
 pub fn apply(context: *runtime.RuntimeContext) !void {
-    const config = try @import("manager.zig").Manager.init(context).read();
+    const config = try config_manager.Manager.init(context).read();
     try PackageManager.Manager.setDefaultBackend(try fromConfig(&config));
 }
 test "native backend setting validates saved values and compiled availability" {

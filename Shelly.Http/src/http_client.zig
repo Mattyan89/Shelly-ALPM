@@ -1428,7 +1428,7 @@ fn ensureDefaultProxies(client: *Client) error{ OutOfMemory, InvalidProxyConfigu
     var inherited = std.process.Environ.Map.init(client.allocator);
     defer inherited.deinit();
     const environ_map = defaultProxyEnvironment() orelse blk: {
-        if (@import("builtin").link_libc) {
+        if (builtin.link_libc) {
             inline for (.{ "http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "no_proxy", "NO_PROXY" }) |name| {
                 if (std.c.getenv(name)) |value| try inherited.put(name, std.mem.span(value));
             }

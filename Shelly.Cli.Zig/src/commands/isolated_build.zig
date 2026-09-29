@@ -5,6 +5,7 @@
 //! bind mounted into the container.
 
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const build_root = PackageManager.Manager.bootstrap.build_root;
 
@@ -500,7 +501,7 @@ fn checkIsolatedExit(operation: *const PackageManager.Operation, stage: Isolated
         .setup => error.IsolatedCommandFailed,
         .build => error.IsolatedBuildFailed,
     };
-    operation.reportError(failure, @import("diagnostics").cause(failure), stage.name(), exit_code, false);
+    operation.reportError(failure, diagnostics.cause(failure), stage.name(), exit_code, false);
     return failure;
 }
 

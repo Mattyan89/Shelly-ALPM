@@ -1,11 +1,13 @@
 //! Stable native package facade. Each instance owns exactly one backend.
 const std = @import("std");
+const libalpm_manager = @import("libalpm_manager.zig");
+const rlpm_module = @import("Shelly_Rlpm");
 const contract = @import("contract.zig");
 const selection = @import("backend.zig");
 const libalpm = @import("types.zig");
 const downloader = @import("../shared/downloader.zig");
 const operation_api = @import("operation_context");
-const Native = if (selection.libalpm_enabled) @import("libalpm_manager.zig").Manager else void;
+const Native = if (selection.libalpm_enabled) libalpm_manager.Manager else void;
 const Rlpm = @import("../rlpm/manager.zig").Manager;
 pub const ConfigError = contract.ConfigError;
 pub const InitError = contract.InitError;
@@ -145,7 +147,7 @@ pub const Manager = struct {
         if (comptime selection.libalpm_enabled) {
             if (selection.selectedDefault() == .libalpm) return Native.compare_package_versions(a, b);
         }
-        return @intFromEnum(@import("Shelly_Rlpm").Version.compareStrings(a, b));
+        return @intFromEnum(rlpm_module.Version.compareStrings(a, b));
     }
     pub const version_compare = compare_package_versions;
     pub fn toggle_hidden_packages(self: *Manager) bool {

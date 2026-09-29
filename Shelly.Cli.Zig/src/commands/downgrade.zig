@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
@@ -103,7 +104,7 @@ pub fn dispatch(
 
     if (!invocation.globals.ui_mode) {
         const elevated_exit = elevation.relaunchIfNeeded(context, invocation.arguments) catch |err| {
-            try context.stderr.print("Could not obtain administrator privileges for the downgrade. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not obtain administrator privileges for the downgrade. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevated_exit) |exit_code| return exit_code;
@@ -154,7 +155,7 @@ fn runWithRunner(
         const message = try std.fmt.allocPrint(
             context.allocator,
             "No older version of {0f} was found in the configured downgrade sources. Check the available versions before selecting a downgrade target.",
-            .{@import("diagnostics").safe(package_name)},
+            .{diagnostics.safe(package_name)},
         );
         defer context.allocator.free(message);
         return try reportFailure(context, invocation, message);
@@ -247,7 +248,7 @@ fn reportDiscoveryFailure(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not find downgrade options for {0f}: {1s}\n\nTechnical details: {2s}",
-        .{ @import("diagnostics").safe(package_name), @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.safe(package_name), diagnostics.cause(err), @errorName(err) },
     );
     defer context.allocator.free(message);
     return reportFailure(context, invocation, message);
@@ -415,7 +416,7 @@ fn executeUi(
     try ui_operation.flush(context);
 
     runner.install(context, &operation_context, candidate) catch |err| {
-        const message = try std.fmt.allocPrint(context.allocator, "Could not downgrade the requested package. {0s}\n\nTechnical details: {1s}", .{ @import("diagnostics").cause(err), @errorName(err) });
+        const message = try std.fmt.allocPrint(context.allocator, "Could not downgrade the requested package. {0s}\n\nTechnical details: {1s}", .{ diagnostics.cause(err), @errorName(err) });
         defer context.allocator.free(message);
         try output.writeErrorFrame(context, message);
         try output.writeAlpmInfoFrame(context, "TransactionFailed", "Could not downgrade the requested package.");
@@ -427,7 +428,7 @@ fn executeUi(
             const message = try std.fmt.allocPrint(
                 context.allocator,
                 "The package was downgraded, but the requested package could not be added to IgnorePkg. {0s} It may be upgraded again until the ignore setting is saved.\n\nTechnical details: {1s}",
-                .{ @import("diagnostics").cause(err), @errorName(err) },
+                .{ diagnostics.cause(err), @errorName(err) },
             );
             defer context.allocator.free(message);
             try output.writeErrorFrame(context, message);
@@ -455,7 +456,7 @@ fn executeIgnore(
         const message = try std.fmt.allocPrint(
             context.allocator,
             "The package was downgraded, but {0f} could not be added to IgnorePkg. {1s} It may be upgraded again until the ignore setting is saved.\n\nTechnical details: {2s}",
-            .{ @import("diagnostics").safe(package_name), @import("diagnostics").cause(err), @errorName(err) },
+            .{ diagnostics.safe(package_name), diagnostics.cause(err), @errorName(err) },
         );
         defer context.allocator.free(message);
         _ = try reportFailure(context, invocation, message);

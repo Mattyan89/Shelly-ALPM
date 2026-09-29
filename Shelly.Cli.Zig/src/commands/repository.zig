@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
@@ -62,7 +63,7 @@ pub fn dispatch(
     const mutates = action != .list;
     if (mutates and !invocation.globals.ui_mode and !elevation.isRoot()) {
         const elevated_exit = elevation.relaunchIfNeeded(context, invocation.arguments) catch |err| {
-            try context.stderr.print("Could not obtain administrator privileges for repository operation. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not obtain administrator privileges for repository operation. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevated_exit) |exit_code| return exit_code;
@@ -109,7 +110,7 @@ fn executeList(
         const message = try std.fmt.allocPrint(
             context.allocator,
             "Could not list repositories: {0s}\n\nTechnical details: {1s}",
-            .{ @import("diagnostics").cause(err), @errorName(err) },
+            .{ diagnostics.cause(err), @errorName(err) },
         );
         defer context.allocator.free(message);
         return reportFailure(context, invocation, message);
@@ -168,7 +169,7 @@ fn executeMutation(
                 const message = try std.fmt.allocPrint(
                     context.allocator,
                     "Could not locally sign repository key {0f}. {1s} Review the keyring command output before trying again.\n\nTechnical details: {2s}",
-                    .{ @import("diagnostics").safe(key), @import("diagnostics").cause(err), @errorName(err) },
+                    .{ diagnostics.safe(key), diagnostics.cause(err), @errorName(err) },
                 );
                 defer context.allocator.free(message);
                 return reportFailure(context, invocation, message);
@@ -177,7 +178,7 @@ fn executeMutation(
                 const message = try std.fmt.allocPrint(
                     context.allocator,
                     "Could not locally sign repository key {0f}. Review the keyring command output before trying again.\n\nTechnical details: {1d}",
-                    .{ @import("diagnostics").safe(key), lsign_code },
+                    .{ diagnostics.safe(key), lsign_code },
                 );
                 defer context.allocator.free(message);
                 return reportFailure(context, invocation, message);
@@ -204,7 +205,7 @@ fn executeMutation(
             const message = try std.fmt.allocPrint(
                 context.allocator,
                 "{0f}, but the repository package lists could not be refreshed. {1s}\n\nTechnical details: {2s}",
-                .{ @import("diagnostics").safe(successVerbPast(action)), @import("diagnostics").cause(err), @errorName(err) },
+                .{ diagnostics.safe(successVerbPast(action)), diagnostics.cause(err), @errorName(err) },
             );
             defer context.allocator.free(message);
             if (invocation.globals.ui_mode) {

@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const parser = @import("../cli/parser.zig");
 const runtime = @import("../runtime/context.zig");
@@ -70,7 +71,7 @@ fn runWithManager(
     options: WorkflowOptions,
 ) !u8 {
     const files = manager.discover(options.search_mode) catch |err| {
-        try context.stderr.print("Could not discover pacfiles: {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+        try context.stderr.print("Could not discover pacfiles: {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
         return 1;
     };
     defer Pacfile.deinitSlice(context.allocator, files);
@@ -87,7 +88,7 @@ fn runWithManager(
     }
     for (files) |file| {
         if (file.kind == .numbered_pacsave)
-            try context.stderr.print("warning: Skipped numbered.pacsave file {0f}. Review it manually if you need to recover an older configuration.\n", .{@import("diagnostics").safe(file.path)});
+            try context.stderr.print("warning: Skipped numbered.pacsave file {0f}. Review it manually if you need to recover an older configuration.\n", .{diagnostics.safe(file.path)});
     }
     return 0;
 }
@@ -102,17 +103,17 @@ fn maintainOne(
     const label = kindLabel(file.kind);
     try context.stdout.print("{s} file found for {s}\n", .{ label, file.original_path });
     const current_state = manager.state(file) catch |err| {
-        try context.stderr.print("Could not compare {0f}: {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(file.path), @import("diagnostics").cause(err), @errorName(err) });
+        try context.stderr.print("Could not compare {0f}: {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(file.path), diagnostics.cause(err), @errorName(err) });
         return false;
     };
     switch (current_state) {
         .original_missing => {
-            try context.stderr.print("warning: The original configuration file '{0f}' does not exist. Review the remaining pacfile before choosing whether to remove it.\n", .{@import("diagnostics").safe(file.original_path)});
+            try context.stderr.print("warning: The original configuration file '{0f}' does not exist. Review the remaining pacfile before choosing whether to remove it.\n", .{diagnostics.safe(file.original_path)});
             if (!invocation.globals.no_confirm and
                 try confirm(context, "Remove the pacfile?", false))
             {
                 manager.remove(file) catch |err| {
-                    try context.stderr.print("Could not remove {0f}: {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(file.path), @import("diagnostics").cause(err), @errorName(err) });
+                    try context.stderr.print("Could not remove {0f}: {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(file.path), diagnostics.cause(err), @errorName(err) });
                     return false;
                 };
                 try context.stdout.print("removed {s}\n", .{file.path});
@@ -122,7 +123,7 @@ fn maintainOne(
         .identical => {
             try context.stdout.writeAll("  Files are identical, removing...\n");
             manager.remove(file) catch |err| {
-                try context.stderr.print("Could not remove {0f}: {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(file.path), @import("diagnostics").cause(err), @errorName(err) });
+                try context.stderr.print("Could not remove {0f}: {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(file.path), diagnostics.cause(err), @errorName(err) });
                 return false;
             };
             try context.stdout.print("removed {s}\n", .{file.path});
@@ -138,7 +139,7 @@ fn maintainOne(
             .skip => return false,
             .remove => {
                 manager.remove(file) catch |err| {
-                    try context.stderr.print("Could not remove {0f}: {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(file.path), @import("diagnostics").cause(err), @errorName(err) });
+                    try context.stderr.print("Could not remove {0f}: {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(file.path), diagnostics.cause(err), @errorName(err) });
                     continue;
                 };
                 try context.stdout.print("removed {s}\n", .{file.path});
@@ -146,7 +147,7 @@ fn maintainOne(
             },
             .overwrite => {
                 manager.overwrite(file, options.backup) catch |err| {
-                    try context.stderr.print("Could not overwrite {0f}: {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(file.original_path), @import("diagnostics").cause(err), @errorName(err) });
+                    try context.stderr.print("Could not overwrite {0f}: {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(file.original_path), diagnostics.cause(err), @errorName(err) });
                     continue;
                 };
                 if (options.backup)
@@ -160,7 +161,7 @@ fn maintainOne(
                     file,
                     if (options.three_way) .three_way else .two_way,
                 ) catch |err| {
-                    try context.stderr.print("Could not view {0f}: {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(file.path), @import("diagnostics").cause(err), @errorName(err) });
+                    try context.stderr.print("Could not view {0f}: {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(file.path), diagnostics.cause(err), @errorName(err) });
                     continue;
                 };
                 if (result.fell_back_to_two_way)
@@ -172,7 +173,7 @@ fn maintainOne(
             },
             .merge => {
                 var prepared = manager.prepareMerge(file) catch |err| {
-                    try context.stderr.print("Could not merge {0f}: {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(file.path), @import("diagnostics").cause(err), @errorName(err) });
+                    try context.stderr.print("Could not merge {0f}: {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(file.path), diagnostics.cause(err), @errorName(err) });
                     continue;
                 };
                 defer prepared.deinit();
@@ -182,7 +183,7 @@ fn maintainOne(
                     try context.stdout.writeAll("  Merged without conflicts.\n");
                 try flushForExternalTool(context);
                 const preview = manager.viewPreparedMerge(&prepared) catch |err| {
-                    try context.stderr.print("Could not preview the merge: {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+                    try context.stderr.print("Could not preview the merge: {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
                     continue;
                 };
                 if (!preview.successful())
@@ -193,7 +194,7 @@ fn maintainOne(
                     prepared.preserveWorkspace();
                     try context.stderr.print(
                         "Could not apply the merged configuration to the destination. {0s} The merged file is preserved at {1f}.\n\nTechnical details: {2s}\n",
-                        .{ @import("diagnostics").cause(err), @import("diagnostics").safe(prepared.merged_path), @errorName(err) },
+                        .{ diagnostics.cause(err), diagnostics.safe(prepared.merged_path), @errorName(err) },
                     );
                     continue;
                 };

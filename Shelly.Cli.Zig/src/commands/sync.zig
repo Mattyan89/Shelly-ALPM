@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const config_manager = @import("../config/manager.zig");
@@ -71,7 +72,7 @@ pub fn dispatch(
         booleanOption(invocation, "--system", true);
     if ((is_standard or system_remote_mutation) and !invocation.globals.ui_mode) {
         const elevated_exit = elevation.relaunchIfNeeded(context, invocation.arguments) catch |err| {
-            try context.stderr.print("Could not obtain administrator privileges for package synchronization. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not obtain administrator privileges for package synchronization. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevated_exit) |exit_code| return exit_code;
@@ -476,7 +477,7 @@ fn matchingAppImageName(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not find AppImage {0f} in the local database. Check the installed AppImage list and try again.",
-        .{@import("diagnostics").safe(query)},
+        .{diagnostics.safe(query)},
     );
     defer context.allocator.free(message);
     emitAppImageInfo(operation_context, message);

@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const time = @import("zig-time");
 
 pub const libalpm = struct {
@@ -156,7 +157,7 @@ pub const libalpm = struct {
             while (i < siglist.count) : (i += 1) {
                 const r = siglist.results[i];
                 if (r.status != alpm.ALPM_SIGSTATUS_VALID) {
-                    std.log.warn("Could not verify the signature for repository database {0f}. Review signature status {1d} and validity {2d}.", .{ @import("diagnostics").safe(self.name() orelse "?"), @intFromEnum(r.status), @intFromEnum(r.validity) });
+                    std.log.warn("Could not verify the signature for repository database {0f}. Review signature status {1d} and validity {2d}.", .{ diagnostics.safe(self.name() orelse "?"), @intFromEnum(r.status), @intFromEnum(r.validity) });
                 }
             }
             return false;

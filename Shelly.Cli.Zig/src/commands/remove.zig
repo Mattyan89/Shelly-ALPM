@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
@@ -77,7 +78,7 @@ pub fn dispatch(
             invocation.arguments;
         defer if (carries_aur) context.allocator.free(elevated_arguments);
         const elevated_exit = elevation.relaunchIfNeeded(context, elevated_arguments) catch |err| {
-            try context.stderr.print("Could not obtain administrator privileges for package removal. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not obtain administrator privileges for package removal. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevated_exit) |exit_code| return exit_code;
@@ -470,18 +471,18 @@ fn containsTextIgnoreCase(value: []const u8, query: []const u8) bool {
 
 fn cleanupStandardConfig(context: *runtime.RuntimeContext, package_names: []const []const u8) void {
     const config_home = xdg.configHome(context) catch |err| {
-        context.stderr.print("Package removal completed, but the configuration directory could not be located. {0s} Configuration cleanup was not completed.\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) }) catch {};
+        context.stderr.print("Package removal completed, but the configuration directory could not be located. {0s} Configuration cleanup was not completed.\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) }) catch {};
         return;
     };
     for (package_names) |package_name| {
         const path = std.fs.path.join(context.allocator, &.{ config_home, package_name }) catch |err| {
-            context.stderr.print("Package removal completed, but the configuration for {0f} could not be removed from the configured file. {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(package_name), @import("diagnostics").cause(err), @errorName(err) }) catch {};
+            context.stderr.print("Package removal completed, but the configuration for {0f} could not be removed from the configured file. {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(package_name), diagnostics.cause(err), @errorName(err) }) catch {};
             continue;
         };
         defer context.allocator.free(path);
         std.Io.Dir.cwd().deleteTree(context.io, path) catch |err| {
             if (err == error.FileNotFound) continue;
-            context.stderr.print("Package removal completed, but the configuration for {0f} could not be removed from {1f}. {2s}\n\nTechnical details: {3s}\n", .{ @import("diagnostics").safe(package_name), @import("diagnostics").safe(path), @import("diagnostics").cause(err), @errorName(err) }) catch {};
+            context.stderr.print("Package removal completed, but the configuration for {0f} could not be removed from {1f}. {2s}\n\nTechnical details: {3s}\n", .{ diagnostics.safe(package_name), diagnostics.safe(path), diagnostics.cause(err), @errorName(err) }) catch {};
         };
     }
 }
@@ -492,13 +493,13 @@ fn cleanupFlatpakConfig(context: *runtime.RuntimeContext, canonical_id: []const 
         return;
     };
     const path = std.fs.path.join(context.allocator, &.{ home, ".var", "app", canonical_id }) catch |err| {
-        context.stderr.print("Flatpak removal completed, but the configuration for {0f} could not be removed from the configured file. {1s}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").safe(canonical_id), @import("diagnostics").cause(err), @errorName(err) }) catch {};
+        context.stderr.print("Flatpak removal completed, but the configuration for {0f} could not be removed from the configured file. {1s}\n\nTechnical details: {2s}\n", .{ diagnostics.safe(canonical_id), diagnostics.cause(err), @errorName(err) }) catch {};
         return;
     };
     defer context.allocator.free(path);
     std.Io.Dir.cwd().deleteTree(context.io, path) catch |err| {
         if (err == error.FileNotFound) return;
-        context.stderr.print("Flatpak removal completed, but the configuration for {0f} could not be removed from {1f}. {2s}\n\nTechnical details: {3s}\n", .{ @import("diagnostics").safe(canonical_id), @import("diagnostics").safe(path), @import("diagnostics").cause(err), @errorName(err) }) catch {};
+        context.stderr.print("Flatpak removal completed, but the configuration for {0f} could not be removed from {1f}. {2s}\n\nTechnical details: {3s}\n", .{ diagnostics.safe(canonical_id), diagnostics.safe(path), diagnostics.cause(err), @errorName(err) }) catch {};
     };
 }
 

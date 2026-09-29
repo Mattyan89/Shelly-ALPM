@@ -2,6 +2,7 @@
 //! install-script and changelog placement, archive creation, and signing.
 
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const archive = @import("archive");
 const process_runner = @import("../builder.zig");
 const install_script = @import("../../pkgbuild/install_script.zig");
@@ -58,7 +59,7 @@ fn openPackageParent(self: *PackageBuilder) !std.Io.Dir {
 
 fn reportPackageAccessError(self: *PackageBuilder, phase: []const u8, path: []const u8, err: anyerror) void {
     const message = std.fmt.allocPrint(self.allocator, "Error {s} at {f}: {s}", .{
-        phase, @import("diagnostics").safe(path), @errorName(err),
+        phase, diagnostics.safe(path), @errorName(err),
     }) catch return;
     defer self.allocator.free(message);
     if (self.active_log) |log| log.writeRecord("error", message) catch {};
@@ -139,7 +140,7 @@ fn tidyPackage(self: *PackageBuilder, package_build: *const PackageBuild, pkgdir
             const warning = try std.fmt.allocPrint(
                 self.allocator,
                 "Could not strip {0f}; keeping the original file. Review the strip output in the build details.\n\nTechnical details: {1d}; {2f}",
-                .{ @import("diagnostics").safe(entry.path), result.exit_code, @import("diagnostics").safe(std.mem.trimEnd(u8, result.stderr, "\r\n")) },
+                .{ diagnostics.safe(entry.path), result.exit_code, diagnostics.safe(std.mem.trimEnd(u8, result.stderr, "\r\n")) },
             );
             defer self.allocator.free(warning);
             if (self.active_operation) |operation| {
@@ -235,7 +236,7 @@ pub fn assemblePackage(self: *PackageBuilder, package_build: *const PackageBuild
     if (self.virtual_ownership_tracker) |*tracker| {
         if (try tracker.retainedDevicePath(self.io, pkgdir)) |path| {
             defer self.allocator.free(path);
-            const message = try std.fmt.allocPrint(self.allocator, "Cannot package {f}: a temporary mknod placeholder remains. Device nodes in finished packages are unsupported; remove the temporary node in package().", .{@import("diagnostics").safe(path)});
+            const message = try std.fmt.allocPrint(self.allocator, "Cannot package {f}: a temporary mknod placeholder remains. Device nodes in finished packages are unsupported; remove the temporary node in package().", .{diagnostics.safe(path)});
             defer self.allocator.free(message);
             if (self.active_log) |log| try log.writeRecord("error", message);
             if (self.active_operation) |operation|

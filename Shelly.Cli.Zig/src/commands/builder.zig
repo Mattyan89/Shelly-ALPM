@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const runtime = @import("../runtime/context.zig");
 const elevation = @import("../runtime/elevation.zig");
@@ -93,7 +94,7 @@ pub fn dispatch(
                 elevated_arguments,
                 invocation.globals.json,
             ) catch |err| {
-                try context.stderr.print("Could not obtain administrator privileges for the isolated build. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+                try context.stderr.print("Could not obtain administrator privileges for the isolated build. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
                 if (invocation.globals.json) {
                     try writeBuildJson(context.stdout, null, err, true);
                     try context.stdout.writeByte('\n');
@@ -109,7 +110,7 @@ pub fn dispatch(
             }
         } else {
             const elevated_exit = elevation.relaunchIfNeeded(context, elevated_arguments) catch |err| {
-                try context.stderr.print("Could not obtain administrator privileges for the build. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+                try context.stderr.print("Could not obtain administrator privileges for the build. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
                 return 1;
             };
             if (elevated_exit) |exit_code| return exit_code;
@@ -287,7 +288,7 @@ fn parseArtifactReport(
 fn reportArtifactProtocolFailure(context: *runtime.RuntimeContext, err: anyerror) !void {
     try context.stderr.print(
         "The build completed but its artifact report could not be read, so the built packages were not installed. {0s}\n\nTechnical details: {1s}\n",
-        .{ @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.cause(err), @errorName(err) },
     );
     try context.stderr.flush();
 }
@@ -1043,7 +1044,7 @@ const Real = struct {
         runDeferredCleanupOperation(context, invocation, &cleanup) catch |err| {
             context.stderr.print(
                 "Could not clean up the build dependencies. {0s}\n\nTechnical details: {1s}\n",
-                .{ @import("diagnostics").cause(err), @errorName(err) },
+                .{ diagnostics.cause(err), @errorName(err) },
             ) catch {};
             context.stderr.flush() catch {};
         };
@@ -2565,7 +2566,7 @@ fn reportCleanupFailure(
         std.fmt.allocPrint(
             allocator,
             "Could not remove build dependencies: {0f}. {1s} Review the remaining dependencies before removing them manually.\n\nTechnical details: {2s}",
-            .{ @import("diagnostics").safe(value), @import("diagnostics").cause(err), @errorName(err) },
+            .{ diagnostics.safe(value), diagnostics.cause(err), @errorName(err) },
         ) catch null
     else
         null;
@@ -2737,7 +2738,7 @@ fn buildErrorMessage(err: anyerror) []const u8 {
         error.PackageDestinationMustBeAbsolute => "The package destination must be an absolute path.",
         error.MissingPackageDestination => "The package destination option requires a directory.",
         error.Cancelled => "Operation cancelled.",
-        else => @import("diagnostics").cause(err),
+        else => diagnostics.cause(err),
     };
 }
 

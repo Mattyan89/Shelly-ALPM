@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
@@ -780,7 +781,7 @@ fn renderPkgbuilds(
 
     for (builds) |build| {
         const pkgbuild = build.pkgbuild orelse {
-            try colors.printLine(context, .err, "Could not retrieve the PKGBUILD for {0f} from the configured AUR service.", .{@import("diagnostics").safe(build.name)});
+            try colors.printLine(context, .err, "Could not retrieve the PKGBUILD for {0f} from the configured AUR service.", .{diagnostics.safe(build.name)});
             continue;
         };
         try colors.printLine(context, .warning, "Package build for: {s}", .{build.name});

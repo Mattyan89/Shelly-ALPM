@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const install = @import("install.zig");
@@ -97,9 +98,9 @@ fn executeWith(
     };
     const partial_results = if (discovery.candidates.len > 0) " Results from the other package sources are still available." else "";
     if (discovery.standard_error) |err|
-        try context.stderr.print("warning: Could not refresh standard-package search results. {0s} {1f}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").cause(err), @import("diagnostics").safe(partial_results), @errorName(err) });
+        try context.stderr.print("warning: Could not refresh standard-package search results. {0s} {1f}\n\nTechnical details: {2s}\n", .{ diagnostics.cause(err), diagnostics.safe(partial_results), @errorName(err) });
     if (discovery.aur_error) |err|
-        try context.stderr.print("warning: Could not refresh AUR search results. {0s} {1f}\n\nTechnical details: {2s}\n", .{ @import("diagnostics").cause(err), @import("diagnostics").safe(partial_results), @errorName(err) });
+        try context.stderr.print("warning: Could not refresh AUR search results. {0s} {1f}\n\nTechnical details: {2s}\n", .{ diagnostics.cause(err), diagnostics.safe(partial_results), @errorName(err) });
 
     const candidates = try prepareCandidates(context.allocator, discovery.candidates, query);
     if (candidates.len == 0) {
@@ -123,7 +124,7 @@ fn executeWith(
         return 0;
     };
     return installer.call(context, candidates[index], invocation.globals.no_confirm, aur_override) catch |err| {
-        try context.stderr.print("Could not start installation: {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+        try context.stderr.print("Could not start installation: {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
         return 1;
     };
 }

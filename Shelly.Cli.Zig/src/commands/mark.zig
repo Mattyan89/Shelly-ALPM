@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
@@ -83,7 +84,7 @@ pub fn dispatch(
     const mutates = !kind.isList() or action.? != .list;
     if (mutates and !invocation.globals.ui_mode) {
         const elevated_exit = elevation.relaunchIfNeeded(context, invocation.arguments) catch |err| {
-            try context.stderr.print("Could not obtain administrator privileges for package marking. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not obtain administrator privileges for package marking. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevated_exit) |exit_code| return exit_code;
@@ -137,7 +138,7 @@ fn executeList(
         const message = try std.fmt.allocPrint(
             context.allocator,
             "Could not list {0f}: {1s}\n\nTechnical details: {2s}",
-            .{ @import("diagnostics").safe(directiveName(kind)), @import("diagnostics").cause(err), @errorName(err) },
+            .{ diagnostics.safe(directiveName(kind)), diagnostics.cause(err), @errorName(err) },
         );
         defer context.allocator.free(message);
         return reportFailure(context, invocation, message);
@@ -188,7 +189,7 @@ fn executeMutation(
         const message = try std.fmt.allocPrint(
             context.allocator,
             "Could not update {0f}: {1s}\n\nTechnical details: {2s}",
-            .{ @import("diagnostics").safe(directiveName(kind)), @import("diagnostics").cause(err), @errorName(err) },
+            .{ diagnostics.safe(directiveName(kind)), diagnostics.cause(err), @errorName(err) },
         );
         defer context.allocator.free(message);
         return reportFailure(context, invocation, message);
@@ -227,7 +228,7 @@ fn executeReason(
         const message = try std.fmt.allocPrint(
             context.allocator,
             "Could not change the installation reason for {0f} to {3s}. {1s}\n\nTechnical details: {2s}",
-            .{ @import("diagnostics").safe(package), @import("diagnostics").cause(err), @errorName(err), @tagName(kind) },
+            .{ diagnostics.safe(package), diagnostics.cause(err), @errorName(err), @tagName(kind) },
         );
         defer context.allocator.free(message);
         if (invocation.globals.ui_mode) {

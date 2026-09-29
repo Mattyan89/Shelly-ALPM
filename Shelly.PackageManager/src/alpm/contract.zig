@@ -1,4 +1,5 @@
 const std = @import("std");
+const backend_selection = @import("backend.zig");
 const configuration = @import("configuration.zig");
 const operation_api = @import("operation_context");
 const libalpm = @import("types.zig");
@@ -144,7 +145,7 @@ pub const RestartCheckOptions = struct {
 };
 
 pub const InitOptions = struct {
-    backend: ?@import("backend.zig").Backend = null,
+    backend: ?backend_selection.Backend = null,
     config_path: ?[]const u8 = null,
     use_root: bool = false,
     temp_root_path: ?[]const u8 = null,
