@@ -2,7 +2,7 @@
 const std = @import("std");
 const download = @import("Shelly_Download");
 const protocol = download.WorkerProtocol;
-pub fn main(init: std.process.Init) !void {
+pub fn run(init: std.process.Init) !void {
     const a = init.arena.allocator();
     var input_buffer: [8192]u8 = undefined;
     var input = std.Io.File.stdin().reader(init.io, &input_buffer);

@@ -1,10 +1,11 @@
 # Database backends and queries
 
-M3 implements local directory and sync archive backends behind `Database.Backend`.
-`Owner` still owns registrations, metadata arenas, typed IDs and cache generations.
-No production code or normal test links or loads libalpm. Dependencies are Zig
-0.16.0, libc, libarchive and SQLite with `sqlite3_deserialize` support. A small C
-helper allocates libc's opaque `regex_t`; search policy and queries remain Zig.
+RLPM implements local directory and sync archive backends behind
+`Database.Backend`. `Owner` still owns registrations, metadata arenas, typed IDs
+and cache generations. No production code or normal test links or loads libalpm.
+Dependencies are Zig 0.16.0, libc, libarchive and SQLite with
+`sqlite3_deserialize` support. A small C helper allocates libc's opaque
+`regex_t`; search policy and queries remain Zig.
 
 ## Opening and querying
 
@@ -58,10 +59,12 @@ network; first access loads `<dbpath>/sync/<name><database_extension>`.
 Query result arrays belong to the supplied allocator. Their `PackageRef` values
 belong to the Owner and are checked on resolution. Package enumeration and group
 members follow package-name order. Group enumeration follows first encounter in
-that order, as in the reference. Repeated group names on one package create repeated same-name groups in cache
-enumeration, matching the pinned reference; exact group lookup selects the first. Group/candidate queries here are metadata queries; ignored-package
-questions, transaction flags such as `NEEDED`, replacements and dependency
-selection remain M5/M6.
+that order, as in the reference. Repeated group names on one package create
+repeated same-name groups in cache enumeration, matching the pinned reference;
+exact group lookup selects the first. Group/candidate queries here are metadata
+queries; ignored-package questions, transaction flags such as `NEEDED`,
+replacements and dependency selection belong to resolution and transaction
+preparation.
 
 Search uses POSIX extended regular expressions with case-insensitive and newline
 flags. Patterns are combined with AND; each can match the name, description,

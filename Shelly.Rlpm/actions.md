@@ -1,8 +1,8 @@
 # Hooks and scriptlets
 
-M0–M10 are accepted. M10 consumes these stages in normal commit; both
-`transaction_actions` and `transactions` are enabled. See [execution.md](execution.md)
-for payload/database publication and the full-commit validation.
+The executor consumes these stages in normal commit; both `transaction_actions`
+and `transactions` are enabled. See [execution.md](execution.md) for
+payload/database publication and the full-commit validation.
 
 ## Ownership and executor contract
 
@@ -15,12 +15,13 @@ trailing slash; `.pacnew` matches the original pathname.
 
 `Transaction` owns `TransactionActions` until release. `actions()` borrows its
 state and outcomes, including nonfatal exit/signal/setup/cleanup failures.
-`startActions()` is an internal executor entry: it requires the committing state,
-active Owner busy guard, owned lock, and completed preflight. Applications must
-not change transaction fields to call it. M9's integration fixtures use an
-explicit miniature executor; M10 also replays their 19 native traces through real commits.
+`startActions()` is an internal executor entry: it requires the committing
+state, active Owner busy guard, owned lock, and completed preflight.
+Applications must not change transaction fields to call it. The action
+integration fixtures use an explicit miniature executor; full executor tests
+also replay their 19 native traces through real commits.
 
-The M10 executor follows this sequence:
+The executor follows this sequence:
 
 1. Revalidate prepared state, archives, root/DB identity and the manifest, then
    enter committing with the Owner operation guard held.
@@ -73,11 +74,13 @@ shell-quoted to preserve literal metadata safely. This intentionally closes the
 native shell-injection behavior for malformed version strings.
 
 The pinned CachyOS paths are `/usr/bin/bash` and `/usr/bin/ldconfig`. A fresh
-`shelly-rlpm-action-worker` process receives framed setup data, then action stdin.
+`shelly --internal-rlpm-action-worker` process receives framed setup data, then
+action stdin.
 It enters the held root, changes cwd to `/`, preserves/defaults SHLVL, removes
 BASH_ENV, applies umask 0022, resets signals/masks and closes inherited descriptors
 on exec. Parent cwd, umask, credentials, environment and network stay unchanged.
-The worker does not link libcurl or free inherited Owner/resolver state.
+The fresh process does not inherit Owner/resolver state. It shares the hosting
+executable's ELF dependencies, including libcurl and, in enabled builds, libalpm.
 
 Parent transport drains merged stdout/stderr while feeding stdin. It forwards
 scriptlet-output lines (including partial final lines), reports setup failures
@@ -96,9 +99,15 @@ Cancellation terminates the process group and reaps the direct child.
 | DBONLY | Still runs hooks, scriptlets and ldconfig |
 | DOWNLOADONLY with additions | No transaction actions |
 
-The build installs the action worker separately from the shared download worker.
-`OwnerConfiguration.action_worker` accepts a copied installed-worker path; the
-default points at the matching build artifact. M11 installs both workers beside Shelly and resolves them there before using source-build paths.
+Both action and download children launch `/proc/self/exe` with their reserved mode.
+The dispatcher must run before normal application setup or protocol streams can
+be corrupted by ordinary output. Embedders call `rlpm.Workers.dispatch(init, args)`
+with argv[0] removed, and exit with a returned status; `null` means normal arguments.
+Alternatively, `OwnerConfiguration.worker_executable` accepts a copied, absolute
+path to an executable implementing both modes. Neither path searches for helpers
+beside the executable or falls back to build-cache files. The standalone RLPM
+example installs the dispatcher; library tests explicitly select an uninstalled
+fixture using the same dispatcher.
 
 Resource bounds are explicit: hook files 4 MiB, scriptlet members 16 MiB, worker
 setup JSON 1 MiB. Oversized/malformed input produces a retained error. Unlike the
@@ -129,5 +138,6 @@ checks private root, DB and hook paths immediately before every native commit.
 It installs no host hooks, service managers or real ldconfig into the fixture.
 See [reference capture instructions](src/tests/reference/README.md).
 
-These tests cover M9 stages. M10 adds full execution, record recovery and audit
-logging. The ledger retains partial status until the complete M11 acceptance gate.
+These tests cover hook and scriptlet stages. Executor tests add full execution,
+record recovery and audit logging. The ledger retains partial status until the
+complete production acceptance gate.

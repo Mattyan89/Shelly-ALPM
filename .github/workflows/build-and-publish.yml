@@ -267,7 +267,7 @@ jobs:
       - name: Test loopback downloads and temporary-keyring signing
         working-directory: Shelly.PackageManager
         run: zig build native-environment-test -Dlibalpm=${{ matrix.libalpm }} -Doptimize=${{ matrix.optimize }} --summary all
-      - name: Test selection, private-root transactions, installed workers and ELF dependencies
+      - name: Test selection, private-root transactions, copied Shelly worker modes and ELF dependencies
         run: scripts/test-native-backends.sh '${{ matrix.libalpm }}' '${{ matrix.optimize }}'
 
   rlpm:

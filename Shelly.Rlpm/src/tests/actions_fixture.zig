@@ -1,5 +1,6 @@
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
+const worker_fixture = @import("worker_fixture");
 
 const a = std.testing.allocator;
 const io = std.testing.io;
@@ -30,7 +31,9 @@ pub fn deinit(self: *Fixture) void {
 }
 
 pub fn owner(self: *Fixture) !rlpm.Owner {
-    return rlpm.Owner.init(io, a, .{ .root = self.root, .database_path = self.db }, &.{});
+    const worker_path = try std.Io.Dir.cwd().realPathFileAlloc(io, worker_fixture.path, a);
+    defer a.free(worker_path);
+    return rlpm.Owner.init(io, a, .{ .root = self.root, .database_path = self.db, .worker_executable = worker_path }, &.{});
 }
 
 pub fn write(self: *Fixture, path: []const u8, contents: []const u8) !void {

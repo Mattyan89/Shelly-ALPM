@@ -56,11 +56,11 @@ jobs:
 
       - name: Publish Shelly.Cli
         run: |
+          rm -rf publish/shelly-cli publish/build-cli
           mkdir -p publish/shelly-cli
           (cd Shelly.Cli.Zig && zig build --prefix ../publish/build-cli -Dcpu=baseline -Doptimize=ReleaseSmall)
           (cd Shelly.Cli.Zig && zig build test)
           install -Dm755 publish/build-cli/bin/shelly publish/shelly-cli/shelly
-          install -m755 publish/build-cli/bin/shelly-rlpm-action-worker publish/build-cli/bin/shelly-download-worker publish/shelly-cli/
           # Generate completion scripts from the freshly built binary.
           publish/shelly-cli/shelly utility --completions fish > publish/shelly-cli/shelly.fish
           publish/shelly-cli/shelly utility --completions zsh  > publish/shelly-cli/_shelly
@@ -80,6 +80,7 @@ jobs:
 
       - name: Publish Shelly.Gtk
         run: |
+          rm -rf publish/shelly-ui
           mkdir -p publish/shelly-ui
           (cd Shelly.Ui.Gtk && zig build --prefix ../publish/build-ui -Dflatpak-backend-package=shelly-flatpak-backend-bin -Dcpu=baseline -Doptimize=ReleaseSafe)
           install -Dm755 publish/build-ui/bin/Shelly_Ui_Gtk publish/shelly-ui/shelly-ui
@@ -88,7 +89,6 @@ jobs:
           install -m644 assets/shellylogo-update.png publish/shelly-ui/
           # Also bundle the CLI binary for convenience.
           install -m755 publish/shelly-cli/shelly publish/shelly-ui/
-          install -m755 publish/shelly-cli/shelly-rlpm-action-worker publish/shelly-cli/shelly-download-worker publish/shelly-ui/
 
       - name: Compile and bundle translations
         run: |

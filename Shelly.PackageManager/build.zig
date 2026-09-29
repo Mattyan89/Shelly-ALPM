@@ -145,9 +145,6 @@ pub fn build(b: *std.Build) void {
         mod.addImport("alpm_c", alpm_c);
     }
     mod.addImport("Shelly_Rlpm", rlpm_dependency.module("Shelly_Rlpm"));
-    b.installArtifact(rlpm_dependency.artifact("shelly-rlpm-action-worker"));
-    const download_dependency = b.dependency("shelly_download", .{ .target = target, .optimize = optimize });
-    b.installArtifact(download_dependency.artifact("shelly-download-worker"));
     mod.addImport("archive", archive_mod);
     mod.addImport("operation_context", operation_context_mod);
     mod.addImport("rlpm_operation_adapter", rlpm_adapter);
@@ -192,14 +189,9 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "PackageManager", .module = mod }},
     }) });
     b.step("native-backend-test", "Test native selection, transactions and interoperability in private roots").dependOn(&b.addRunArtifact(native_backend_tests).step);
-    const staged_native = b.addWriteFiles();
-    const staged_test = staged_native.addCopyFile(native_backend_tests.getEmittedBin(), "native-backend-test");
-    _ = staged_native.addCopyFile(rlpm_dependency.artifact("shelly-rlpm-action-worker").getEmittedBin(), "shelly-rlpm-action-worker");
-    _ = staged_native.addCopyFile(download_dependency.artifact("shelly-download-worker").getEmittedBin(), "shelly-download-worker");
-    const run_staged_native = b.addSystemCommand(&.{"env"});
-    run_staged_native.addFileArg(staged_test);
-    run_staged_native.setEnvironmentVariable("SHELLY_TEST_INSTALLED_WORKERS", "1");
-    b.step("native-backend-staged-test", "Test RLPM with workers beside the installed executable").dependOn(&run_staged_native.step);
+    const worker_fixture_options = b.addOptions();
+    worker_fixture_options.addOptionPath("path", rlpm_dependency.namedLazyPath("worker_fixture"));
+    native_backend_tests.root_module.addOptions("worker_fixture", worker_fixture_options);
 
     const native_environment_tests = b.addTest(.{
         .root_module = mod,
@@ -351,6 +343,7 @@ pub fn build(b: *std.Build) void {
     });
     hook_test_module.addImport("PackageManager", mod);
     hook_test_module.addOptions("hook_fixture", hook_fixture);
+    hook_test_module.addOptions("worker_fixture", worker_fixture_options);
     const hook_tests = b.addTest(.{ .root_module = hook_test_module });
     const run_hook_tests = b.addSystemCommand(&.{ "unshare", "--user", "--map-root-user", "--mount", "--pid", "--mount-proc", "--fork" });
     run_hook_tests.addArtifactArg(hook_tests);

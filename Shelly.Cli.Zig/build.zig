@@ -19,8 +19,6 @@ pub fn build(b: *std.Build) void {
         .@"flatpak-backend-path" = flatpak_backend_path,
     });
     const package_manager = package_manager_dependency.module("PackageManager");
-    b.installArtifact(package_manager_dependency.artifact("shelly-rlpm-action-worker"));
-    b.installArtifact(package_manager_dependency.artifact("shelly-download-worker"));
 
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "version", package_manifest.version);

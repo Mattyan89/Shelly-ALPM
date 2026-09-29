@@ -1,6 +1,6 @@
 //! Fresh executable; no Owner, libcurl, or resolver cleanup after spawning.
 const std = @import("std");
-const protocol = @import("protocol.zig");
+const protocol = @import("action_protocol");
 
 const c = protocol.c;
 var control: c_int = 2;
@@ -39,7 +39,7 @@ fn string(a: std.mem.Allocator, value: []const u8) [:0]const u8 {
     return a.dupeZ(u8, value) catch fail(.protocol);
 }
 
-pub fn main(init: std.process.Init) void {
+pub fn run(init: std.process.Init) noreturn {
     control = c.fcntl(2, c.F_DUPFD_CLOEXEC, @as(c_int, 3));
     if (control < 0) {
         control = 2;

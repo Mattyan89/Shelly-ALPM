@@ -1,10 +1,10 @@
 # Historical design sketch
 
-This sketch records the intended architecture and includes proposed APIs.
-The [Owner options and lifetimes](options.md) document describes the implemented
-M1 API. In particular, groups now hold package IDs, and long-lived references
+This sketch records the intended architecture and includes proposed APIs. The
+[Owner options and lifetimes](options.md) document describes the implemented
+Owner API. In particular, groups now hold package IDs, and long-lived references
 include owner/database identity and cache generation rather than raw pointers.
-The [metadata API](metadata.md) documents M2's implemented package, relation,
+The [metadata API](metadata.md) documents the implemented package, relation,
 archive and stream operations.
 
 ```c

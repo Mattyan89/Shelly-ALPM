@@ -4,6 +4,7 @@ const rlpm = @import("Shelly_Rlpm");
 
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
+    if (rlpm.Workers.dispatch(init, args[1..])) |code| std.process.exit(code);
     var buffer: [4096]u8 = undefined;
     var output = std.Io.File.Writer.init(.stdout(), init.io, &buffer);
     const writer = &output.interface;

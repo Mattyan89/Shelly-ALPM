@@ -104,6 +104,7 @@ fn completeConfiguration(fixture: Fixture) rlpm.OwnerConfiguration {
     config.disable_download_timeout = true;
     config.parallel_downloads = 7;
     config.sandbox_user = "unresolved-sandbox-user";
+    config.worker_executable = "/usr/bin/shelly";
     config.sandbox.setDisabled(true);
     config.sandbox.disable_network = false;
     return config;
@@ -179,6 +180,7 @@ test "owner owns caller configuration, relation versions, and ordered server lis
     try std.testing.expectEqualStrings("!usr/share/docs/keep", config.no_extract[1]);
     try std.testing.expectEqualStrings("usr/bin/*", config.overwrite_files[0]);
     try std.testing.expectEqualStrings("unresolved-sandbox-user", config.sandbox_user.?);
+    try std.testing.expectEqualStrings("/usr/bin/shelly", config.worker_executable.?);
     try std.testing.expect(
         config.sandbox.disable_filesystem and config.sandbox.disable_syscalls and
             !config.sandbox.disable_network,
@@ -360,6 +362,11 @@ test "invalid initialization and partial registration release everything" {
     config = fixture.configuration();
     config.database_path = "/rlpm-test-does-not-exist";
     try std.testing.expectError(error.FileNotFound, rlpm.Owner.init(io, allocator, config, &.{}));
+    for ([_][]const u8{ "", "shelly", "./shelly", "/usr/bin/shelly\x00suffix" }) |path| {
+        config = fixture.configuration();
+        config.worker_executable = path;
+        try std.testing.expectError(error.InvalidOption, rlpm.Owner.init(io, allocator, config, &.{}));
+    }
     config = fixture.configuration();
     try std.testing.expectError(
         error.DuplicateDatabase,

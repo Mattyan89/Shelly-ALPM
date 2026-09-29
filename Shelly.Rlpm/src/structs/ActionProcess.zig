@@ -2,10 +2,10 @@
 //! cwd, umask, environment, signals, or network. Cancellation kills/reaps the
 //! process group, including children still holding the output pipe open.
 const std = @import("std");
-const protocol = @import("../actions/protocol.zig");
+const protocol = @import("action_protocol");
 const Root = @import("RootPath.zig");
 const Owner = @import("Owner.zig");
-const action_worker_options = @import("action_worker");
+const Workers = @import("workers");
 
 const c = protocol.c;
 pub const Result = protocol.Result;
@@ -87,7 +87,7 @@ pub fn run(owner: *Owner, io: std.Io, request: Request) !Result {
         _ = c.close(sockets[1]);
     };
     var child = try std.process.spawn(io, .{
-        .argv = &.{owner.configuration.action_worker orelse action_worker_options.worker_path},
+        .argv = &.{ owner.configuration.worker_executable orelse Workers.self_executable, Workers.action_argument },
         .stdin = .{ .file = .{ .handle = sockets[1], .flags = .{ .nonblocking = false } } },
         .stdout = .pipe,
         .stderr = .pipe,

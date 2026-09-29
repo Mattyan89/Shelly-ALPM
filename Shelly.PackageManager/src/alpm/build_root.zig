@@ -2,7 +2,6 @@
 const selection = @import("backend.zig");
 
 pub const rlpm_only = !selection.libalpm_enabled;
-pub const helpers = [_][]const u8{ "shelly-rlpm-action-worker", "shelly-download-worker" };
 pub const packages: []const []const u8 = if (rlpm_only) &.{
     // Base userspace and the existing bootstrap finalizers.
     "filesystem",
@@ -49,7 +48,7 @@ pub const packages: []const []const u8 = if (rlpm_only) &.{
     "sudo",
     "texinfo",
     "which",
-    // Guest CLI/helpers and source acquisition. Package trust is copied by
+    // Guest CLI and source acquisition. Package trust is copied by
     // bootstrap; archlinux-keyring itself depends on pacman and is not a target.
     "git",
     "ca-certificates",

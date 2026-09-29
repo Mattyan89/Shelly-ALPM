@@ -11,28 +11,45 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
-    const action_worker = b.addExecutable(.{
-        .name = "shelly-rlpm-action-worker",
+    const action_protocol = b.addModule("Shelly_Rlpm_Action_Protocol", .{
+        .root_source_file = b.path("src/actions/protocol.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    mod.addImport("action_protocol", action_protocol);
+    const action_worker = b.addModule("Shelly_Rlpm_Action_Worker", .{
+        .root_source_file = b.path("src/actions/worker.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    action_worker.addImport("action_protocol", action_protocol);
+    const download = b.dependency("shelly_download", .{ .target = target, .optimize = optimize });
+    const workers = b.addModule("Shelly_Rlpm_Workers", .{
+        .root_source_file = b.path("src/workers.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "download_worker", .module = download.module("Shelly_Download_Worker") },
+            .{ .name = "action_worker", .module = action_worker },
+        },
+    });
+    mod.addImport("workers", workers);
+    mod.addImport("Shelly_Download", download.module("Shelly_Download"));
+    // Only test consumers request this artifact; it is never installed.
+    const worker_fixture = b.addExecutable(.{
+        .name = "rlpm-worker-fixture",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/actions/worker.zig"),
+            .root_source_file = b.path("src/tests/worker_fixture.zig"),
             .target = target,
             .optimize = optimize,
-            .link_libc = true,
+            .imports = &.{.{ .name = "workers", .module = workers }},
         }),
     });
-    const action_options = b.addOptions();
-    action_options.addOptionPath("worker_path", action_worker.getEmittedBin());
-    mod.addOptions("action_worker", action_options);
-    b.installArtifact(action_worker);
-    const download = b.dependency("shelly_download", .{ .target = target, .optimize = optimize });
-    mod.addImport("Shelly_Download", download.module("Shelly_Download"));
-    const worker_options = b.addOptions();
-    worker_options.addOptionPath(
-        "worker_path",
-        download.artifact("shelly-download-worker").getEmittedBin(),
-    );
-    mod.addOptions("download_worker", worker_options);
-    b.installArtifact(download.artifact("shelly-download-worker"));
+    const worker_fixture_options = b.addOptions();
+    b.addNamedLazyPath("worker_fixture", worker_fixture.getEmittedBin());
+    worker_fixture_options.addOptionPath("path", worker_fixture.getEmittedBin());
     mod.addImport("Shelly_Key", shelly_key.module("Shelly_Key"));
     mod.linkSystemLibrary("archive", .{});
     mod.linkSystemLibrary("sqlite3", .{});
@@ -61,12 +78,26 @@ pub fn build(b: *std.Build) void {
     // Compile the real read-only example too, rather than an empty test runner.
     test_step.dependOn(&exe.step);
 
+    const self_execution = b.addExecutable(.{
+        .name = "rlpm-self-execution-test",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tests/self_execution.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
+        }),
+    });
+    const run_self_execution = b.addRunArtifact(self_execution);
+    test_step.dependOn(&run_self_execution.step);
+    b.step("test-self-execution", "Exercise actions after replacing the embedding executable").dependOn(&run_self_execution.step);
+
     const public_tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/public_api.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
+    public_tests.root_module.addOptions("worker_fixture", worker_fixture_options);
     const run_public = b.addRunArtifact(public_tests);
     public_tests.root_module.addCSourceFile(
         .{
@@ -125,6 +156,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
+    executor_tests.root_module.addOptions("worker_fixture", worker_fixture_options);
     const run_executor_tests = b.addRunArtifact(executor_tests);
     b.step("test-executor", "Run disposable-root payload and database transactions").dependOn(
         &run_executor_tests.step,
@@ -136,6 +168,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
+    hook_tests.root_module.addOptions("worker_fixture", worker_fixture_options);
     b.step("test-hooks", "Run hermetic hook parser, discovery, matching and ownership fixtures").dependOn(
         &b.addRunArtifact(hook_tests).step,
     );
@@ -154,6 +187,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }) });
+    sandbox_tests.root_module.addOptions("worker_fixture", worker_fixture_options);
     const sandbox_run = b.addRunArtifact(sandbox_tests);
     sandbox_run.has_side_effects = true;
     b.step("test-download-sandbox", "Opt-in root-only sandbox integration, private /tmp roots").dependOn(
@@ -242,6 +276,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }), .test_runner = terminal_runner });
+    payload_benchmark.root_module.addOptions("worker_fixture", worker_fixture_options);
     const run_payload_benchmark = b.addRunArtifact(payload_benchmark);
     run_payload_benchmark.stdio = .inherit;
     run_payload_benchmark.has_side_effects = true;
@@ -275,6 +310,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }), .test_runner = terminal_runner });
+    executor_integration.root_module.addOptions("worker_fixture", worker_fixture_options);
     const run_executor = b.addSystemCommand(&.{ "unshare", "--user", "--map-root-user", "--mount" });
     run_executor.addArtifactArg(executor_integration);
     run_executor.stdio = .inherit;
@@ -291,7 +327,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     }) });
-    action_filter.root_module.addOptions("worker_path", action_options);
+    action_filter.root_module.addOptions("worker_fixture", worker_fixture_options);
+    action_filter.root_module.addImport("workers", workers);
     const action_probe = b.addExecutable(.{ .name = "rlpm-action-probe-fixture", .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests/action_probe.zig"),
         .target = target,
@@ -307,6 +344,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "Shelly_Rlpm", .module = mod }},
     }), .test_runner = terminal_runner });
+    action_tests.root_module.addOptions("worker_fixture", worker_fixture_options);
     action_tests.root_module.addOptions("action_fixtures", action_fixture_options);
     const run_actions = b.addSystemCommand(
         &.{

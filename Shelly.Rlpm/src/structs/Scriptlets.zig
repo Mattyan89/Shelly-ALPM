@@ -3,7 +3,7 @@
 //! on both sides of an explicit removal (before the local record is deleted).
 const std = @import("std");
 const Root = @import("RootPath.zig");
-const c = @import("../actions/protocol.zig").c;
+const c = @import("action_protocol").c;
 const Process = @import("ActionProcess.zig");
 const Owner = @import("Owner.zig");
 const Package = @import("Package.zig");

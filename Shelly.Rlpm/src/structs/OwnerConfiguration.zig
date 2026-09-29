@@ -38,10 +38,8 @@ disable_download_timeout: bool = false,
 parallel_downloads: u32 = 1,
 address_family_policy: transport.AddressFamilyPolicy = .prefer_ipv4,
 sandbox_user: ?[]const u8 = null,
-/// Installed worker override; default resolves the matching build artifact.
-download_worker: ?[]const u8 = null,
-/// Matching installed hook/scriptlet worker; independent of the download worker.
-action_worker: ?[]const u8 = null,
+/// Absolute executable implementing Workers.dispatch; null re-executes this process.
+worker_executable: ?[]const u8 = null,
 sandbox: Sandbox = .{},
 callbacks: Callbacks = .{},
 
@@ -129,8 +127,11 @@ pub fn copy(self: OwnerConfiguration, allocator: std.mem.Allocator, io: std.Io) 
     result.key_acquisition.key_files = try copyStrings(allocator, self.key_acquisition.key_files, false);
     result.key_acquisition.keyserver = try copyOptional(allocator, self.key_acquisition.keyserver);
     result.log_file = try copyOptional(allocator, self.log_file);
-    result.download_worker = try copyOptional(allocator, self.download_worker);
-    result.action_worker = try copyOptional(allocator, self.action_worker);
+    if (self.worker_executable) |path| {
+        try validateString(path, false);
+        if (!std.fs.path.isAbsolute(path)) return error.InvalidOption;
+    }
+    result.worker_executable = try copyOptional(allocator, self.worker_executable);
     result.sandbox_user = try copyOptional(allocator, self.sandbox_user);
     const assumed = try allocator.alloc(PackageRelation, self.assume_installed.len);
     for (self.assume_installed, assumed) |relation, *owned| {

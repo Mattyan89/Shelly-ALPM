@@ -10,6 +10,8 @@ pub fn main(init: std.process.Init) !void {
     const process_arguments = try init.minimal.args.toSlice(arena);
     const arguments = if (process_arguments.len > 0) process_arguments[1..] else process_arguments;
 
+    if (PackageManager.internal_workers.dispatch(init, arguments)) |code| std.process.exit(code);
+
     var stdin_buffer: [4096]u8 = undefined;
     var stdin_file_reader: Io.File.Reader = .initStreaming(.stdin(), io, &stdin_buffer);
     var stdout_buffer: [4096]u8 = undefined;

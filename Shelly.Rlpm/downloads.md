@@ -147,10 +147,13 @@ uses libc/NSS; libc credential setters retain their thread-coordination behavior
 
 The parent reads regular worker outputs without following symlinks, verifies
 sealed bytes, and publishes mode-0644 files under its own ownership. Cancellation
-terminates/reaps the child. The shared worker is built alongside RLPM; deployments
-can set `OwnerConfiguration.download_worker` to its installed absolute path.
-The default points to the matching build artifact, which suits development but
-must not be assumed to survive removal of a build cache.
+terminates/reaps the child. Children re-execute `/proc/self/exe` with
+`--internal-download-worker`; deployments ship only Shelly. Embedders must install
+`rlpm.Workers.dispatch` before application setup or set the copied, absolute
+`OwnerConfiguration.worker_executable` override to a matching dispatcher host.
+There is no build-cache fallback. The bounded queue still launches independent
+requests concurrently; this change does not introduce a shared connection pool
+across sandboxed children.
 
 ## Evidence and limits
 
@@ -186,10 +189,18 @@ enforcement in four fresh unprivileged children, covering both switches, allowed
 staging writes, denied outside writes, syscall rejection and unchanged parent
 access. It passes locally and requires no sudo. Ordinary shared tests also check
 filter decisions, including alternate-ABI rejection.
-`zig build test-download-sandbox` explicitly requires root, account `nobody` and
-working Landlock/seccomp. It creates only disposable `/tmp/rlpm-sandbox-test-*`
-roots and checks all switch combinations, denied private-source reads, successful
-public reads, final permissions and unchanged parent UID. It was compile-checked
-locally; execution was unavailable because sudo required a password. Live TLS
+`zig build test-download-sandbox` requires namespace root, account `nobody`,
+working Landlock/seccomp, and permission to change supplementary groups. It uses
+disposable `/tmp/rlpm-sandbox-*` roots to check all switch combinations, denied
+private-source reads, successful public reads, final permissions, unchanged parent
+UID, overlapping child downloads, and prompt completion callbacks. On hosts with
+subordinate UID/GID ranges and `newuidmap`/`newgidmap`, it can run without sudo:
+
+```sh
+unshare --user --map-auto --map-root-user --setgroups allow zig build test-download-sandbox
+```
+
+This namespace-based run passes locally; it does not claim host-root parity.
+Live TLS
 server combinations and every libcurl protocol are not individually exercised;
 the adapter's enabled protocol inventory and a local FTP transfer are checked.

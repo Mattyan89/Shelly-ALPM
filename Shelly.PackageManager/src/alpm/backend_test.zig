@@ -1,4 +1,5 @@
 const std = @import("std");
+const worker_fixture = @import("worker_fixture");
 const pm = @import("PackageManager");
 const t = std.testing;
 
@@ -30,6 +31,7 @@ const Fixture = struct {
         const archive_path = try std.fs.path.join(a, &.{ path, "fixture.pkg.tar" });
         const options: pm.Manager.InitOptions = .{
             .backend = backend,
+            .worker_executable = try std.Io.Dir.cwd().realPathFileAlloc(t.io, worker_fixture.path, a),
             .config_path = try std.fs.path.join(a, &.{ path, "pacman.conf" }),
             .root_directory = try std.fs.path.join(a, &.{ path, "root" }),
             .database_path = try std.fs.path.join(a, &.{ path, "db" }),
@@ -293,21 +295,14 @@ test "native backend default changes apply only to subsequently initialized mana
     try t.expectEqual(pm.Manager.default_backend, next.backend());
 }
 
-test "native backend RLPM uses staged workers when installed beside the executable" {
-    if (t.environ.getAlloc(t.allocator, "SHELLY_TEST_INSTALLED_WORKERS")) |value| {
-        defer t.allocator.free(value);
-    } else |_| return error.SkipZigTest;
+test "native backend RLPM retains the owned worker executable across refresh" {
     var fixture = try Fixture.init(.rlpm);
     defer fixture.deinit();
     const manager = try fixture.manager();
     defer manager.deinit();
-    const executable = try std.process.executablePathAlloc(t.io, t.allocator);
-    defer t.allocator.free(executable);
-    inline for (.{ .{ "action_worker", "shelly-rlpm-action-worker" }, .{ "download_worker", "shelly-download-worker" } }) |field| {
-        const expected = try std.fs.path.join(t.allocator, &.{ std.fs.path.dirname(executable).?, field[1] });
-        defer t.allocator.free(expected);
-        try t.expectEqualStrings(expected, @field(manager.engine.?.rlpm.owner.configuration, field[0]).?);
-    }
+    try t.expectEqualStrings(fixture.options.worker_executable.?, manager.engine.?.rlpm.owner.options().worker_executable.?);
+    try manager.refresh();
+    try t.expectEqualStrings(fixture.options.worker_executable.?, manager.engine.?.rlpm.owner.options().worker_executable.?);
 }
 
 test "native backend RLPM preview copies metadata and rejects database aliases and writes" {

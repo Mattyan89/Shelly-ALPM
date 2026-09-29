@@ -67,7 +67,7 @@ pub const Manager = struct {
             defer allocator.free(name);
             self.detected_cachyos = std.ascii.eqlIgnoreCase(name, "cachyos");
         }
-        self.owner = try mapping.createOwner(self.io(), allocator, &self.config, self.parallel_download_count);
+        self.owner = try mapping.createOwner(self.io(), allocator, &self.config, self.parallel_download_count, options.worker_executable);
         self.owner.configuration.address_family_policy = self.download_address_family_policy;
         self.owner.configuration.callbacks = .{ .event = legacyEvent, .event_context = self };
         return self;
@@ -109,7 +109,7 @@ pub const Manager = struct {
     }
     pub fn refresh(self: *Manager) !void {
         try self.checkCancelled();
-        var replacement = try mapping.createOwner(self.io(), self.allocator, &self.config, self.parallel_download_count);
+        var replacement = try mapping.createOwner(self.io(), self.allocator, &self.config, self.parallel_download_count, self.owner.configuration.worker_executable);
         errdefer replacement.deinit() catch unreachable;
         replacement.configuration.address_family_policy = self.download_address_family_policy;
         replacement.configuration.callbacks = .{ .event = legacyEvent, .event_context = self };

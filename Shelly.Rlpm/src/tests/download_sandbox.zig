@@ -1,11 +1,15 @@
 //! Explicit privileged integration target. Never part of the ordinary test step.
 const std = @import("std");
 const rlpm = @import("Shelly_Rlpm");
+const worker_fixture = @import("worker_fixture");
+const HttpFixture = @import("http_download_fixture.zig");
 
 test "root download sandbox drops credentials and preserves the parent across all switches" {
     if (std.c.getuid() != 0) return error.RootSandboxIntegrationUnavailable;
     const a = std.testing.allocator;
     const io = std.testing.io;
+    const executable = try std.Io.Dir.cwd().realPathFileAlloc(io, worker_fixture.path, a);
+    defer a.free(executable);
     const base = try rlpm.Downloads.uniquePath(a, io, "/tmp", "rlpm-sandbox-test");
     defer a.free(base);
     try std.Io.Dir.cwd().createDir(io, base, .fromMode(0o755));
@@ -32,6 +36,7 @@ test "root download sandbox drops credentials and preserves the parent across al
             .database_path = path,
             .cache_directories = &.{cache},
             .sandbox_user = "nobody",
+            .worker_executable = executable,
             .sandbox = .{
                 .disable_filesystem = bits & 1 != 0,
                 .disable_syscalls = bits & 2 != 0,
@@ -60,4 +65,61 @@ test "root download sandbox drops credentials and preserves the parent across al
         }
         try std.testing.expectEqual(0, std.c.getuid());
     }
+}
+
+test "sandboxed workers overlap downloads and report fast transfers before slow workers finish" {
+    if (std.c.getuid() != 0) return error.RootSandboxIntegrationUnavailable;
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const executable = try std.Io.Dir.cwd().realPathFileAlloc(io, worker_fixture.path, a);
+    defer a.free(executable);
+    const base = try rlpm.Downloads.uniquePath(a, io, "/tmp", "rlpm-sandbox-queue");
+    defer a.free(base);
+    try std.Io.Dir.cwd().createDir(io, base, .fromMode(0o755));
+    defer std.Io.Dir.cwd().deleteTree(io, base) catch unreachable;
+    const address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
+    var server: HttpFixture = .{
+        .server = try address.listen(io, .{ .reuse_address = true }),
+        .body = "sandboxed concurrent payload",
+        .gate_slow = true,
+        .unknown_length = true,
+    };
+    defer server.server.deinit(io);
+    var serving = try io.concurrent(HttpFixture.serve, .{&server});
+    defer _ = serving.cancel(io) catch {};
+    const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}", .{server.server.socket.address.getPort()});
+    defer a.free(url);
+    var owner = try rlpm.Owner.init(io, a, .{
+        .root = base,
+        .database_path = base,
+        .cache_directories = &.{base},
+        .parallel_downloads = 2,
+        .sandbox_user = "nobody",
+        .worker_executable = executable,
+    }, &.{});
+    defer owner.deinit() catch unreachable;
+    const Capture = struct {
+        fn receive(data: ?*anyopaque, event: rlpm.Callbacks.Download) void {
+            const http: *HttpFixture = @ptrCast(@alignCast(data.?));
+            if (event == .transferred and std.mem.eql(u8, event.transferred.name, "fast.pkg"))
+                http.fast_reported.store(true, .release);
+        }
+    };
+    try owner.setCallbacks(.{ .download = Capture.receive, .download_context = &server });
+    const files = try rlpm.Downloads.acquire(&owner, io, &.{
+        .{ .name = "slow.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
+        .{ .name = "fast.pkg", .servers = &.{url}, .policy = rlpm.OwnerConfiguration.disabled_signatures },
+    });
+    defer a.free(files);
+    defer for (files) |*file| file.deinit();
+    try std.testing.expectEqual(2, server.peak.load(.acquire));
+    try std.testing.expectEqual(2, server.requests.load(.acquire));
+    try std.testing.expect(server.fast_reported.load(.acquire));
+    try std.testing.expect(!server.timed_out.load(.acquire) and !server.failed.load(.acquire));
+    for (files) |file| {
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(io, file.path, a, .limited(1024));
+        defer a.free(bytes);
+        try std.testing.expectEqualStrings(server.body, bytes);
+    }
+    try std.testing.expectEqual(0, std.c.getuid());
 }

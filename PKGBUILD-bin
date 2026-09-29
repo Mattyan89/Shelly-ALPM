@@ -82,9 +82,6 @@ package_shelly-bin() {
 
   # Install Shelly.Cli binary
   install -Dm755 "$srcdir/shelly" "$pkgdir/usr/bin/shelly"
-  for worker in shelly-rlpm-action-worker shelly-download-worker; do
-    install -Dm755 "$srcdir/$worker" "$pkgdir/usr/bin/$worker"
-  done
 
   # Install Shelly.Key binary
   install -Dm755 "$srcdir/shelly-key" "$pkgdir/usr/bin/shelly-key"

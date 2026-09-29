@@ -15,10 +15,13 @@ Callers validate integrity before treating transport output as a package.
 HTTP/HTTPS use Shelly.Http; local files and HTTP-date parsing use Zig directly.
 `Curl.zig` calls libcurl for its other enabled protocols and fallback for unsupported
 proxy/redirect schemes. The adapter's file I/O, callbacks and ownership are Zig.
-The optional `shelly-download-worker` applies Linux Landlock/seccomp through
-`Sandbox.zig` and changes credentials in its own process. Account lookup retains
-libc/NSS integration. Its protocol is internal to the matching build; RLPM owns
-its parent-side lifecycle. There are no C implementation files in this module.
+`Shelly_Download_Worker.run` applies Linux Landlock/seccomp through `Sandbox.zig`
+and changes credentials in its own process. Shelly invokes it through the reserved
+`--internal-download-worker` mode of the CLI; no separate executable is installed.
+Account lookup retains libc/NSS integration. Its protocol is internal to the
+matching build; RLPM owns its parent-side lifecycle. Embedding applications use
+RLPM's shared early dispatcher or configure an absolute `worker_executable`.
+There are no C implementation files in this module.
 
 Run `zig build test` for local/file transport and queue fixtures. Loopback sockets
 must be available. `zig build test-sandbox` checks actual Landlock/seccomp

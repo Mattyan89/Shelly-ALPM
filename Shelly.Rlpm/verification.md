@@ -1,6 +1,6 @@
 # Integrity and signature verification
 
-M4 enforces the effective `SignaturePolicy` when loading sync databases and
+RLPM enforces the effective `SignaturePolicy` when loading sync databases and
 packages through `Owner`. CachyOS SQLite and tar repositories use the same
 verification path. Local installed-database metadata retains its recorded
 validation history; it does not receive a detached database-signature check.
@@ -119,7 +119,7 @@ adapter, and consent/import/reverification use real disposable GPG keyrings.
   an explicit cached path.
 - `Package.getSignature` returns embedded signature bytes first, otherwise the
   supplied archive's sidecar; `decodeSignature` and `OpenPgp.decode` decode base64.
-  The caller owns returned bytes. Cache-directory selection remains M7.
+  The caller owns returned bytes. Cache-directory selection belongs to download planning.
 - `OpenPgp.extractIssuers` owns ordered key IDs and issuer fingerprints from
   binary v4 document-signature packets. It does not authenticate those claims.
   Partial/indeterminate packets and unsupported versions/classes return errors.
@@ -141,6 +141,6 @@ verification tests and 25 standalone package tests (overlapping the normal
 suite), 12 real GPG cases, and 147 `Shelly.Key` tests. No claim of exhaustive
 libalpm parity is made; compatibility rows remain partial with explicit evidence.
 
-M7 will feed downloaded files through these checks before refresh publication;
-M8/M10 will use verified package readers before installation. Downloads,
-transactions and full libalpm parity remain later milestones.
+Downloads feed files through these checks before refresh publication; preflight
+and execution use verified package readers before installation. Full libalpm
+parity remains subject to production acceptance.

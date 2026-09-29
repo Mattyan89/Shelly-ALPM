@@ -1,5 +1,6 @@
 //! Runs only in a fresh user/mount/PID namespace; never needs host root.
 const std = @import("std");
+const worker_fixture = @import("worker_fixture");
 const pm = @import("PackageManager");
 const Manager = pm.Manager;
 const fixture = @import("hook_fixture");
@@ -65,8 +66,11 @@ test "native provisioning discovers newly installed guest hooks and detects thei
             const package = try std.fs.path.join(allocator, &.{ path, "fixture.pkg.tar" });
             defer allocator.free(package);
 
+            const executable = try std.Io.Dir.cwd().realPathFileAlloc(io, worker_fixture.path, allocator);
+            defer allocator.free(executable);
             const manager = try Manager.init(allocator, std.testing.environ, .{
                 .backend = backend,
+                .worker_executable = executable,
                 .config_path = config_path,
                 .root_directory = root,
                 .database_path = database,

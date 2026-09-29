@@ -1,5 +1,6 @@
 //! By convention, root.zig is the root source file when making a package.
 const std = @import("std");
+pub const internal_workers = @import("Shelly_Rlpm").Workers;
 const Io = std.Io;
 const flatpak_backend_loader = @import("flatpak/backend_loader.zig");
 

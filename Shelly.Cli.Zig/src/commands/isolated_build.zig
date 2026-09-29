@@ -254,19 +254,6 @@ pub const Root = struct {
         defer self.allocator.free(destination);
         try std.Io.Dir.copyFile(.cwd(), executable, .cwd(), destination, self.io, .{});
         try std.Io.Dir.cwd().setFilePermissions(self.io, destination, .fromMode(0o755), .{});
-        if (comptime build_root.rlpm_only) {
-            const directory = std.fs.path.dirname(executable) orelse return error.InvalidExecutablePath;
-            for (build_root.helpers) |name| {
-                const source = try std.fs.path.join(self.allocator, &.{ directory, name });
-                defer self.allocator.free(source);
-                const relative = try std.fs.path.join(self.allocator, &.{ "usr/local/libexec/shelly", name });
-                defer self.allocator.free(relative);
-                const target = try self.rootJoin(relative);
-                defer self.allocator.free(target);
-                try std.Io.Dir.copyFile(.cwd(), source, .cwd(), target, self.io, .{});
-                try std.Io.Dir.cwd().setFilePermissions(self.io, target, .fromMode(0o755), .{});
-            }
-        }
     }
 
     pub fn stageSourcePgpKeys(self: *Root, contents: []const u8) !void {
@@ -281,13 +268,13 @@ pub const Root = struct {
     }
 
     /// Check the complete dynamic dependency closure inside the guest before
-    /// starting the build. Packaged helper paths must resolve there as well.
+    /// starting the build. Both worker modes use the staged executable.
     pub fn validateRuntime(self: *Root, environ: std.process.Environ, operation: *const PackageManager.Operation) !void {
         try self.validateRuntimeAt(environ, operation, null);
     }
 
     // Inspect host executables before provisioning, then repeat against guest
-    // libraries after staging. Helpers must exist alongside the installed CLI.
+    // libraries after staging.
     fn validateRuntimeAt(self: *Root, environ: std.process.Environ, operation: *const PackageManager.Operation, host_executable: ?[]const u8) !void {
         if (comptime !build_root.rlpm_only) return;
         const Capture = struct {
@@ -305,34 +292,25 @@ pub const Root = struct {
                 if (missing or forbidden) capture.operation.status(.warning, value, "build.isolation.runtime", null);
             }
         };
-        for ([_][]const u8{"shelly"} ++ build_root.helpers) |name| {
-            const path = if (host_executable) |executable|
-                if (std.mem.eql(u8, name, "shelly"))
-                    try self.allocator.dupe(u8, executable)
-                else
-                    try std.fs.path.join(self.allocator, &.{ std.fs.path.dirname(executable) orelse return error.InvalidExecutablePath, name })
-            else
-                try std.fs.path.join(self.allocator, &.{ "/usr/local/libexec/shelly", name });
-            defer self.allocator.free(path);
-            var capture: Capture = .{ .operation = operation };
-            const argv: []const []const u8 = if (host_executable != null)
-                &.{ "/usr/bin/env", "LC_ALL=C", "/usr/bin/ldd", path }
-            else
-                &.{ "/usr/bin/chroot", self.root_path, "/usr/bin/env", "LC_ALL=C", "/usr/bin/ldd", path };
-            const status = try PackageManager.process_runner.runStreamingWithEnvironmentOperation(
-                self.allocator,
-                self.io,
-                environ,
-                argv,
-                null,
-                null,
-                .{ .function = Capture.line, .data = &capture },
-                operation,
-            );
-            try operation.checkCancelled();
-            if (capture.forbidden) return error.UnsupportedBuildRootDependency;
-            if (capture.missing or (status != 0 and !capture.static)) return error.MissingBuildRuntime;
-        }
+        const path = host_executable orelse guest_executable;
+        var capture: Capture = .{ .operation = operation };
+        const argv: []const []const u8 = if (host_executable != null)
+            &.{ "/usr/bin/env", "LC_ALL=C", "/usr/bin/ldd", path }
+        else
+            &.{ "/usr/bin/chroot", self.root_path, "/usr/bin/env", "LC_ALL=C", "/usr/bin/ldd", path };
+        const status = try PackageManager.process_runner.runStreamingWithEnvironmentOperation(
+            self.allocator,
+            self.io,
+            environ,
+            argv,
+            null,
+            null,
+            .{ .function = Capture.line, .data = &capture },
+            operation,
+        );
+        try operation.checkCancelled();
+        if (capture.forbidden) return error.UnsupportedBuildRootDependency;
+        if (capture.missing or (status != 0 and !capture.static)) return error.MissingBuildRuntime;
     }
 
     pub fn writeBuildConfiguration(self: *Root, contents: []const u8) !void {
@@ -972,19 +950,12 @@ test "isolated guest traversal permissions survive restrictive umasks" {
     defer root.deinit();
     const executable_contents = "#!/bin/sh\nexit 0\n";
     try temporary.dir.writeFile(io, .{ .sub_path = "builder", .data = executable_contents });
-    for (build_root.helpers) |name|
-        try temporary.dir.writeFile(io, .{ .sub_path = name, .data = executable_contents });
     const executable_path = try temporary.dir.realPathFileAlloc(io, "builder", allocator);
     defer allocator.free(executable_path);
     try root.stageExecutable(executable_path);
     var guest = try std.Io.Dir.cwd().openDir(io, root.root_path, .{});
     defer guest.close(io);
     try expectStagedInput(guest, guest_executable_relative, executable_contents, 0o755);
-    if (comptime build_root.rlpm_only) for (build_root.helpers) |name| {
-        const path = try std.fs.path.join(allocator, &.{ "usr/local/libexec/shelly", name });
-        defer allocator.free(path);
-        try expectStagedInput(guest, path, executable_contents, 0o755);
-    };
     try root.writeReviewedInput("nested/reviewed.txt", "reviewed bytes\n", 0o660);
 
     for ([_][]const u8{ "", "build", "usr", "usr/local", "usr/local/libexec", "usr/local/libexec/shelly" }) |relative| {

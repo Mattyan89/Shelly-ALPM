@@ -28,11 +28,11 @@ PKGBUILD's version grammar. Missing pkgrel and internal hyphens remain supported
 `InvalidVersion` and `InvalidCharacter` describe validation failures; numeric
 epoch overflow is no longer possible.
 
-M2 adds `initRaw`, which owns a permissive NUL-free version without applying
-structural validation. Package metadata uses this constructor. Relation
-constraints now borrow or own raw strings directly and call `compareStrings`;
-they do not construct strict Version values. Bytes outside ASCII are separators,
-including individual UTF-8 bytes; this does not provide locale-sensitive sorting.
+`initRaw` owns a permissive NUL-free version without applying structural
+validation. Package metadata uses this constructor. Relation constraints now
+borrow or own raw strings directly and call `compareStrings`; they do not
+construct strict Version values. Bytes outside ASCII are separators, including
+individual UTF-8 bytes; this does not provide locale-sensitive sorting.
 
 ## API migration and ownership
 
@@ -87,13 +87,14 @@ The 54 additional expected signs were recorded on 2026-09-23 by calling
 
 This identifies the downstream build used for the original results. Independent
 verification of pristine upstream source was unavailable at the time of capture.
-M0 later acquired the full upstream revision
+The reference baseline later acquired the full upstream revision
 `54d94116164b0b2202c6061c4a59c6f3e70820d8` and pinned the actual CachyOS source
-revision `4056cd687f6379e61e7decb9b66e9b57cb3949a9` plus packaging patches in the
-[reference manifest](src/tests/reference/manifest.json). No expectations were
-changed or relabeled as pristine-upstream execution results. The fixed examples
-are compatibility evidence, not an exhaustive proof. M2 adds nine independently
-recorded byte-version cases under the C locale in
-[metadata-reference.json](src/tests/fixtures/metadata-reference.json), consumed by
-`test-metadata` and `test`. The original 54 pairs/signs are unchanged. Embedded
-NUL and nullable C pointers remain outside the declared comparison contract.
+revision `4056cd687f6379e61e7decb9b66e9b57cb3949a9` plus packaging patches in
+the [reference manifest](src/tests/reference/manifest.json). No expectations
+were changed or relabeled as pristine-upstream execution results. The fixed
+examples are compatibility evidence, not an exhaustive proof. The metadata
+fixtures add nine independently recorded byte-version cases under the C locale
+in [metadata-reference.json](src/tests/fixtures/metadata-reference.json),
+consumed by `test-metadata` and `test`. The original 54 pairs/signs are
+unchanged. Embedded NUL and nullable C pointers remain outside the declared
+comparison contract.

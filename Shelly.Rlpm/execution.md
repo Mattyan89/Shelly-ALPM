@@ -1,12 +1,13 @@
 # Package execution and local persistence
 
-M0–M10 are accepted. M10 implements normal `Transaction.commit()`;
+The executor implements normal `Transaction.commit()`;
 `capabilities().transactions` is enabled. PackageManager still uses libalpm.
-M11 implements runtime selection between libalpm and RLPM, both enabled in default
-builds, plus an optional libalpm-disabled build that defaults to RLPM. See the
-[M11 contract](../docs/rlpm-libalpm-completion-plan.md#m11--configure-both-backends-and-complete-production-acceptance).
-The Owner/Database/Package/Transaction ownership model and CachyOS extensions
-remain intact.
+Shelly implements runtime selection between libalpm and RLPM, both enabled in
+default builds, plus an optional libalpm-disabled build that defaults to RLPM.
+See the [backend build and acceptance
+contract](../docs/native-package-backends.md). The
+Owner/Database/Package/Transaction ownership model and CachyOS extensions remain
+intact.
 
 ```zig
 const tx = try owner.initializeTransaction(io, .{});
@@ -186,7 +187,7 @@ and reproducibility limits are recorded in the
   cases, flags/backups, persisted reasons/provenance, transfers, recovery,
   cancellation, root replacement, audit, operation-boundary fault injection and
   real filesystem write failures. Included in `test`.
-- `zig build test-executor-integration`: real chroot commits replay all 19 M9
+- `zig build test-executor-integration`: real chroot commits replay all 19 hook/scriptlet
   native traces, attributes/capabilities/sparse/ACL behavior, script-modified
   backup inputs, post-hook dependencies, private-tmpfs ENOSPC and device creation
   or its kernel denial. Missing namespace/mount support fails, never skips.
@@ -198,5 +199,6 @@ and reproducibility limits are recorded in the
 
 Run each in Debug and ReleaseSafe. CI runs the hermetic and namespace suites;
 the pinned-binary interoperability gate is explicit because stock Arch CI does
-not carry the frozen CachyOS build. These are M10 evidence, not a declaration of
-complete public libalpm parity: the overall ledger and M11 acceptance remain open.
+not carry the frozen CachyOS build. These are executor validation results, not a
+declaration of complete public libalpm parity: the overall ledger and production
+acceptance remain open.

@@ -1,8 +1,8 @@
 # Filesystem and package preflight
 
-M8 adds `Transaction.preflight()`, `manifest()` and `revalidatePreflight()`.
-`filesystem_preflight` and `transactions` are enabled. M8 and M9 are accepted;
-M10 consumes this manifest in [normal commit](execution.md).
+The preflight API exposes `Transaction.preflight()`, `manifest()` and
+`revalidatePreflight()`. `filesystem_preflight` and `transactions` are enabled.
+The executor consumes this manifest in [normal commit](execution.md).
 
 ```zig
 const tx = try owner.initializeTransaction(io, .{});
@@ -20,13 +20,14 @@ try tx.revalidatePreflight();
 ```
 
 The transaction owns the manifest, archive snapshots, descriptors and all views.
-Release frees them even after cancellation, verification failure or an allocation
-error. Successful preflight leaves the transaction prepared. Repeated preflight
-revalidates the existing result. Failure transitions to failed/interrupted and
-retains `manifest.failure` and `manifest.conflicts` when available. Start a fresh
-transaction to retry. DOWNLOADONLY has its separate M7 commit path and rejects
-preflight. DBONLY loads and verifies full archives and plans database changes,
-but omits payload conflict checks and file effects.
+Release frees them even after cancellation, verification failure or an
+allocation error. Successful preflight leaves the transaction prepared. Repeated
+preflight revalidates the existing result. Failure transitions to
+failed/interrupted and retains `manifest.failure` and `manifest.conflicts` when
+available. Start a fresh transaction to retry. DOWNLOADONLY has a separate
+download commit path and rejects preflight. DBONLY loads and verifies full
+archives and plans database changes, but omits payload conflict checks and file
+effects.
 
 ## Packages and execution input
 
@@ -105,12 +106,13 @@ size and modification/change timestamps are checked again before execution.
 Backup content reads follow only confined paths. Mount and parent access checks
 are repeated, including sticky-directory ownership and read-only file mounts.
 
-Preflight does not make later pathname writes race-safe. M10 must consume the
-manifest through confined parent descriptors, use no-follow temporary outputs and
-descriptor-relative publication, revalidate after pre-transaction hooks, and check
-each operation against its expected state. It must update those expectations as
-its own operations change the filesystem. A stale or failed transaction cannot
-authorize extraction. No installed payload writes exist in M8.
+Preflight does not make later pathname writes race-safe. The executor must
+consume the manifest through confined parent descriptors, use no-follow
+temporary outputs and descriptor-relative publication, revalidate after
+pre-transaction hooks, and check each operation against its expected state. It
+must update those expectations as its own operations change the filesystem. A
+stale or failed transaction cannot authorize extraction. Preflight does not
+write installed payloads.
 
 ## Space checks and compatibility boundaries
 
@@ -145,7 +147,9 @@ immediately before commit. Normal tests project manifest decisions into expected
 contents and inventory without running an RLPM executor or loading libalpm.
 
 The real GPG suite adds remote-policy retention and rejection of a changed
-detached signature during revalidation. M10 adds actual payload extraction, metadata attributes and ENOSPC on a private
-tmpfs; M8 retains its controlled space/read-only boundary checks. The existing root-only download sandbox
-fixture remains compile-checked only in this environment. See [execution.md](execution.md) for the M10 executor evidence; full backend
-equivalence remains an M11 acceptance gate.
+detached signature during revalidation. Executor tests cover actual payload
+extraction, metadata attributes and ENOSPC on a private tmpfs; preflight tests
+retain controlled space/read-only boundary checks. Download sandbox tests now
+pass inside a subordinate-ID namespace, including credential changes. See
+[execution.md](execution.md) for executor validation results; full backend
+equivalence remains a production acceptance gate.

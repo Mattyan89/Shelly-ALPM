@@ -1,7 +1,8 @@
 //! Test-only launcher: force network namespace creation to fail with EPERM.
 //! No fault-injection switch exists in the production worker.
 const std = @import("std");
-const worker_options = @import("worker_path");
+const worker_fixture = @import("worker_fixture");
+const Workers = @import("workers");
 
 const linux = std.os.linux;
 const bpf = linux.BPF;
@@ -62,8 +63,8 @@ pub fn main() void {
         ),
     ) != .SUCCESS)
         std.process.exit(126);
-    const path = worker_options.worker_path ++ "";
-    const argv = [_:null]?[*:0]const u8{path.ptr};
+    const path = worker_fixture.path ++ "";
+    const argv = [_:null]?[*:0]const u8{ path.ptr, Workers.action_argument };
     _ = c.execv(path.ptr, @ptrCast(&argv));
     std.process.exit(126);
 }

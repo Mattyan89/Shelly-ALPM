@@ -4,7 +4,7 @@ const transport = @import("Shelly_Download");
 const Owner = @import("Owner.zig");
 const Publication = @import("Publication.zig");
 const Downloads = @import("Downloads.zig");
-const download_worker_options = @import("download_worker");
+const Workers = @import("workers");
 const ImmutableFile = @import("ImmutableFile.zig");
 
 const protocol = transport.WorkerProtocol;
@@ -76,7 +76,7 @@ pub fn fetch(
     var child = try std.process.spawn(
         io,
         .{
-            .argv = &.{owner.configuration.download_worker orelse download_worker_options.worker_path},
+            .argv = &.{ owner.configuration.worker_executable orelse Workers.self_executable, Workers.download_argument },
             .stdin = .pipe,
             .stdout = .pipe,
             .stderr = .ignore,

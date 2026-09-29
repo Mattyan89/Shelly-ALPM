@@ -8,7 +8,7 @@ const Process = @import("ActionProcess.zig");
 const Scriptlets = @import("Scriptlets.zig");
 const Plan = @import("TransactionPlan.zig");
 const Diagnostic = @import("Diagnostic.zig");
-const c = @import("../actions/protocol.zig").c;
+const c = @import("action_protocol").c;
 const Audit = @import("Audit.zig");
 const PackageRelation = @import("PackageRelation.zig");
 

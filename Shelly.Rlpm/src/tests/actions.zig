@@ -75,7 +75,9 @@ fn probe(f: *Fixture) !void {
 
 fn filter(owner: *rlpm.Owner) !void {
     var config = owner.options();
-    config.action_worker = options.filter;
+    const executable = try std.Io.Dir.cwd().realPathFileAlloc(io, options.filter, a);
+    defer a.free(executable);
+    config.worker_executable = executable;
     try owner.setOptions(io, config);
 }
 

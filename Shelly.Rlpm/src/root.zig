@@ -1,6 +1,7 @@
 //! Independent native package metadata and lifecycle API. Operational capability
 //! reporting is intentionally narrower than the eventual libalpm target.
 const builtin = @import("builtin");
+pub const Workers = @import("workers");
 pub const TransactionActions = @import("structs/TransactionActions.zig");
 pub const Scriptlets = @import("structs/Scriptlets.zig");
 pub const Hooks = @import("structs/Hooks.zig");

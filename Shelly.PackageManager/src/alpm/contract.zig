@@ -164,6 +164,8 @@ pub const InitOptions = struct {
     /// Reject pacman/libalpm requirements in a disposable RLPM-only build root.
     /// Bootstrap sets this only when libalpm is compiled out.
     rlpm_only_root: bool = false,
+    /// RLPM host executable with internal worker dispatch; null re-executes self.
+    worker_executable: ?[]const u8 = null,
 };
 
 pub fn applyInitPathOverrides(

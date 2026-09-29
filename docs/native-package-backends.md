@@ -40,11 +40,18 @@ default.
 variant omits libalpm imports, header translation, pkg-config discovery, linkage,
 and native binding tests. The GUI invokes the CLI and does not link either engine.
 
-Install `shelly-rlpm-action-worker` and `shelly-download-worker` alongside `shelly`.
-CLI install targets, release bundles, and the package recipes include both helpers.
-PackageManager resolves helpers beside the running executable; source builds and
-unit tests otherwise use the matching emitted build artifacts. Library embedders
-that relocate their executable must also deploy the workers there.
+Install `shelly`; download and RLPM action workers are reserved modes of that
+same executable. Child operations re-execute `/proc/self/exe`, so they also work
+when the installed pathname is replaced during an upgrade. No companion worker
+binaries or build-cache paths are needed.
+
+Library embedders must call `PackageManager.internal_workers.dispatch(init, args)`
+before application initialization and exit when it returns a status. Here `args`
+excludes argv[0]. Alternatively, set `Manager.InitOptions.worker_executable` to an
+absolute path to Shelly or another executable implementing that dispatcher.
+RLPM owns a copy of the override and retains it across manager refreshes.
+Worker modes share the host executable's dynamic dependencies: a libalpm-enabled
+CLI loads libalpm even for an RLPM action, while an RLPM-only CLI excludes it.
 
 Source PKGBUILDs accept `SHELLY_LIBALPM=false makepkg`; omitting it builds both.
 The shared build needs libarchive, SQLite, curl, Zig, and the existing project
@@ -96,9 +103,9 @@ scripts/test-native-backends.sh true ReleaseSafe
 scripts/test-native-backends.sh false ReleaseSafe
 ```
 
-The script runs private-root facade transactions and staged-worker tests, CLI
+The script runs private-root facade transactions and copied-executable worker tests, CLI
 regressions, setting persistence/repair/reset and JSON/UI smoke checks, then ELF
-checks on the installed CLI and workers. The default variant tests both engines
+checks on the installed CLI. The default variant tests both engines
 and alternates writers against the same disposable root. RLPM-only artifacts must
 have no direct/transitive libalpm dependencies or imported `alpm_*` symbols.
 A clean local production build also passed in a temporary mount namespace with
@@ -107,18 +114,29 @@ ran there successfully. CI repeats the disabled build after removing libalpm hea
 and shared libraries **inside its disposable container**. Do not remove those
 files from a working Arch system.
 
-Local validation on 2026-09-28 (Zig 0.16.0):
+Worker consolidation validation on 2026-09-28 (Zig 0.16.0):
 
 | Check | Result |
 | --- | --- |
-| Dual backend and RLPM-only, Debug and ReleaseSafe | All four script runs passed; 413 CLI tests per run |
-| Staged facade/worker fixtures | All 11 scenarios passed in each build variant |
-| RLPM core/public API/ledger | 188 tests passed in Debug and ReleaseSafe |
-| Additional RLPM metadata/database fixtures | 21 tests passed in Debug |
-| TUI with libalpm disabled | 18 tests passed |
-| Focused loopback/GPG target outside socket restrictions | Passed with libalpm enabled and disabled |
-| Clean production build with libalpm files masked | Built workers/CLI and launched CLI successfully |
-| Shell recipes, workflow YAML, whitespace checks | Passed |
+| CLI and native selection matrix | 414 CLI tests and 16 facade tests per variant; clean install, runtime selection, public help/completions and private worker protocols checked |
+| RLPM core/public API/ledger | 230 tests passed in Debug and ReleaseSafe |
+| GPG, action and executor integration | 15 signature, 18 action and 7 executor cases passed in Debug and ReleaseSafe |
+| Download credential changes and queue callbacks | Both integration tests passed in a subordinate-ID namespace in Debug and ReleaseSafe |
+| Copied executable and replaced pathname | Worker modes run from a copy without helpers; the real action transport re-executes after its host pathname is replaced |
+| Optional Flatpak boundary | Both unified CLI variants passed the ELF separation check |
+| Full nspawn isolated build | Not run: the smoke script returned 77 because sudo credentials were unavailable |
+| Shell recipes, workflow YAML, whitespace | Passed |
+
+The copied-worker check can also exercise real credential-drop downloads:
+
+```sh
+SHELLY_TEST_DOWNLOAD_SANDBOX=1 unshare --user --map-auto --map-root-user --setgroups allow \
+  scripts/test-worker-modes.sh /absolute/path/to/shelly
+```
+
+This requires configured subordinate IDs, `newuidmap`/`newgidmap`, and kernel
+sandbox support. Ordinary native matrix runs check the download setup-failure
+protocol without requiring these privileges.
 
 These integration checks do not certify the complete libalpm compatibility ledger.
 The [completion plan](rlpm-libalpm-completion-plan.md) retains release gates for

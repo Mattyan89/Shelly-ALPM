@@ -152,9 +152,6 @@ package_shelly() {
     printf 'Shelly binary does not match SHELLY_LIBALPM package metadata\n' >&2
     return 1
   fi
-  for worker in shelly-rlpm-action-worker shelly-download-worker; do
-    install -Dm755 "out-cli/bin/$worker" "$pkgdir/usr/bin/$worker"
-  done
   install -Dm755 out-key/bin/shelly-key "$pkgdir/usr/bin/shelly-key"
   install -Dm644 "$srcdir/shellybuild.conf" "$pkgdir/etc/shellybuild.conf"
 

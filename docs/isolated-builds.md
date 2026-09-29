@@ -40,9 +40,10 @@ would defeat this profile. RLPM resolves normal repository dependencies and
 rejects any resolved pacman/libalpm requirement before installation, reporting
 the chain from the requested package. Dependency validation stays enabled.
 
-This profile stages the installed CLI and its two sibling workers, checks their
-runtime libraries before provisioning and inside the guest, and rejects missing
-libraries or libalpm linkage. Keep the workers beside the CLI when deploying it.
+Both profiles stage one CLI at `/usr/local/libexec/shelly/shelly`; its private
+worker modes re-execute that binary inside the guest. The RLPM-only profile checks
+its runtime libraries before provisioning and inside the guest, and rejects
+missing libraries or libalpm linkage. No sibling worker files are required.
 The guest receives a local-database-only package configuration after provisioning;
 the host's repository configuration and signature policy govern provisioning.
 Configuration and local database permissions allow the unprivileged guest to
@@ -251,7 +252,7 @@ interactively when run from a terminal; unattended runs require an existing
 sudo credential and exit `77` (skipped) if authentication is unavailable.
 Set `SHELLY_LIBALPM=false` when the smoke or documentation script builds its own
 CLI to exercise the RLPM-only variant. The smoke fixture detects the staged
-binary's variant and additionally checks helper permissions, library resolution,
+binary's variant and additionally checks the single-executable layout, permissions, library resolution,
 the absence of pacman/libalpm, and repository dependencies in `.BUILDINFO`.
 
 Cancellation across the elevation boundary has a rootless integration fixture

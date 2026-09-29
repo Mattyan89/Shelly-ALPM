@@ -17,7 +17,7 @@ fn slices(a: std.mem.Allocator, values: []const [:0]const u8) ![]const []const u
     for (values, result) |value, *item| item.* = value;
     return result;
 }
-pub fn createOwner(io: std.Io, allocator: std.mem.Allocator, c: *const Config, parallel: u8) !rlpm.Owner {
+pub fn createOwner(io: std.Io, allocator: std.mem.Allocator, c: *const Config, parallel: u8, worker_executable: ?[]const u8) !rlpm.Owner {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -80,8 +80,7 @@ pub fn createOwner(io: std.Io, allocator: std.mem.Allocator, c: *const Config, p
         .default_signature_policy = signature(c.signature_level, 0),
         .local_file_signature_policy = signature(c.local_file_signature_level, c.signature_level),
         .remote_file_signature_policy = signature(c.remote_file_signature_level, c.signature_level),
-        .action_worker = try installedWorker(io, a, "shelly-rlpm-action-worker"),
-        .download_worker = try installedWorker(io, a, "shelly-download-worker"),
+        .worker_executable = worker_executable,
         .parallel_downloads = c.parallel_downloads orelse parallel,
         .sandbox_user = c.sandbox_user,
         .disable_download_timeout = c.disable_download_timeout,
@@ -140,19 +139,6 @@ pub fn preparePreview(io: std.Io, allocator: std.mem.Allocator, c: *Config, dest
     const database_bits: u32 = @bitCast(SigLevel{ .database = true, .database_optional = true, .database_marginal_ok = true, .database_unknown_ok = true });
     c.signature_level &= ~database_bits;
     for (c.repositories.items) |*repo| repo.sig_level &= ~database_bits;
-}
-
-// Packaged workers live alongside the CLI; source tests retain the matching
-// emitted worker path supplied by RLPM's build when no installed helper exists.
-fn installedWorker(io: std.Io, a: std.mem.Allocator, name: []const u8) !?[]const u8 {
-    const executable = try std.process.executablePathAlloc(io, a);
-    const directory = std.fs.path.dirname(executable) orelse return null;
-    const path = try std.fs.path.join(a, &.{ directory, name });
-    _ = std.Io.Dir.cwd().statFile(io, path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return null,
-        else => return err,
-    };
-    return path;
 }
 
 fn containsPath(parent: []const u8, child: []const u8) bool {

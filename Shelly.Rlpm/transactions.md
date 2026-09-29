@@ -1,10 +1,11 @@
 # Transactions, locks and callbacks
 
-M0–M10 are accepted. M10 enables normal commit, payload changes and durable local
-records. `transaction_lifecycle`, `downloads`, `filesystem_preflight`,
-`transaction_actions` and `transactions` are enabled. See [execution.md](execution.md)
-for execution order, partial-progress reports, recovery and validation.
-DOWNLOADONLY with additions completes without installed-state changes.
+The executor enables normal commit, payload changes and durable local records.
+`transaction_lifecycle`, `downloads`, `filesystem_preflight`,
+`transaction_actions` and `transactions` are enabled. See
+[execution.md](execution.md) for execution order, partial-progress reports,
+recovery and validation. DOWNLOADONLY with additions completes without
+installed-state changes.
 
 ```zig
 var owner = try rlpm.Owner.init(io, allocator, configuration, repositories);
@@ -90,23 +91,25 @@ verified archive loads remain available outside callbacks. Plans deep-copy their
 metadata; later lazy queries cannot change the reviewed set.
 
 A sorted SHA-256 content fingerprint of local/sync state is checked at
-initialization, before and after preparation, and before commit. Out-of-band edits
-fail with `StaleDatabaseState`; no silent reprepare or changed plan is committed.
-Regular file symlinks are read through; symlinked subdirectories are rejected
-because the walker would otherwise omit their contents. Full hashing is a
-deliberately conservative first implementation; M7 must integrate legitimate
-repository publication and M11 must measure its cost on large databases. The
-fingerprint is not a filesystem preflight or keyring validation substitute.
+initialization, before and after preparation, and before commit. Out-of-band
+edits fail with `StaleDatabaseState`; no silent reprepare or changed plan is
+committed. Regular file symlinks are read through; symlinked subdirectories are
+rejected because the walker would otherwise omit their contents. Full hashing is
+a deliberately conservative first implementation; repository refresh must
+integrate legitimate publication, and performance acceptance must measure
+hashing costs on large databases. The fingerprint is not a filesystem preflight
+or keyring validation substitute.
 
 ## Events, questions and cancellation
 
 Native prepare events follow actual work: dependency resolution, inter-package
 conflict checks, removal dependency checks, and optional-dependency removal.
-`NODEPS`/`NOCONFLICTS` suppress the corresponding phases. Failed native phases do
-not receive a synthetic `done` event. The separate `lifecycle` extension reports
-state, cause, completed-package count and warning count. M7–M10 produce retrieval,
-integrity, load, keyring, disk-space, package-operation, backup, scriptlet and hook
-events. M10 writes configured audit logs and syslog records.
+`NODEPS`/`NOCONFLICTS` suppress the corresponding phases. Failed native phases
+do not receive a synthetic `done` event. The separate `lifecycle` extension
+reports state, cause, completed-package count and warning count. Execution
+produces retrieval, integrity, load, keyring, disk-space, package-operation,
+backup, scriptlet and hook events. The executor writes configured audit logs and
+syslog records.
 
 All seven questions have conservative defaults. Only answer fields are copied
 back; changing the tag or choosing an invalid provider fails with `InvalidAnswer`.
@@ -116,11 +119,12 @@ precedence over `question`. Resolver decisions and answers remain in the plan.
 without copying arenas or acquiring file-descriptor ownership.
 
 Callbacks run synchronously and borrow payloads. Reentry fails with
-`CallbackReentry`. `Owner.requestCancellation` is the only cross-thread operation;
-it sets an atomic flag. Preparation checks it during hashing/solving, before and
-after questions/events, and before the commit boundary. Release remains available
-after cancellation. Downloads, preflight, actions and payload mutations check cancellation. M10
-retains partial work and completed/remaining package IDs; no full rollback is assumed.
+`CallbackReentry`. `Owner.requestCancellation` is the only cross-thread
+operation; it sets an atomic flag. Preparation checks it during hashing/solving,
+before and after questions/events, and before the commit boundary. Release
+remains available after cancellation. Downloads, preflight, actions and payload
+mutations check cancellation. The executor retains partial work and
+completed/remaining package IDs; no full rollback is assumed.
 
 PackageManager exports the opt-in `RlpmOperationAdapter`; the default backend
 selection is unchanged. Attach it at a stable address before initialization and
@@ -140,23 +144,25 @@ acquisition orders, cancellation, descriptor closure, and every Zig allocation
 failure across initialization/prepare/archive transfer. Native malloc failures
 are not injected. Permission-denial assertions are inapplicable for UID 0.
 
-The [M6 reference fixture](src/tests/reference/transaction.json) replays 16 pinned
-libalpm scenarios for errors, lock contents/mode/timing and native event order.
-The optional `record_transaction.py --library /usr/lib/libalpm.so.16.0.1` recorder
-verifies the frozen library hash, uses disposable roots, and independently guards
-every commit against nonempty targets unless NOLOCK guarantees rejection. Normal
-tests never load libalpm. Original frozen reference assets remain unchanged.
+The [transaction reference fixture](src/tests/reference/transaction.json)
+replays 16 pinned libalpm scenarios for errors, lock contents/mode/timing and
+native event order. The optional `record_transaction.py --library
+/usr/lib/libalpm.so.16.0.1` recorder verifies the frozen library hash, uses
+disposable roots, and independently guards every commit against nonempty targets
+unless NOLOCK guarantees rejection. Normal tests never load libalpm. Original
+frozen reference assets remain unchanged.
 
-From `Shelly.PackageManager`, run
-`zig build rlpm-adapter-test -Drlpm-adapter-only=true` for three adapter tests and
-six shared-context regressions. The deferred tests use a real responder thread
-and both cancellation routes. Debug and ReleaseSafe each pass 132 RLPM tests and nine adapter/context tests;
-all 12 real-GPG regressions pass. These checks support M6 acceptance; they do not
-establish full backend equivalence.
+From `Shelly.PackageManager`, run `zig build rlpm-adapter-test
+-Drlpm-adapter-only=true` for three adapter tests and six shared-context
+regressions. The deferred tests use a real responder thread and both
+cancellation routes. Debug and ReleaseSafe each pass 132 RLPM tests and nine
+adapter/context tests; all 12 real-GPG regressions pass. These checks validate
+transaction lifecycle behavior; they do not establish full backend equivalence.
 
-M9 adds transaction-owned action stages and `actions()` outcomes. An internal
-`startActions()` entry requires committing state, the Owner busy guard and the
-transaction lock. It is reserved for the executor, which now supplies normal
-commit. Hooks, scriptlets and ldconfig retain process setup/exit/signal and cleanup
-failures, with cancellation terminating the child group. See [actions.md](actions.md)
-for stage order, independent flags and CachyOS network semantics.
+The action API provides transaction-owned action stages and `actions()`
+outcomes. An internal `startActions()` entry requires committing state, the
+Owner busy guard and the transaction lock. It is reserved for the executor,
+which now supplies normal commit. Hooks, scriptlets and ldconfig retain process
+setup/exit/signal and cleanup failures, with cancellation terminating the child
+group. See [actions.md](actions.md) for stage order, independent flags and
+CachyOS network semantics.

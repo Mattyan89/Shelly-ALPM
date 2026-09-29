@@ -1,8 +1,8 @@
 # Package metadata and relations
 
-M2 supplies the shared metadata model and archive/relation primitives. M3's
-[database backends](databases.md) add local format validation, lazy descriptions,
-files/backup/member correlation, and tar/CachyOS SQLite ingestion.
+RLPM supplies the shared metadata model and archive/relation primitives. The
+[database backends](databases.md) add local format validation, lazy
+descriptions, files/backup/member correlation, and tar/CachyOS SQLite ingestion.
 
 ## Sources, sizes and ownership
 
@@ -17,7 +17,7 @@ repository's `%FILENAME%` value. Neither overwrites the other.
 | --- | --- |
 | `compressed_size` | Repository `%CSIZE%`, or the archive's file size |
 | `installed_size` | `%SIZE%`/`%ISIZE%`, or `.PKGINFO`'s installed size |
-| `download_size` | Remaining transfer after cache planning; null for unplanned sync metadata, zero for local/archive metadata; M7 computes cache effects |
+| `download_size` | Remaining transfer after cache planning; null for unplanned sync metadata, zero for local/archive metadata; download planning computes cache effects |
 | `md5_sum`, `sha256_sum` | Recorded digest strings; checked by `Owner.loadPackage` using repository metadata |
 | `base64_signature` | Recorded encoded signature; `decodeSignature(allocator)` returns caller-owned bytes or null when absent |
 | `validation` | Performed checks for `Owner.loadPackage`, historical flags for local packages; unverified archive/sync metadata sets `none`; sync promises use `availableValidation()` |
@@ -81,7 +81,7 @@ in place of `.constraint.equal.raw`.
 Only an equality provision carries a version for a versioned requirement. An
 unversioned provision does not inherit its package's version. Soname-like names
 use exact name matching and the same version rules. Selecting among multiple
-packages remains M5.
+packages belongs to dependency resolution.
 
 Package conversion uses permissive `Version.initRaw`; strict `Version.init` and
 `validate` remain available explicitly. Raw comparison supports NUL-free byte

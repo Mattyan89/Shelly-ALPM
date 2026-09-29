@@ -62,30 +62,29 @@ this explicit mode. Repository archives are loaded lazily without downloads.
 
 All fields below are copied and available through `options()`. Storing an option
 is not implementation of its downstream effects. The compatibility ledger keeps
-these rows partial until the consuming milestones' fixtures pass.
+these rows partial until the downstream consumer fixtures pass.
 
 | Configuration field | Implemented now | Remaining consumer |
 | --- | --- | --- |
-| `root`, `database_path` | Independent canonical paths, held descriptors and confined M10 mutations | — |
+| `root`, `database_path` | Independent canonical paths, held descriptors and confined filesystem mutations | — |
 | `local_database_mode` | Default creation/validation or explicit read-only local opening | — |
 | `database_extension` | Sync registration paths and replacement; rejects NUL/path separators | — |
 | `cache_directories` | Ordered cache search, current-policy verification and writable selection | — |
-| `hook_directories` | Discovery, overrides, parsing, matching and M10 transaction execution | — |
+| `hook_directories` | Discovery, overrides, parsing, matching and transaction execution | — |
 | `gpg_directory` | Explicit home for verification and consented key operations; null uses system pacman keyring | — |
 | `key_acquisition` | Owned single-key source paths, WKD/keyserver controls; import requires callback consent and reverification | Live server interoperability |
-| `log_file`, `use_syslog` | M10 timestamped ALPM audit file and syslog forwarding; failures retained | — |
-| `architectures` | Owned list and M5 initial-target validation, including CachyOS architectures | M11 frontend auto mapping |
+| `log_file`, `use_syslog` | Timestamped ALPM audit file and syslog forwarding; failures retained | — |
+| `architectures` | Owned list and initial-target architecture validation, including CachyOS architectures | Frontend architecture auto mapping |
 | `ignore_packages`, `ignore_groups` | Owned lists, glob matching, candidate questions and upgrade filtering | — |
-| `assume_installed` | Owned unversioned/exact provisions, permissive raw versions, descriptions and M5 dependency checks | — |
+| `assume_installed` | Owned unversioned/exact provisions, permissive raw versions, descriptions and dependency checks | — |
 | `no_upgrade`, `no_extract`, `overwrite_files` | Ordered glob/negation matching, manifest decisions and backup/payload effects | — |
 | `check_space` | Per-filesystem peak, native cushion, serialized DB sizes and staging; actual ENOSPC tested | Broader mount matrix |
-| `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Enforced inheritance, presence, crypto validity and trust; sealed snapshots and M8 full-stream/current-policy checks | — |
+| `default_signature_policy`, `local_file_signature_policy`, `remote_file_signature_policy` | Enforced inheritance, presence, crypto validity and trust; sealed snapshots and preflight full-stream/current-policy checks | — |
 | `disable_download_timeout`, `parallel_downloads` | Shared bounded queue and cancellable setup/header/body deadlines | — |
-| `action_worker` | Optional installed native Zig action worker path; default is the matching build artifact | M11 deployment wiring |
-| `download_worker` | Optional installed helper path; default is the matching build artifact | M11 deployment wiring |
+| `worker_executable` | Optional copied absolute path implementing `Workers.dispatch`; null launches `/proc/self/exe` with the reserved action/download argument | Early dispatcher or embedding override required |
 | `sandbox_user` | Account lookup and child credential changes when native applicability requires it | Root-only integration must run in a privileged environment |
 | `sandbox.disable_filesystem`, `sandbox.disable_syscalls` | Independent Landlock and syscall filter controls in the child | Privileged integration |
-| `sandbox.disable_network` | M9 hook/scriptlet isolation, per-hook permission and best-effort ldconfig; global `setDisabled` updates all three switches; consumed during commit | — |
+| `sandbox.disable_network` | Hook/scriptlet isolation, per-hook permission and best-effort ldconfig; global `setDisabled` updates all three switches; consumed during commit | — |
 | `callbacks` | Typed callbacks, owned deferred questions, guarded phase/package/backup producers | — |
 | Repository `servers`, `cache_servers`, `usage`, `signature_policy` | Owned lists, queries, resolver usage/priority, enforced inherited/explicit policy | — |
 
@@ -101,13 +100,14 @@ use `addAssumedInstalled`/`removeAssumedInstalled`. Only ANY/EQ provisions are
 accepted; removal compares the name and raw version, ignoring description/operator.
 See [resolution plans](resolution.md) for flags and selection semantics.
 
-`PhysicalArchitectures.init(allocator)` queries runtime CPU/OS state, independent
-of the binary's compile target, and owns its result until `deinit`. It retains
-CachyOS's ordered base/v2/v3/v4 feature rules, including OS vector-state checks.
-The pinned source tests ECX bit 0 under its SSSE3 label; RLPM preserves that
-observed rule. Aarch64 returns its base architecture. `Architecture=auto` mapping
-remains M11. `Sandbox.legacyDisabledState()` retains the source's filesystem/
-syscall-only aggregate getter, even though the global setter affects networking.
+`PhysicalArchitectures.init(allocator)` queries runtime CPU/OS state,
+independent of the binary's compile target, and owns its result until `deinit`.
+It retains CachyOS's ordered base/v2/v3/v4 feature rules, including OS
+vector-state checks. The pinned source tests ECX bit 0 under its SSSE3 label;
+RLPM preserves that observed rule. Aarch64 returns its base architecture.
+`Architecture=auto` mapping belongs to frontend integration.
+`Sandbox.legacyDisabledState()` retains the source's filesystem/ syscall-only
+aggregate getter, even though the global setter affects networking.
 
 ## References, callbacks and cancellation
 
@@ -142,7 +142,8 @@ operations or mutate configuration/databases directly. Event/question dispatch
 rejects reentry and checks cancellation before and after callbacks. Questions
 start with conservative answers, enforce provider bounds, and reject changing
 the union tag. A rejected or cancelled answer restores the original question.
-Future phases emit these contracts; M1 does not simulate transaction events.
+Transaction phases emit these events; Owner configuration does not simulate
+them.
 
 `requestCancellation()` is the only method permitted from another thread or an
 active callback. Other access is thread-confined; a download worker must send
@@ -160,9 +161,11 @@ Transaction initialization freezes configuration and invalidates cached package
 references. Release the active transaction before reconfiguration, explicit cache
 reload/invalidation, or Owner teardown. See the [transaction guide](transactions.md).
 
-M8 also exposes `matchNoExtract` and `matchNoUpgrade` with native tri-state
-results. See [preflight.md](preflight.md) for pattern precedence, filesystem
-inspection, backup decisions, execution-manifest lifetimes and capacity limits.
+The preflight API also exposes `matchNoExtract` and `matchNoUpgrade` with native
+tri-state results. See [preflight.md](preflight.md) for pattern precedence,
+filesystem inspection, backup decisions, execution-manifest lifetimes and
+capacity limits.
 
-M9 consumes hook directories and network controls. See [actions.md](actions.md)
-for process setup, independent sandbox switches, callback output and diagnostics.
+Transaction actions consume hook directories and network controls. See
+[actions.md](actions.md) for process setup, independent sandbox switches,
+callback output and diagnostics.

@@ -1,10 +1,11 @@
 # Resolution plans
 
-M5 implements native install, removal and system-upgrade selection through
-`Owner.resolve(io, request)`. It returns an owned `TransactionPlan`. The resolver
-follows the pinned CachyOS libalpm dependency walk and repository priorities.
-M6 adds transaction states, locks and the prepare/commit contract; see
-[transactions](transactions.md). Nonempty commit still requires M7–M10.
+RLPM implements native install, removal and system-upgrade selection through
+`Owner.resolve(io, request)`. It returns an owned `TransactionPlan`. The
+resolver follows the pinned CachyOS libalpm dependency walk and repository
+priorities. The transaction API adds transaction states, locks and the
+prepare/commit contract; see [transactions](transactions.md). Nonempty commit
+also requires downloads, filesystem preflight, actions and payload execution.
 
 ```zig
 var plan = try owner.resolve(io, .{
@@ -68,10 +69,11 @@ recursive removal. System upgrades examine local names and repository priority,
 try replacements before literal upgrades, preserve packages absent from sync
 repositories, honor ignored packages, and transfer replacement reasons.
 
-The reference checks architecture on initial targets before pulling dependencies;
-M5 preserves that distinction. Exact configured CachyOS architectures such as
-`x86_64_v3` are accepted. Install candidate lookup accepts repository usage
-`install OR upgrade`; automatic system upgrades require `upgrade`.
+The reference checks architecture on initial targets before pulling
+dependencies; RLPM preserves that distinction. Exact configured CachyOS
+architectures such as `x86_64_v3` are accepted. Install candidate lookup accepts
+repository usage `install OR upgrade`; automatic system upgrades require
+`upgrade`.
 
 ## Flags, queries and option handling
 
@@ -84,9 +86,9 @@ skips closure/checks/sorting while retaining conflict checks. Conflicts and
 ordering still use full versions under `no_dependency_versions`.
 
 `no_save`, `database_only`, `no_hooks`, `download_only`, `no_scriptlets` and
-`no_lock` are retained for their execution milestones. Plans calculate both the
-preparation reason and the final installation reason; old reasons survive
-upgrades, and `all_dependencies` takes precedence over `all_explicit`.
+`no_lock` are retained for the corresponding execution stages. Plans calculate
+both the preparation reason and the final installation reason; old reasons
+survive upgrades, and `all_dependencies` takes precedence over `all_explicit`.
 
 IgnorePkg/IgnoreGroup use libc `fnmatch` with no negation convention. Ignored
 explicit text targets can prompt, ignored dependency candidates are skipped,
@@ -106,11 +108,12 @@ The standalone `Resolver.resolve` accepts a borrowed `Snapshot`, `Options`,
 `Request` and optional question/cancellation `Context`. It performs no I/O.
 Snapshot entries must come from complete metadata with unique database package
 identities; repository order is significant, package input order is normalized
-by name. `findSatisfier`, `newVersion` and `shouldIgnore` expose the corresponding
-query primitives. The Owner adapter loads databases under the existing M4
-verification policy, strictly loads local descriptions and validates references.
-Removal does not require sync files. Missing repositories are tolerated for
-archive-only preparation; sync targets require all registered databases present.
+by name. `findSatisfier`, `newVersion` and `shouldIgnore` expose the
+corresponding query primitives. The Owner adapter loads databases under the
+existing verification policy, strictly loads local descriptions and validates
+references. Removal does not require sync files. Missing repositories are
+tolerated for archive-only preparation; sync targets require all registered
+databases present.
 
 ## Ownership and review data
 
@@ -121,11 +124,12 @@ future state, including surviving local packages, retain original constraints,
 and identify an assumed provision or a concrete package/provision. Addition and
 removal slices are already in operation order.
 
-Treat plan fields as immutable. Call `deinit` exactly once and do not shallow-copy
-an initialized plan. Each verified archive keeps a separate descriptor for the
-same sealed bytes verified by M4; freeing the caller's package or overwriting its
-original pathname cannot change those bytes. Metadata-only archive inputs retain
-their metadata-only validation status and do not acquire an integrity claim.
+Treat plan fields as immutable. Call `deinit` exactly once and do not
+shallow-copy an initialized plan. Each verified archive keeps a separate
+descriptor for the same sealed bytes checked during verification; freeing the
+caller's package or overwriting its original pathname cannot change those bytes.
+Metadata-only archive inputs retain their metadata-only validation status and do
+not acquire an integrity claim.
 
 Resolution question payloads include borrowed `PackageView` metadata because
 callbacks cannot reenter Owner. They can change only the answer field. Answers
@@ -136,12 +140,13 @@ Callbacks and long resolution walks honor cancellation; callers can reset the
 Owner's cancellation flag and retry.
 
 `sizes` contains known installed additions/removals, unknown counts and a
-compressed download upper bound. M7 must account for cache hits, partial files
-and actual transfers. Each addition also retains its selected repository as
-`installed_database`, while old CachyOS provenance remains in local metadata.
-Writing that provenance belongs to M10. Plans take no transaction lock and are
-not executable authorizations. M6 binds a transaction-owned plan to frozen options
-and a live database snapshot; changed state requires a new transaction/review.
+compressed download upper bound. Download planning must account for cache hits,
+partial files and actual transfers. Each addition also retains its selected
+repository as `installed_database`, while old CachyOS provenance remains in
+local metadata. Writing that provenance belongs to the executor. Plans take no
+transaction lock and are not executable authorizations. Transaction preparation
+binds a transaction-owned plan to frozen options and a live database snapshot;
+changed state requires a new transaction/review.
 
 ## Evidence and remaining boundaries
 
@@ -165,7 +170,8 @@ and manifest are unchanged. The optional recorder checks the exact library hash,
 uses private roots and `NOLOCK`, and never commits or downloads. Regular builds
 and tests neither link nor load libalpm.
 
-M7–M10 now provide transfer, filesystem preflight, hooks/scriptlets and installed
-state persistence. `resolution_plans`, `downloads` and `transactions` are enabled.
-Full backend equivalence still requires M11 integration and the complete
-interoperability/performance acceptance gates. See [execution.md](execution.md).
+The execution pipeline provides transfer, filesystem preflight, hooks/scriptlets
+and installed state persistence. `resolution_plans`, `downloads` and
+`transactions` are enabled. Full backend equivalence still requires backend
+integration and the complete interoperability/performance acceptance gates. See
+[execution.md](execution.md).

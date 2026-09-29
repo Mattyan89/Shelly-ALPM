@@ -66,15 +66,15 @@ build() {
   test -d /var/lib/private
   test -s /etc/ssl/certs/ca-certificates.crt
   cmake --version
+  test "$(stat -c '%u:%g:%a' /usr/local/libexec/shelly/shelly)" = 0:0:755
+  test ! -e /usr/local/libexec/shelly/shelly-rlpm-action-worker
+  test ! -e /usr/local/libexec/shelly/shelly-download-worker
   if [[ $shelly_rlpm_only == true ]]; then
     ! command -v pacman
     if compgen -G '/usr/lib/libalpm.so*'; then return 1; fi
-    for name in shelly shelly-rlpm-action-worker shelly-download-worker; do
-      local executable="/usr/local/libexec/shelly/$name" linked
-      test "$(stat -c '%u:%g:%a' "$executable")" = 0:0:755
-      linked=$(LC_ALL=C ldd "$executable")
-      [[ $linked != *libalpm* && $linked != *'not found'* ]]
-    done
+    local linked
+    linked=$(LC_ALL=C ldd /usr/local/libexec/shelly/shelly)
+    [[ $linked != *libalpm* && $linked != *'not found'* ]]
   fi
   # Keep the guest alive until the host supervisor checks its private boundary.
   for ((attempt = 0; attempt < 300; attempt++)); do
