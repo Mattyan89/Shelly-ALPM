@@ -72,6 +72,65 @@ const Fixture = struct {
         try std.Io.Dir.cwd().copyFile(archive.path, .cwd(), destination, io, .{});
     }
 };
+test "repository filenames escape reserved URL bytes and retain literal cache names" {
+    const cases = [_]struct { name: []const u8, encoded: []const u8 }{
+        .{ .name = "glibc-2.44+r50+g1848099f063e-1-x86_64.pkg.tar.zst", .encoded = "glibc-2.44%2Br50%2Bg1848099f063e-1-x86_64.pkg.tar.zst" },
+        .{ .name = "libstdc++-16.2.1+r23-2-x86_64.pkg.tar.zst", .encoded = "libstdc%2B%2B-16.2.1%2Br23-2-x86_64.pkg.tar.zst" },
+        .{ .name = "literal%2B #?.pkg.tar.zst", .encoded = "literal%252B%20%23%3F.pkg.tar.zst" },
+    };
+    for (cases) |case| {
+        const url = try rlpm.Downloads.joinUrl(a, "https://mirror.test/repo%20name/", case.name);
+        defer a.free(url);
+        const expected = try std.fmt.allocPrint(a, "https://mirror.test/repo%20name/{s}", .{case.encoded});
+        defer a.free(expected);
+        try std.testing.expectEqualStrings(expected, url);
+        const name = try rlpm.Downloads.urlFilename(a, url);
+        defer a.free(name);
+        try std.testing.expectEqualStrings(case.name, name);
+        const signature = try rlpm.Downloads.signatureUrl(a, url);
+        defer a.free(signature);
+        const expected_signature = try std.fmt.allocPrint(a, "{s}.sig", .{expected});
+        defer a.free(expected_signature);
+        try std.testing.expectEqualStrings(expected_signature, signature);
+    }
+}
+
+test "repository HTTP downloads encode plus signs in package and detached signature URLs" {
+    var fixture = try Fixture.init();
+    defer fixture.deinit();
+    const address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
+    var server: HttpFixture = .{
+        .server = try address.listen(io, .{ .reuse_address = true }),
+        .body = "package",
+        .expected_path = "/repo/libstdc%2B%2B-16.2.1%2Br23-2-x86_64.pkg.tar.zst",
+    };
+    defer server.server.deinit(io);
+    var serving = try io.concurrent(HttpFixture.serve, .{&server});
+    defer _ = serving.cancel(io) catch {};
+    const mirror = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}/repo", .{server.server.socket.address.getPort()});
+    defer a.free(mirror);
+    var owner = try fixture.owner();
+    defer owner.deinit() catch unreachable;
+    const name = "libstdc++-16.2.1+r23-2-x86_64.pkg.tar.zst";
+    const files = try rlpm.Downloads.acquire(&owner, io, &.{.{
+        .name = name,
+        .servers = &.{mirror},
+        .policy = .{ .package = .optional, .database = .disabled },
+    }});
+    defer {
+        for (files) |*file| file.deinit();
+        a.free(files);
+    }
+    try std.testing.expectEqual(@as(usize, 1), files.len);
+    try std.testing.expectEqualStrings(name, std.fs.path.basename(files[0].path));
+    const payload = try std.Io.Dir.cwd().readFileAlloc(io, files[0].path, a, .limited(64));
+    defer a.free(payload);
+    try std.testing.expectEqualStrings("package", payload);
+    try std.testing.expectEqual(@as(usize, 2), server.requests.load(.acquire));
+    try std.testing.expectEqual(@as(usize, 1), server.signatures.load(.acquire));
+    try std.testing.expect(!server.failed.load(.acquire));
+}
+
 test "URL fetch publishes a verified sealed file and revalidates cached bytes" {
     var fixture = try Fixture.init();
     defer fixture.deinit();

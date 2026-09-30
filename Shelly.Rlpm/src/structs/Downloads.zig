@@ -834,7 +834,9 @@ pub fn joinUrl(a: std.mem.Allocator, server: []const u8, name: []const u8) ![]co
     try filename(name);
     var writer: std.Io.Writer.Allocating = .init(a);
     defer writer.deinit();
-    try (std.Uri.Component{ .raw = name }).formatPath(&writer.writer);
+    // Repository filenames are literal path segments. Escape reserved bytes
+    // too: S3-backed mirrors interpret an unescaped '+' as a space.
+    try (std.Uri.Component{ .raw = name }).formatEscaped(&writer.writer);
     const encoded = writer.written();
     return std.fmt.allocPrint(a, "{s}/{s}", .{ std.mem.trimEnd(u8, server, "/"), encoded });
 }
