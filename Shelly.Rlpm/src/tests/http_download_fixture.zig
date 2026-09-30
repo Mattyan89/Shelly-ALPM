@@ -5,6 +5,7 @@ const io = std.testing.io;
 
 server: std.Io.net.Server,
 body: []const u8,
+expected_path: ?[]const u8 = null,
 active: std.atomic.Value(usize) = .init(0),
 peak: std.atomic.Value(usize) = .init(0),
 requests: std.atomic.Value(usize) = .init(0),
@@ -41,8 +42,13 @@ fn respondInner(self: *@This(), stream: std.Io.net.Stream) !void {
     var parts = std.mem.tokenizeScalar(u8, line, ' ');
     _ = parts.next();
     const path = parts.next() orelse return error.InvalidRequest;
-    const missing = std.mem.startsWith(u8, path, "/missing/");
     const signature = std.mem.endsWith(u8, path, ".sig");
+    const expected_path = if (self.expected_path) |expected|
+        std.mem.eql(u8, if (signature) path[0 .. path.len - 4] else path, expected)
+    else
+        true;
+    if (!expected_path) self.failed.store(true, .release);
+    const missing = !expected_path or std.mem.startsWith(u8, path, "/missing/");
     const slow = std.mem.indexOf(u8, path, "/slow.") != null;
     while (try reader.interface.takeDelimiter('\n')) |header| {
         if (std.mem.eql(u8, header, "\r")) break;
