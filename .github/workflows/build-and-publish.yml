@@ -280,7 +280,7 @@ jobs:
     container:
       image: archlinux:latest
       # Action and executor integration tests use nested namespaces, disposable chroots and private tmpfs mounts.
-      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined
+      options: --security-opt seccomp=unconfined --security-opt apparmor=unconfined --cap-add SYS_ADMIN
     strategy:
       matrix:
         optimize: [Debug, ReleaseSafe]
