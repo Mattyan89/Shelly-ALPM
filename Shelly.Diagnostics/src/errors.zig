@@ -207,6 +207,7 @@ pub fn cause(err: anyerror) []const u8 {
         error.Cancelled, error.Canceled => "Operation cancelled.",
         error.PkgbuildReviewDeclined => "The required PKGBUILD review was declined.",
         error.PgpKeyImportDeclined => "The source-signing key import was declined.",
+        error.PgpKeyringPreparationFailed => "GnuPG could not prepare the isolated build's public keyring. Review the GnuPG output for keyboxd startup or keyring errors.",
         error.PgpKeyImportFailed => "GnuPG could not import the isolated build's public source-signing keys. Review the GnuPG output for the key file and keyring error.",
         error.OutOfMemory => "Shelly ran out of memory. Close other applications and try again.",
         error.SystemResources, error.ProcessFdQuotaExceeded, error.SystemFdQuotaExceeded => "The operating system could not provide the resources needed for this operation. Close unused applications and retry; include the technical details if it persists.",
