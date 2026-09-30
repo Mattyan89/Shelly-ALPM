@@ -26,13 +26,30 @@ pub fn exportKeys(allocator: std.mem.Allocator, io: std.Io, environ: std.process
 }
 
 /// Import into the guest user's own keyring, never the coordinator's keyring.
-pub fn importKeys(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, path: []const u8) !void {
+pub fn importKeys(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, path: []const u8, operation: ?*const PackageManager.Operation) !void {
+    // Only public keys are transported. A fresh nspawn guest need not have a
+    // running agent; trying to start one can fail after the keys were imported.
     const result = try run(allocator, io, environ, &.{
-        "/usr/bin/gpg", "--batch", "--no-tty", "--import", path,
+        "/usr/bin/gpg", "--batch", "--no-tty", "--no-autostart", "--import", path,
     });
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
-    if (!succeeded(result.term)) return error.PgpKeyImportFailed;
+    if (!succeeded(result.term)) {
+        if (operation) |active| {
+            const message = try std.fmt.allocPrint(
+                allocator,
+                "Could not import the isolated build's public source-signing keys from {s}.\n{s}",
+                .{ path, std.mem.trim(u8, result.stderr, "\r\n") },
+            );
+            defer allocator.free(message);
+            const native_code: ?i64 = switch (result.term) {
+                .exited => |code| code,
+                else => null,
+            };
+            active.reportError(error.PgpKeyImportFailed, message, "build.isolation.source-keys", native_code, false);
+        }
+        return error.PgpKeyImportFailed;
+    }
 }
 
 fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, arguments: []const []const u8) !std.process.RunResult {
@@ -65,9 +82,11 @@ test "isolated source public keys reach a clean guest and signatures remain enfo
     try temporary.dir.createDir(io, "guest", .fromMode(0o700));
     try temporary.dir.createDir(io, "host/.gnupg", .fromMode(0o700));
     try temporary.dir.createDir(io, "guest/.gnupg", .fromMode(0o700));
-    // Public-key fixtures need no agent and must not leave daemons behind.
+    // The host fixture does not start an agent. The guest deliberately cannot
+    // start one, and must import public keys without relying on gpg.conf to
+    // supply no-autostart on behalf of the production command.
     try temporary.dir.writeFile(io, .{ .sub_path = "host/.gnupg/gpg.conf", .data = "no-autostart\n" });
-    try temporary.dir.writeFile(io, .{ .sub_path = "guest/.gnupg/gpg.conf", .data = "no-autostart\n" });
+    try temporary.dir.writeFile(io, .{ .sub_path = "guest/.gnupg/gpg.conf", .data = "agent-program /usr/bin/false\n" });
     const host_path = try std.fs.path.join(allocator, &.{ directory, "host" });
     defer allocator.free(host_path);
     const guest_path = try std.fs.path.join(allocator, &.{ directory, "guest" });
@@ -84,7 +103,7 @@ test "isolated source public keys reach a clean guest and signatures remain enfo
     try temporary.dir.writeFile(io, .{ .sub_path = "public.asc", .data = @embedFile("fixtures/source-pgp/public.asc") });
     const key_path = try std.fs.path.join(allocator, &.{ directory, "public.asc" });
     defer allocator.free(key_path);
-    try importKeys(allocator, io, host, key_path);
+    try importKeys(allocator, io, host, key_path, null);
     try std.testing.expect(try containsKey(allocator, io, host, fingerprint));
     try std.testing.expect(!(try containsKey(allocator, io, guest, fingerprint)));
     const empty = try exportKeys(allocator, io, host, &.{});
@@ -95,7 +114,7 @@ test "isolated source public keys reach a clean guest and signatures remain enfo
     defer allocator.free(bundle);
     try std.testing.expect(std.mem.startsWith(u8, bundle, "-----BEGIN PGP PUBLIC KEY BLOCK-----"));
     try temporary.dir.writeFile(io, .{ .sub_path = "public.asc", .data = bundle });
-    try importKeys(allocator, io, guest, key_path);
+    try importKeys(allocator, io, guest, key_path, null);
     try std.testing.expect(try containsKey(allocator, io, guest, fingerprint));
     const secret_keys = try run(allocator, io, guest, &.{ "/usr/bin/gpg", "--batch", "--no-autostart", "--with-colons", "--list-secret-keys" });
     defer allocator.free(secret_keys.stdout);
@@ -115,4 +134,54 @@ test "isolated source public keys reach a clean guest and signatures remain enfo
     try std.testing.expectError(error.InvalidPgpKey, verifier.verifyDetached(signature, payload, &.{"5A" ** 20}));
     try temporary.dir.writeFile(io, .{ .sub_path = "payload.txt", .data = "tampered\n" });
     try std.testing.expectError(error.BadPgpSignature, verifier.verifyDetached(signature, payload, &.{fingerprint}));
+}
+
+test "isolated source public keys report GnuPG import failures" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    var temporary = try @import("test_support.zig").PgpTmpDir.init();
+    defer temporary.cleanup();
+    try temporary.dir.createDir(io, "keyring", .fromMode(0o700));
+    const keyring = try std.fs.path.join(allocator, &.{ temporary.path, "keyring" });
+    defer allocator.free(keyring);
+    var environment = std.process.Environ.Map.init(allocator);
+    defer environment.deinit();
+    try environment.put("GNUPGHOME", keyring);
+    try environment.put("LC_ALL", "C");
+    const environ: std.process.Environ = .{ .block = try environment.createPosixBlock(allocator, .{}) };
+    defer environ.block.deinit(allocator);
+    try temporary.dir.writeFile(io, .{ .sub_path = "invalid.asc", .data = "not a public key\n" });
+    const key_path = try std.fs.path.join(allocator, &.{ temporary.path, "invalid.asc" });
+    defer allocator.free(key_path);
+
+    const Capture = struct {
+        count: usize = 0,
+        code: ?i64 = null,
+        diagnostic_present: bool = false,
+        stage_present: bool = false,
+
+        fn handle(data: ?*anyopaque, event: PackageManager.OperationEvent) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            if (event == .failure and event.failure.err == error.PgpKeyImportFailed) {
+                self.count += 1;
+                self.code = event.failure.native_code;
+                self.diagnostic_present = std.mem.indexOf(u8, event.failure.message, "no valid OpenPGP data found") != null;
+                self.stage_present = if (event.failure.domain) |domain|
+                    std.mem.eql(u8, domain, "build.isolation.source-keys")
+                else
+                    false;
+            }
+        }
+    };
+    var capture: Capture = .{};
+    var context = PackageManager.OperationContext.init(allocator, io);
+    defer context.deinit();
+    _ = try context.subscribe(.{ .function = Capture.handle, .data = &capture });
+    var operation = context.begin(.{ .backend = .aur, .kind = .build, .subject = "fixture" });
+    defer operation.finish(.failed);
+    try std.testing.expectError(error.PgpKeyImportFailed, importKeys(allocator, io, environ, key_path, &operation));
+    try std.testing.expectEqual(@as(usize, 1), capture.count);
+    try std.testing.expectEqual(@as(?i64, 2), capture.code);
+    try std.testing.expect(capture.diagnostic_present);
+    try std.testing.expect(capture.stage_present);
 }

@@ -1337,7 +1337,7 @@ const Real = struct {
         self.result.?.review_digest = expected_digest;
         if (!optionEnabled(invocation, "--skip-source-pgp-verification")) {
             if (coordinator_child and optionEnabled(invocation, "--isolated-source-keys"))
-                try source_pgp_transport.importKeys(context.allocator, context.io, context.environ, isolated_build.guest_source_keys);
+                try source_pgp_transport.importKeys(context.allocator, context.io, context.environ, isolated_build.guest_source_keys, &operation);
             try ensureSourcePgpKeys(context, &operation, package_base, builder.package_builds);
         }
         builder.options.reviewed_pkgbuild_digest = expected_digest;
@@ -3776,7 +3776,7 @@ test "isolated source key preparation checks the digest and refuses unapproved i
     try temporary.dir.writeFile(io, .{ .sub_path = "public.asc", .data = @embedFile("fixtures/source-pgp/public.asc") });
     const public_path = try std.fs.path.join(allocator, &.{ directory, "public.asc" });
     defer allocator.free(public_path);
-    try source_pgp_transport.importKeys(allocator, io, environ, public_path);
+    try source_pgp_transport.importKeys(allocator, io, environ, public_path, null);
     const keys = try prepareSourcePgpKeyExport(&context.context, &approved.dispatch, &operations);
     defer context.context.allocator.free(keys);
     try std.testing.expect(std.mem.startsWith(u8, keys, "-----BEGIN PGP PUBLIC KEY BLOCK-----"));
