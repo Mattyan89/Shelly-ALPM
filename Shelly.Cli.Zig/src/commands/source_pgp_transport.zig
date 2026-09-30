@@ -1,8 +1,8 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const PackageManager = @import("PackageManager");
 
 pub fn containsKey(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, fingerprint: []const u8) !bool {
-    try Zigalpm.source_pgp_verifier.validatePinnedKeys(&.{fingerprint});
+    try PackageManager.source_pgp_verifier.validatePinnedKeys(&.{fingerprint});
     const result = try run(allocator, io, environ, &.{ "/usr/bin/gpg", "--batch", "--no-tty", "--list-keys", fingerprint });
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
@@ -12,7 +12,7 @@ pub fn containsKey(allocator: std.mem.Allocator, io: std.Io, environ: std.proces
 /// Export only the public keys pinned by the evaluated, approved PKGBUILD.
 /// An empty selection must not become GnuPG's request to export every key.
 pub fn exportKeys(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, fingerprints: []const []const u8) ![]u8 {
-    try Zigalpm.source_pgp_verifier.validatePinnedKeys(fingerprints);
+    try PackageManager.source_pgp_verifier.validatePinnedKeys(fingerprints);
     if (fingerprints.len == 0) return allocator.dupe(u8, "");
     var arguments: std.ArrayList([]const u8) = .empty;
     defer arguments.deinit(allocator);
@@ -108,7 +108,7 @@ test "isolated source public keys reach a clean guest and signatures remain enfo
     defer allocator.free(payload);
     const signature = try std.fs.path.join(allocator, &.{ directory, "payload.sig" });
     defer allocator.free(signature);
-    const verifier: Zigalpm.source_pgp_verifier.Verifier = .{ .allocator = allocator, .io = io, .environ = guest };
+    const verifier: PackageManager.source_pgp_verifier.Verifier = .{ .allocator = allocator, .io = io, .environ = guest };
     var verified = try verifier.verifyDetached(signature, payload, &.{fingerprint});
     defer verified.deinit(allocator);
     try std.testing.expectEqualStrings(fingerprint, verified.primary_fingerprint);
