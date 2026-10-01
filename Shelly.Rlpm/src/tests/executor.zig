@@ -628,9 +628,11 @@ test "audit writes configured log and absolute symlinks cannot alter external at
     });
     var f = try Fixture.init();
     defer f.deinit();
-    try f.write("outside", "external sentinel");
-    const outside = try f.tmp.dir.realPathFileAlloc(io, "outside", a);
+    const outside_relative = "outside/" ++ ("long-path-" ** 12) ++ "/sentinel";
+    try f.write(outside_relative, "external sentinel");
+    const outside = try f.tmp.dir.realPathFileAlloc(io, outside_relative, a);
     defer a.free(outside);
+    try std.testing.expect(outside.len > 100);
     var before: c.struct_stat = undefined;
     try std.testing.expectEqual(0, c.stat(outside, &before));
     var archive = try Archive.init(
@@ -657,6 +659,9 @@ test "audit writes configured log and absolute symlinks cannot alter external at
     options.log_file = logfile;
     try owner.setOptions(io, options);
     try apply(&owner, archive.path, flags);
+    var target_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const target_length = try f.tmp.dir.readLink(io, "root/external", &target_buffer);
+    try std.testing.expectEqualStrings(outside, target_buffer[0..target_length]);
     const log = try f.read("db/audit.log");
     defer a.free(log);
     const started = std.mem.indexOf(u8, log, "[ALPM] transaction started\n").?;
@@ -667,7 +672,7 @@ test "audit writes configured log and absolute symlinks cannot alter external at
     try std.testing.expectEqual(0, c.stat(outside, &after));
     try std.testing.expectEqual(before.st_mtim.tv_sec, after.st_mtim.tv_sec);
     try std.testing.expectEqual(before.st_mode, after.st_mode);
-    try f.expect("outside", "external sentinel");
+    try f.expect(outside_relative, "external sentinel");
 }
 
 const Durability = rlpm.Transaction.Executor.PayloadDurability;
