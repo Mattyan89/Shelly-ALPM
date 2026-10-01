@@ -1,4 +1,5 @@
 const std = @import("std");
+pub const compression_policy = @import("compression.zig");
 
 const c = @cImport({
     @cInclude("archive.h");
@@ -22,6 +23,8 @@ pub const Error = error{
     InvalidEntryTimestamp,
     EntryTooLarge,
     UnsupportedCompression,
+    UnsupportedCompressionPresetFormat,
+    CompressionConfigurationFailed,
     UnsupportedFileType,
 };
 
@@ -109,6 +112,11 @@ pub const VirtualMetadata = struct {
 };
 
 pub const Writer = struct {
+    pub const Options = struct {
+        /// Null preserves libarchive's defaults for existing callers.
+        compression_level: ?compression_policy.Preset = null,
+    };
+
     allocator: std.mem.Allocator,
     io: std.Io,
     handle: *c.struct_archive,
@@ -130,13 +138,23 @@ pub const Writer = struct {
         output_path: []const u8,
         virtual_metadata: VirtualMetadata,
     ) !Writer {
+        return initWithOptions(allocator, io, output_path, virtual_metadata, .{});
+    }
+
+    pub fn initWithOptions(
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        output_path: []const u8,
+        virtual_metadata: VirtualMetadata,
+        options: Options,
+    ) !Writer {
         const output_path_z = try allocator.dupeZ(u8, output_path);
         errdefer allocator.free(output_path_z);
 
         const handle = c.archive_write_new() orelse return Error.ArchiveCreateFailed;
         errdefer _ = c.archive_write_free(handle);
 
-        try addFilterForPath(handle, output_path);
+        try configureCompression(handle, output_path, options.compression_level);
         try requireWriteStatus(c.archive_write_set_format_pax_restricted(handle));
         try requireWriteStatus(c.archive_write_open_filename(handle, output_path_z.ptr));
 
@@ -324,7 +342,16 @@ fn writeDataAll(handle: *c.struct_archive, contents: []const u8) !void {
     }
 }
 
-fn addFilterForPath(handle: *c.struct_archive, output_path: []const u8) !void {
+/// Checks filter availability and options without creating an output file.
+pub fn validateCompression(output_path: []const u8, preset: ?compression_policy.Preset) !void {
+    if (preset == null) return;
+    const handle = c.archive_write_new() orelse return Error.ArchiveCreateFailed;
+    defer _ = c.archive_write_free(handle);
+    try configureCompression(handle, output_path, preset);
+}
+
+fn configureCompression(handle: *c.struct_archive, output_path: []const u8, preset: ?compression_policy.Preset) !void {
+    const format = if (preset != null) try compression_policy.Format.fromPath(output_path) else null;
     const status = if (std.mem.endsWith(u8, output_path, ".zst"))
         c.archive_write_add_filter_zstd(handle)
     else if (std.mem.endsWith(u8, output_path, ".gz"))
@@ -337,7 +364,20 @@ fn addFilterForPath(handle: *c.struct_archive, output_path: []const u8) !void {
         c.archive_write_add_filter_none(handle)
     else
         return Error.UnsupportedCompression;
-    try requireWriteStatus(status);
+    if (preset) |selected| {
+        // ARCHIVE_WARN can mean a filter fell back to an external executable.
+        // Explicit presets require the native filter and exact option support.
+        if (status != c.ARCHIVE_OK) return error.CompressionConfigurationFailed;
+        const filter = format.?.filterName();
+        if (c.archive_write_set_filter_option(handle, filter.ptr, "compression-level", selected.backendLevel(format.?).ptr) != c.ARCHIVE_OK)
+            return error.CompressionConfigurationFailed;
+        if (format.? == .zstd or format.? == .xz) {
+            if (c.archive_write_set_filter_option(handle, filter.ptr, "threads", "1") != c.ARCHIVE_OK)
+                return error.CompressionConfigurationFailed;
+        }
+    } else {
+        try requireWriteStatus(status);
+    }
 }
 
 /// Compression of a single source file, rather than an archive of entries.
@@ -548,6 +588,8 @@ pub const Reader = struct {
             try requireStatus(c.archive_read_support_filter_none(handle));
             try requireStatus(c.archive_read_support_filter_gzip(handle));
             try requireStatus(c.archive_read_support_filter_zstd(handle));
+            try requireStatus(c.archive_read_support_filter_xz(handle));
+            try requireStatus(c.archive_read_support_filter_bzip2(handle));
             try requireStatus(c.archive_read_support_format_tar(handle));
         }
 
@@ -925,6 +967,97 @@ test "archive writer preserves tree modes and symlinks while forcing root owners
     }
     try testing.expect(saw_file);
     try testing.expect(saw_link);
+}
+
+test "compression presets round trip all formats with contents and virtual metadata" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "tree/bin");
+    const payload = "repeatable binary payload\x00\xff\n" ** 2048;
+    try tmp.dir.writeFile(io, .{ .sub_path = "tree/bin/demo", .data = payload });
+    try tmp.dir.symLink(io, "demo", "tree/bin/link", .{});
+    const source = try tmp.dir.realPathFileAlloc(io, "tree", allocator);
+    defer allocator.free(source);
+    const ownership = [_]OwnershipOverride{.{ .path = "bin/demo", .ownership = .{ .uid = 42, .gid = 84 } }};
+    const modes = [_]ModeOverride{.{ .path = "bin/demo", .mode = 0o4755 }};
+    const contents = try allocator.alloc(u8, payload.len);
+    defer allocator.free(contents);
+
+    for ([_][]const u8{ "zst", "gz", "xz", "bz2" }) |extension| {
+        var first_header: [4]u8 = undefined;
+        for (std.enums.values(compression_policy.Preset)) |preset| {
+            const path = try std.fmt.allocPrint(allocator, ".zig-cache/tmp/{s}/out.pkg.tar.{s}", .{ tmp.sub_path, extension });
+            defer allocator.free(path);
+            try validateCompression(path, preset);
+            var writer = try Writer.initWithOptions(allocator, io, path, .{
+                .ownership_overrides = &ownership,
+                .mode_overrides = &modes,
+            }, .{ .compression_level = preset });
+            defer writer.deinit();
+            try writer.addDirectory(source);
+            try writer.finish();
+
+            var reader = try Reader.init(allocator, path);
+            defer reader.deinit();
+            var files: usize = 0;
+            var links: usize = 0;
+            while (try reader.next()) |entry| {
+                if (std.mem.eql(u8, entry.path, "bin/demo")) {
+                    files += 1;
+                    try std.testing.expectEqual(@as(u32, 0o4755), entry.permissions);
+                    try std.testing.expectEqual(@as(i64, 42), entry.uid);
+                    try std.testing.expectEqual(@as(i64, 84), entry.gid);
+                    try std.testing.expectEqual(payload.len, entry.size);
+                    try std.testing.expectEqual(payload.len, try reader.readPrefix(contents));
+                    try std.testing.expectEqualSlices(u8, payload, contents);
+                } else if (std.mem.eql(u8, entry.path, "bin/link")) {
+                    links += 1;
+                    try std.testing.expectEqualStrings("demo", entry.link_target.?);
+                }
+            }
+            try std.testing.expectEqual(@as(usize, 1), files);
+            try std.testing.expectEqual(@as(usize, 1), links);
+
+            // bzip2 stores its block size in the stream header, providing an
+            // independent check that the writer actually applies the preset.
+            if (std.mem.eql(u8, extension, "bz2")) {
+                var file = try std.Io.Dir.cwd().openFile(io, path, .{});
+                defer file.close(io);
+                try std.testing.expectEqual(first_header.len, try file.readPositionalAll(io, &first_header, 0));
+                const expected = [_][]const u8{ "BZh1", "BZh3", "BZh5", "BZh7", "BZh9" };
+                try std.testing.expectEqualStrings(expected[@intFromEnum(preset) - 1], &first_header);
+            }
+        }
+    }
+}
+
+test "compression presets reject unsupported output before creating a file" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/out.pkg.tar.lz4", .{tmp.sub_path});
+    defer std.testing.allocator.free(path);
+    try std.testing.expectError(error.UnsupportedCompressionPresetFormat, Writer.initWithOptions(std.testing.allocator, std.testing.io, path, .{}, .{ .compression_level = .balanced }));
+    try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(std.testing.io, path, .{}));
+}
+
+test "compression presets report compressor flush failures" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    try tmp.dir.createDir(io, "tree", .default_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = "tree/payload", .data = "payload" });
+    try tmp.dir.symLink(io, "/dev/full", "full.pkg.tar.zst", .{});
+    const source = try tmp.dir.realPathFileAlloc(io, "tree", allocator);
+    defer allocator.free(source);
+    const output = try std.fmt.allocPrint(allocator, ".zig-cache/tmp/{s}/full.pkg.tar.zst", .{tmp.sub_path});
+    defer allocator.free(output);
+    var writer = try Writer.initWithOptions(allocator, io, output, .{}, .{ .compression_level = .balanced });
+    defer writer.deinit();
+    try writer.addDirectory(source);
+    try std.testing.expectError(error.ArchiveCloseFailed, writer.finish());
 }
 
 test "archive virtual ownership is shared by package and mtree writers" {

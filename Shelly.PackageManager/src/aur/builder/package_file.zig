@@ -319,7 +319,9 @@ pub fn assemblePackage(self: *PackageBuilder, package_build: *const PackageBuild
     errdefer std.Io.Dir.cwd().deleteFile(self.io, temporary_path) catch {};
 
     {
-        var writer = try archive.Writer.initWithMetadata(self.allocator, self.io, temporary_path, virtual_metadata);
+        var writer = try archive.Writer.initWithOptions(self.allocator, self.io, temporary_path, virtual_metadata, .{
+            .compression_level = self.shellybuild_config.package.compression_level,
+        });
         defer writer.deinit();
         try writer.addDirectory(pkgdir);
         try writer.finish();

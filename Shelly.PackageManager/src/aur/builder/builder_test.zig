@@ -517,6 +517,7 @@ test "PackageBuilder signs published packages with the configured signing key" {
     const gnupg_home = try prepareSigningPgpHome(&fixture);
     defer allocator.free(gnupg_home);
     fixture.builder.options.sign = true;
+    fixture.builder.shellybuild_config.package.compression_level = .maximum;
     fixture.builder.options.sign_key = signing_pgp_fingerprint;
     fixture.builder.options.sign_gnupg_home = gnupg_home;
 
@@ -545,11 +546,62 @@ test "PackageBuilder signs published packages with the configured signing key" {
     const log = try readOnlyBuildLog(allocator, io, fixture.build_dir);
     defer allocator.free(log);
     try testing.expect(std.mem.indexOf(u8, log, "[phase] signing") != null);
+    try testing.expect(std.mem.indexOf(u8, log, "[compression] preset 5 (maximum), zstd level 19") != null);
 
     // Terminate the gpg-agent daemon spawned during signing so it does not
     // outlive the fixture and interfere with teardown.
     var kill = try process_runner.run(allocator, io, &.{ "/usr/bin/gpgconf", "--homedir", gnupg_home, "--kill", "gpg-agent" }, null, null);
     defer kill.deinit(allocator);
+}
+
+test "PackageBuilder compression presets apply to every split package" {
+    const allocator = testing.allocator;
+    const content =
+        \\pkgname=('compression-demo' 'compression-docs')
+        \\pkgver=1
+        \\pkgrel=1
+        \\arch=('any')
+        \\package_compression-demo() {
+        \\  install -dm755 "$pkgdir/usr/share/demo"
+        \\  printf 'main payload\n' > "$pkgdir/usr/share/demo/data"
+        \\}
+        \\package_compression-docs() {
+        \\  install -dm755 "$pkgdir/usr/share/demo"
+        \\  printf 'documentation\n' > "$pkgdir/usr/share/demo/data"
+        \\}
+    ;
+    for (std.enums.values(archive.compression_policy.Preset)) |preset| {
+        var fixture = try Fixture.createMany(allocator, content, &.{ "compression-demo", "compression-docs" }, null);
+        defer fixture.destroy();
+        fixture.builder.shellybuild_config.package.extension = ".pkg.tar.bz2";
+        fixture.builder.shellybuild_config.package.compression_level = preset;
+        const artifacts = try fixture.builder.BuildPackage();
+        defer builder_mod.deinitArtifacts(allocator, artifacts);
+        try testing.expectEqual(@as(usize, 2), artifacts.len);
+        for (artifacts) |artifact| {
+            var file = try std.Io.Dir.cwd().openFile(testing.io, artifact.path, .{});
+            defer file.close(testing.io);
+            var header: [4]u8 = undefined;
+            try testing.expectEqual(header.len, try file.readPositionalAll(testing.io, &header, 0));
+            const expected = [_][]const u8{ "BZh1", "BZh3", "BZh5", "BZh7", "BZh9" };
+            try testing.expectEqualStrings(expected[@intFromEnum(preset) - 1], &header);
+            var reader = try archive.Reader.init(allocator, artifact.path);
+            defer reader.deinit();
+            var found: usize = 0;
+            while (try reader.next()) |entry| {
+                if (std.mem.eql(u8, entry.path, "usr/share/demo/data")) {
+                    const payload = if (std.mem.eql(u8, artifact.package_name, "compression-demo")) "main payload\n" else "documentation\n";
+                    var bytes: [64]u8 = undefined;
+                    const count = try reader.readPrefix(&bytes);
+                    try testing.expectEqualStrings(payload, bytes[0..count]);
+                    found += 1;
+                } else if (std.mem.eql(u8, entry.path, ".PKGINFO") or std.mem.eql(u8, entry.path, ".BUILDINFO") or std.mem.eql(u8, entry.path, ".MTREE")) {
+                    found += 1;
+                }
+            }
+            try testing.expectEqual(@as(usize, 4), found);
+        }
+    }
 }
 
 test "PackageBuilder fails atomically when the signing key is unavailable" {
@@ -581,6 +633,7 @@ test "PackageBuilder fails atomically when the signing key is unavailable" {
     fixture.builder.options.sign = true;
     fixture.builder.options.sign_key = signing_pgp_fingerprint;
     fixture.builder.options.sign_gnupg_home = short_home;
+    fixture.builder.shellybuild_config.package.compression_level = .maximum;
 
     try testing.expectError(error.BuildFailed, fixture.builder.BuildPackage());
 
