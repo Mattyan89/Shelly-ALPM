@@ -319,7 +319,11 @@ const DiagnosticOutput = struct {
         self.lock();
         defer self.unlock();
         defer self.stderr.flush() catch {};
-        self.stderr.print("Could not provision the isolated build root: {0f}.\n", .{diagnostics_module.safe(std.mem.trimEnd(u8, args.message, "\r\n"))}) catch {};
+        const message = std.mem.trimEnd(u8, args.message, "\r\n");
+        // Detailed transaction failures already contain punctuation and technical
+        // codes. Preserve those lines without appending a dot to the error code.
+        const suffix = if (std.mem.indexOfScalar(u8, message, '\n') != null or std.mem.endsWith(u8, message, ".")) "" else ".";
+        self.stderr.print("Could not provision the isolated build root: {f}{s}\n", .{ diagnostics_module.safe(message), suffix }) catch {};
     }
 
     fn handleScriptlet(data: ?*anyopaque, args: events.ScriptletArgs) void {
@@ -976,4 +980,15 @@ test "bootstrap aggregates interleaved transfers and flushes terminal output for
     try t.expectEqualStrings(legacy.written(), shared.written());
     try t.expectEqual(@as(usize, 1), std.mem.count(u8, shared.written(), "Package retrieval completed: first.pkg"));
     try t.expect(std.mem.indexOf(u8, shared.written(), "Retrying download: second.pkg") != null);
+}
+
+test "bootstrap preserves multiline dependency failures and technical details" {
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    var diagnostics: DiagnosticOutput = .{ .stderr = &output.writer };
+    const message = "\"first\" requires \"missing-lib>=2.0\", which could not be satisfied.\n" ++
+        "\"second\" requires \"other-lib=3\", which could not be satisfied.\n\n" ++
+        "Technical details: UnsatisfiedDependencies";
+    DiagnosticOutput.handleError(&diagnostics, .{ .message = message });
+    try std.testing.expectEqualStrings("Could not provision the isolated build root: " ++ message ++ "\n", output.written());
 }

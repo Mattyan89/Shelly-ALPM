@@ -148,6 +148,46 @@ fn question(data: ?*anyopaque, borrowed: *rlpm.Callbacks.Question) !void {
     }
     try rlpm.OwnedQuestion.applyAnswer(borrowed, q.*);
 }
+// Read the failed resolution plan while the transaction still owns it. Execution
+// manifests only describe later failures, after dependency resolution succeeded.
+fn formatFailure(allocator: std.mem.Allocator, err: anyerror, operation: op.Operation, plan: ?*const rlpm.TransactionPlan, path: ?[]const u8) ![]u8 {
+    const diagnostics = @import("diagnostics");
+    var text: std.Io.Writer.Allocating = .init(allocator);
+    defer text.deinit();
+    if (plan) |resolution| if (resolution.failure != null) {
+        for (resolution.issues) |issue| switch (issue) {
+            .missing => |missing| {
+                const relation = try missing.dependency.formatAlloc(allocator);
+                defer allocator.free(relation);
+                try text.writer.print("\"{f}\" requires \"{f}\", which could not be satisfied", .{
+                    diagnostics.safe(resolution.package(missing.requiring).name), diagnostics.safe(relation),
+                });
+                if (missing.causing) |id| try text.writer.print(" (affected by \"{f}\")", .{diagnostics.safe(resolution.package(id).name)});
+                try text.writer.writeAll(".\n");
+            },
+            .target => |target| if (resolution.failure == .target_not_found) {
+                try text.writer.print("Requested package \"{f}\" could not be found in the configured repositories.\n", .{diagnostics.safe(target)});
+            },
+            .conflict => |conflict| {
+                const relation = try conflict.reason.formatAlloc(allocator);
+                defer allocator.free(relation);
+                try text.writer.print("\"{f}\" conflicts with \"{f}\" (conflict: {f}).\n", .{
+                    diagnostics.safe(resolution.package(conflict.first).name), diagnostics.safe(resolution.package(conflict.second).name), diagnostics.safe(relation),
+                });
+            },
+            else => {},
+        };
+    };
+    if (text.written().len != 0) {
+        try text.writer.print("\nTechnical details: {s}", .{@errorName(err)});
+        return allocator.dupe(u8, text.written());
+    }
+    return diagnostics.format(allocator, err, .{
+        .operation = diagnostics.operationDescription(operation.envelope.kind),
+        .subject = operation.envelope.subject,
+        .path = path,
+    });
+}
 fn reportFailure(self: *Adapter, err: anyerror) void {
     var operation = self.operation.*;
     const issue = if (self.owner.transaction()) |tx| blk: {
@@ -158,13 +198,8 @@ fn reportFailure(self: *Adapter, err: anyerror) void {
         };
         break :blk failure;
     } else null;
-    const diagnostics = @import("diagnostics");
     const allocator = operation.context.allocator;
-    const message = diagnostics.format(allocator, err, .{
-        .operation = diagnostics.operationDescription(operation.envelope.kind),
-        .subject = operation.envelope.subject,
-        .path = if (issue) |failure| failure.path else null,
-    }) catch {
+    const message = formatFailure(allocator, err, operation, if (self.owner.transaction()) |tx| tx.plan() else null, if (issue) |failure| failure.path else null) catch {
         operation.reportError(err, @errorName(err), "rlpm", null, false);
         if (self.failure_handler) |handler| handler.function(handler.data, @errorName(err));
         return;
@@ -726,4 +761,105 @@ test "native presentation preserves actions hook numbering and per-file download
     try t.expect(std.mem.indexOf(u8, text, "completed|failed.pkg.tar|failed") != null);
     try t.expect(std.mem.indexOf(u8, text, "download.skipped|") != null);
     try t.expect(std.mem.indexOf(u8, text, "completed|batch|") == null);
+}
+
+test "resolution failures preserve dependency details through lifecycle and legacy output" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const Capture = struct {
+        operation_message: std.Io.Writer.Allocating,
+        legacy_message: std.Io.Writer.Allocating,
+        failures: usize = 0,
+        legacy_failures: usize = 0,
+        fn event(data: ?*anyopaque, value: op.Event) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            if (value == .failure) {
+                self.failures += 1;
+                self.operation_message.writer.writeAll(value.failure.message) catch unreachable;
+            }
+        }
+        fn legacy(data: ?*anyopaque, message: []const u8) void {
+            const self: *@This() = @ptrCast(@alignCast(data.?));
+            self.legacy_failures += 1;
+            self.legacy_message.writer.writeAll(message) catch unreachable;
+        }
+    };
+    for (0..3) |scenario| {
+        var temporary = std.testing.tmpDir(.{});
+        defer temporary.cleanup();
+        const root = try temporary.dir.realPathFileAlloc(io, ".", a);
+        defer a.free(root);
+        var owner = try rlpm.Owner.init(io, a, .{ .root = root, .database_path = root }, &.{});
+        defer owner.deinit() catch unreachable;
+        var context = op.OperationContext.init(a, io);
+        defer context.deinit();
+        var capture: Capture = .{ .operation_message = .init(a), .legacy_message = .init(a) };
+        defer capture.operation_message.deinit();
+        defer capture.legacy_message.deinit();
+        _ = try context.subscribe(.{ .function = Capture.event, .data = &capture });
+        var operation = context.begin(.{ .backend = .alpm, .kind = .install });
+        defer operation.finish(.failed);
+        var adapter: Adapter = undefined;
+        try adapter.init(&owner, &operation);
+        adapter.failure_handler = .{ .function = Capture.legacy, .data = &capture };
+        defer adapter.deinit() catch unreachable;
+        const tx = try owner.initializeTransaction(io, .{});
+        if (scenario == 0) {
+            try tx.addTarget("missing-target");
+        } else {
+            for (0..2) |index| {
+                const metadata = if (index == 0)
+                    (if (scenario == 1) "pkgname = first\npkgver = 1-1\narch = any\ndepend = missing-lib>=2.0\n" else "pkgname = first\npkgver = 1-1\narch = any\nconflict = second<2\n")
+                else
+                    (if (scenario == 1) "pkgname = second\npkgver = 1-1\narch = any\ndepend = other-lib=3\n" else "pkgname = second\npkgver = 1-1\narch = any\n");
+                const filename = if (index == 0) "first.pkg.tar" else "second.pkg.tar";
+                {
+                    var file = try temporary.dir.createFile(io, filename, .{});
+                    defer file.close(io);
+                    var buffer: [4096]u8 = undefined;
+                    var writer = file.writer(io, &buffer);
+                    var tar: std.tar.Writer = .{ .underlying_writer = &writer.interface };
+                    try tar.writeFileBytes(".PKGINFO", metadata, .{ .mode = 0o644 });
+                    try tar.finishPedantically();
+                    try writer.interface.flush();
+                }
+                const path = try std.fs.path.join(a, &.{ root, filename });
+                defer a.free(path);
+                var package: ?rlpm.Package = try owner.loadPackage(io, path, .local_file, .{});
+                defer if (package) |*value| value.deinit();
+                try tx.takeArchive(&package);
+            }
+        }
+        const expected_error = switch (scenario) {
+            0 => error.TargetNotFound,
+            1 => error.UnsatisfiedDependencies,
+            else => error.ConflictingDependencies,
+        };
+        try std.testing.expectError(expected_error, tx.prepare());
+        try owner.releaseTransaction();
+        try std.testing.expectEqual(1, capture.failures);
+        try std.testing.expectEqual(1, capture.legacy_failures);
+        const message = capture.operation_message.written();
+        try std.testing.expectEqualStrings(message, capture.legacy_message.written());
+        const expected: []const []const u8 = switch (scenario) {
+            0 => &.{ "Requested package \"missing-target\"", "Technical details: TargetNotFound" },
+            1 => &.{ "\"first\" requires \"missing-lib>=2.0\"", "\"second\" requires \"other-lib=3\"", "Technical details: UnsatisfiedDependencies" },
+            else => &.{ "\"first\" conflicts with \"second\"", "second<2", "Technical details: ConflictingDependencies" },
+        };
+        for (expected) |fragment| try std.testing.expect(std.mem.indexOf(u8, message, fragment) != null);
+        try std.testing.expect(std.mem.indexOf(u8, message, "more specific reason") == null);
+    }
+}
+
+test "resolution failure without plan retains a useful cause and technical code" {
+    var context = op.OperationContext.init(std.testing.allocator, std.testing.io);
+    defer context.deinit();
+    var operation = context.begin(.{ .backend = .alpm, .kind = .install });
+    defer operation.finish(.failed);
+    for ([_]anyerror{ error.UnsatisfiedDependencies, error.TargetNotFound, error.ConflictingDependencies }) |err| {
+        const message = try formatFailure(std.testing.allocator, err, operation, null, null);
+        defer std.testing.allocator.free(message);
+        try std.testing.expect(std.mem.indexOf(u8, message, @errorName(err)) != null);
+        try std.testing.expect(std.mem.indexOf(u8, message, "more specific reason") == null);
+    }
 }
