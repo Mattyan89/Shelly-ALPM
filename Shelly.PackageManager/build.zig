@@ -106,6 +106,11 @@ pub fn build(b: *std.Build) void {
     });
     archive_mod.addImport("diagnostics", diagnostics);
     archive_mod.linkSystemLibrary("archive", .{});
+    const compression_tests = b.addRunArtifact(b.addTest(.{
+        .root_module = archive_mod,
+        .filters = &.{ "compression presets", "archive writer", "archive virtual ownership" },
+    }));
+    b.step("compression-test", "Test package compression presets and metadata round trips").dependOn(&compression_tests.step);
 
     // This creates a module, which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
@@ -318,6 +323,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&rlpm_adapter_tests.step);
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&compression_tests.step);
 
     const bootstrap_tests = b.addTest(.{
         .root_module = mod,
@@ -372,6 +378,7 @@ pub fn build(b: *std.Build) void {
     const run_builder_tests = b.addRunArtifact(builder_tests);
     const builder_test_step = b.step("builder-test", "Run native package builder regressions");
     builder_test_step.dependOn(&run_builder_tests.step);
+    builder_test_step.dependOn(&compression_tests.step);
 
     const shellybuild_test_module = b.createModule(.{
         .root_source_file = b.path("src/aur/shellybuild.zig"),
@@ -381,6 +388,7 @@ pub fn build(b: *std.Build) void {
     });
     shellybuild_test_module.addImport("native_output", native_output);
     shellybuild_test_module.addImport("diagnostics", diagnostics);
+    shellybuild_test_module.addImport("archive", archive_mod);
     shellybuild_test_module.addImport("Shelly_Download", shelly_download);
     shellybuild_test_module.addImport("toml", toml_module);
     shellybuild_test_module.addImport("operation_context", operation_context_mod);

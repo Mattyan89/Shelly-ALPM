@@ -3,6 +3,11 @@
 `shelly build --isolated` executes the native Shelly package builder in a
 fresh, operation-scoped Arch root through `systemd-nspawn`.
 
+`--compression-level 1..5` selects the same archive compression presets as a
+direct build. The resolved CLI or `package.compression_level` configuration is
+carried into the guest and applies to every selected split package. See the
+[compression mappings](shellybuild.conf.md#package-compression).
+
 The stable JSON schemas, capability probe, and exit behavior for unattended
 callers are available via `shelly --version --json` before scheduling a build.
 

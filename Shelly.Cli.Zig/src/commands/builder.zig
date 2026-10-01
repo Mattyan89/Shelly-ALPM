@@ -16,6 +16,7 @@ const signals = @import("../runtime/signals.zig");
 const install_command = @import("install.zig");
 
 const command_path = "shelly build build";
+const compression_policy = PackageManager.shared.archive.compression_policy;
 
 pub const BuildCommandArtifact = struct {
     package_name: []u8,
@@ -66,6 +67,9 @@ pub fn dispatch(
         if (diagnostic) |*value| value.deinit();
     }
 
+    _ = compressionOverride(invocation) catch |err|
+        return try reportConfigurationError(context, invocation, err);
+
     if (installRequested(invocation)) {
         if (installOutputModeConflict(invocation)) |conflict| {
             try context.stderr.print("Cannot combine --install with {s}.\n", .{conflict});
@@ -86,6 +90,10 @@ pub fn dispatch(
         return 0;
     }
     if (shouldElevateBuildCoordinator(invocation, elevation.isRoot())) {
+        // Validate compression before asking for privileges or installing deps.
+        const configuration = loadBuildConfiguration(context, invocation) catch |err|
+            return try reportConfigurationError(context, invocation, err);
+        configuration.deinit();
         const elevated_arguments = try aur_url.argumentsWithEffectiveBase(context, invocation);
         defer context.allocator.free(elevated_arguments);
         if (isolatedRequested(invocation)) {
@@ -1149,11 +1157,7 @@ const Real = struct {
         var completion: PackageManager.OperationCompletionStatus = .failed;
         defer operation.finish(completion);
 
-        const shellybuild = try ShellyBuildConfiguration.init(
-            context.io,
-            context.allocator,
-            context.environ,
-        );
+        const shellybuild = try loadBuildConfiguration(context, invocation);
         defer shellybuild.deinit();
 
         const pkgbuild_content = try std.Io.Dir.cwd().readFileAlloc(
@@ -1518,11 +1522,7 @@ fn parseBuildRequest(
         return error.InvalidPkgbuildPath;
     };
 
-    const shellybuild = try ShellyBuildConfiguration.init(
-        context.io,
-        context.allocator,
-        context.environ,
-    );
+    const shellybuild = try loadBuildConfiguration(context, invocation);
     errdefer shellybuild.deinit();
 
     const package_destination = if (optionValue(invocation, "--package-destination")) |path| blk: {
@@ -1911,6 +1911,8 @@ fn renderIsolatedConfiguration(
     try writer.writeAll("[package]\n");
     try writeTomlString(writer, "packager", configuration.package.packager);
     try writeTomlString(writer, "extension", configuration.package.extension);
+    if (configuration.package.compression_level) |preset|
+        try writer.print("compression_level = {d}\n", .{@intFromEnum(preset)});
     try writeTomlArray(writer, "options", configuration.package.options);
     try writeTomlArray(writer, "strip_binaries", configuration.package.strip_binaries);
     try writeTomlArray(writer, "strip_shared", configuration.package.strip_shared);
@@ -2680,6 +2682,35 @@ fn optionValue(invocation: *const parser.Invocation, name: []const u8) ?[]const 
     return null;
 }
 
+fn compressionOverride(invocation: *const parser.Invocation) !?compression_policy.Preset {
+    const value = optionValue(invocation, "--compression-level") orelse return null;
+    return try compression_policy.Preset.parse(value);
+}
+
+fn applyCompressionOverride(configuration: *ShellyBuildConfiguration, invocation: *const parser.Invocation) !void {
+    if (try compressionOverride(invocation)) |preset|
+        configuration.package.compression_level = preset;
+    try PackageManager.shared.archive.validateCompression(configuration.package.extension, configuration.package.compression_level);
+}
+
+fn loadBuildConfiguration(context: *runtime.RuntimeContext, invocation: *const parser.Invocation) !*ShellyBuildConfiguration {
+    const configuration = try ShellyBuildConfiguration.init(context.io, context.allocator, context.environ);
+    errdefer configuration.deinit();
+    try applyCompressionOverride(configuration, invocation);
+    return configuration;
+}
+
+fn reportConfigurationError(context: *runtime.RuntimeContext, invocation: *const parser.Invocation, err: anyerror) !u8 {
+    try context.stderr.print("{s}\n", .{buildErrorMessage(err)});
+    try context.stderr.flush();
+    if (invocation.globals.json) {
+        try writeBuildJson(context.stdout, null, err, isolatedRequested(invocation));
+        try context.stdout.writeByte('\n');
+        try context.stdout.flush();
+    }
+    return exitCodeForBuildError(err);
+}
+
 fn hasPackageSelection(invocation: *const parser.Invocation) bool {
     for (invocation.options) |option|
         if (std.mem.eql(u8, option.name, "--package")) return true;
@@ -2725,6 +2756,8 @@ fn exitCodeForBuildError(err: anyerror) u8 {
         error.ReviewOnlyRequiresJson,
         error.InvalidPkgbuildPath,
         error.MissingPackageName,
+        error.InvalidCompressionLevel,
+        error.UnsupportedCompressionPresetFormat,
         => 2,
         else => 1,
     };
@@ -3792,6 +3825,7 @@ test "isolated configuration preserves build policy and forces guest-local desti
     );
     defer configuration.deinit();
     configuration.build.extra_path = &.{"/opt/guest-toolchain/bin"};
+    configuration.package.compression_level = .compact;
     configuration.build.env = &.{
         .{ .name = "JAVA_HOME", .value = "/opt/guest-java" },
         .{ .name = "BUILD_ENV_LITERAL", .value = "$HOME/~/\"quoted\"\\path\n\t∂" },
@@ -3807,6 +3841,7 @@ test "isolated configuration preserves build policy and forces guest-local desti
     );
     defer parsed.deinit();
     try std.testing.expectEqualStrings(configuration.build.carch, parsed.build.carch);
+    try std.testing.expectEqual(configuration.package.compression_level, parsed.package.compression_level);
     try std.testing.expectEqualStrings("/opt/guest-toolchain/bin", parsed.build.extra_path[0]);
     try std.testing.expectEqualStrings(configuration.build.cflags[0], parsed.build.cflags[0]);
     try std.testing.expectEqual(configuration.build.env.len, parsed.build.env.len);
@@ -3823,6 +3858,73 @@ test "isolated configuration preserves build policy and forces guest-local desti
     try std.testing.expectEqualStrings(isolated_build.guest_artifacts, parsed.destinations.packages.?);
     try std.testing.expect(!parsed.package.sign);
     try std.testing.expect(!parsed.sandbox.enabled);
+}
+
+test "compression presets parse both spellings override config and survive child transport" {
+    const spec = @import("../cli/spec.zig");
+    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const manifest = try spec.Manifest.load(arena.allocator());
+    for (1..6) |level| {
+        const value = try std.fmt.allocPrint(arena.allocator(), "{d}", .{level});
+        const inline_value = try std.fmt.allocPrint(arena.allocator(), "--compression-level={d}", .{level});
+        for ([_][]const []const u8{
+            &.{ "build", "--isolated", "--sync-deps", "--compression-level", value, "/tmp/PKGBUILD" },
+            &.{ "build", "--isolated", "--sync-deps", inline_value, "/tmp/PKGBUILD" },
+        }) |args| {
+            const configuration = try ShellyBuildConfiguration.initFromBuffers(allocator, "[package]\ncompression_level = 2\n", "[package]\ncompression_level = 4\n");
+            defer configuration.deinit();
+            const parsed = try parser.parse(arena.allocator(), &manifest, args);
+            try applyCompressionOverride(configuration, &parsed.dispatch);
+            try std.testing.expectEqual(level, @intFromEnum(configuration.package.compression_level.?));
+            const rendered = try renderIsolatedConfiguration(allocator, configuration);
+            defer allocator.free(rendered);
+            const guest = try ShellyBuildConfiguration.initFromBuffers(allocator, rendered, null);
+            defer guest.deinit();
+            try std.testing.expectEqual(configuration.package.compression_level, guest.package.compression_level);
+
+            const host_args = try buildChildArguments(allocator, args, null);
+            defer allocator.free(host_args);
+            const host = try parser.parse(arena.allocator(), &manifest, host_args);
+            try std.testing.expectEqual(configuration.package.compression_level, try compressionOverride(&host.dispatch));
+            const guest_args = try buildIsolatedChildArguments(allocator, args, "/tmp/PKGBUILD", "ab" ** 32, false);
+            defer allocator.free(guest_args);
+            const child = try parser.parse(arena.allocator(), &manifest, guest_args);
+            try std.testing.expectEqual(configuration.package.compression_level, try compressionOverride(&child.dispatch));
+        }
+    }
+    const absent = try parser.parse(arena.allocator(), &manifest, &.{"build"});
+    const configuration = try ShellyBuildConfiguration.initFromBuffers(allocator, null, null);
+    defer configuration.deinit();
+    try applyCompressionOverride(configuration, &absent.dispatch);
+    const rendered = try renderIsolatedConfiguration(allocator, configuration);
+    defer allocator.free(rendered);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "compression_level") == null);
+    configuration.package.compression_level = .fast;
+    try applyCompressionOverride(configuration, &absent.dispatch);
+    try std.testing.expectEqual(compression_policy.Preset.fast, configuration.package.compression_level.?);
+    configuration.package.extension = ".pkg.tar.lz4";
+    try std.testing.expectError(error.UnsupportedCompressionPresetFormat, applyCompressionOverride(configuration, &absent.dispatch));
+}
+
+test "compression presets reject invalid CLI before elevation or PKGBUILD access" {
+    const spec = @import("../cli/spec.zig");
+    var context: test_support.TestContext = .{};
+    context.init();
+    defer context.deinit();
+    const manifest = try spec.Manifest.load(context.arena.allocator());
+    for ([_][]const u8{ "0", "6", "-1", "3.0", "fast", "", "999999999999999999999999" }) |value| {
+        context.stdout.writer.end = 0;
+        context.stderr.writer.end = 0;
+        const args = [_][]const u8{ "build", "--isolated", "--sync-deps", "--json", "--compression-level", value, "/nonexistent/PKGBUILD" };
+        const parsed = try parser.parse(context.arena.allocator(), &manifest, &args);
+        try std.testing.expectEqual(@as(?u8, 2), try dispatch(&context.context, &parsed.dispatch));
+        try std.testing.expect(std.mem.indexOf(u8, context.stderr.writer.buffered(), "integer from 1 to 5") != null);
+        try std.testing.expect(std.mem.indexOf(u8, context.stdout.writer.buffered(), "InvalidCompressionLevel") != null);
+    }
+    const missing = try parser.parse(context.arena.allocator(), &manifest, &.{ "build", "--compression-level" });
+    try std.testing.expect(missing == .failure);
 }
 
 test "isolated dependency state never inherits host installations" {

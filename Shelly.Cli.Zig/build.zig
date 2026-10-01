@@ -106,6 +106,7 @@ pub fn build(b: *std.Build) void {
         .root_module = builder_test_module,
         .filters = &.{
             "makesrcinfo emits clean stdout and never runs lifecycle functions",
+            "compression presets",
             "review-only accepts Heroic array trimming",
             "review-only accepts filesystem here-strings",
             "sync deps",
@@ -123,6 +124,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     const run_builder_tests = b.addRunArtifact(builder_tests);
+    b.step("builder-command-test", "Test native build command configuration and coordinator transport").dependOn(&run_builder_tests.step);
     test_step.dependOn(&run_builder_tests.step);
     const source_key_test_step = b.step("isolated-source-keys-test", "Test isolated source key approval, transport, and signature verification");
     source_key_test_step.dependOn(&run_builder_tests.step);

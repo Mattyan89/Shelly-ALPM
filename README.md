@@ -308,6 +308,12 @@ coordinator installs the built archives after the build completes. Like
 `makepkg -i`, the install transaction adds only the built archives, so
 combine it with `--sync-deps` when the package's dependencies may be missing.
 
+Choose package compression with `shelly build --compression-level 3` (also
+supported with `--isolated`). Presets 1–5 range from conservative resource use
+to maximum compression effort. Set `package.compression_level` in
+`shellybuild.conf` for a persistent preference; omission preserves library
+defaults. See the [preset mappings and tradeoffs](docs/shellybuild.conf.md#package-compression).
+
 Versioned JSON contracts for unattended package-building services are
 available. Probe an installed binary with `shelly --version --json` before
 scheduling a build.
