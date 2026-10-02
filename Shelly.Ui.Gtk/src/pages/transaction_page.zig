@@ -1049,9 +1049,15 @@ pub const TransactionPage = extern struct {
                 pending.on_dismiss = &dismiss_question;
                 pending.dismiss_ctx = self;
 
+                const a = pending.arena.allocator();
+                const provider_title = if (q.prompt.len == 0)
+                    "Select Provider"
+                else
+                    std.fmt.allocPrint(a, "Select a provider for {s}", .{q.prompt}) catch "Select Provider";
+
                 const dialog = ProviderDialog.new(
-                    pending.arena.allocator(),
-                    "Select Provider",
+                    a,
+                    provider_title,
                     q.options,
                     &on_single_select_response,
                     pending,

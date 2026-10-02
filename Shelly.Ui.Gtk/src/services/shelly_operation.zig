@@ -877,12 +877,6 @@ fn parseSelection(op: *ShellyOperation, json: []const u8, kind: []const u8) !?*P
             .prompt = qa.dupe(u8, e.value.QuestionText) catch "",
             .options = opts,
         } };
-    } else if (std.mem.eql(u8, kind, "q.provider")) {
-        pending.request = .{ .select_one = .{
-            .question_id = qid,
-            .prompt = qa.dupe(u8, e.value.QuestionText) catch "",
-            .options = opts,
-        } };
     } else {
         pending.request = .{ .select_one = .{
             .question_id = qid,
