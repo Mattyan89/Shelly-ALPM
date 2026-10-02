@@ -3,6 +3,21 @@
 `shelly build --isolated` executes the native Shelly package builder in a
 fresh, operation-scoped Arch root through `systemd-nspawn`.
 
+`shelly install aur --isolated <package>` (or `shelly -Ia --isolated <package>`)
+uses the same coordinator after the normal AUR availability check and PKGBUILD
+review. Each package base gets a fresh root. Repository build dependencies are
+provisioned in the guest, and the exported archives are installed through the
+normal host transaction, which resolves their runtime dependencies. Host
+build-dependency installation and cleanup are skipped. `--needed`, split
+package selection, and exact-commit `--version` installs retain their normal
+behavior. Isolation is optional and cannot be combined with `--chroot`,
+`--build-deps`, or `--make-deps`.
+
+The same signing and AUR build-dependency limitations below apply. An AUR
+install requiring additional uninstalled AUR dependencies is also rejected
+before installing dependencies on the host. `--nosign` overrides configured
+package signing when using isolation.
+
 `--compression-level 1..5` selects the same archive compression presets as a
 direct build. The resolved CLI or `package.compression_level` configuration is
 carried into the guest and applies to every selected split package. See the

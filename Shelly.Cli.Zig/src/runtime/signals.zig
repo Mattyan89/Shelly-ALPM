@@ -196,6 +196,9 @@ test "cancellation watcher translates a signal into OperationContext cancellatio
 }
 
 test "all public isolated spellings request graceful cancellation" {
+    try std.testing.expect(argumentsRequestGracefulCancellation(&.{ "-Ia", "--isolated", "demo" }));
+    try std.testing.expect(argumentsRequestGracefulCancellation(&.{ "install", "aur", "--isolated=true", "demo" }));
+    try std.testing.expect(!argumentsRequestGracefulCancellation(&.{ "-Ia", "--isolated=false", "demo" }));
     try std.testing.expect(argumentsRequestGracefulCancellation(&.{ "build", "--isolated" }));
     try std.testing.expect(argumentsRequestGracefulCancellation(&.{ "build", "--isolated=true" }));
     try std.testing.expect(argumentsRequestGracefulCancellation(&.{ "build", "--isolated", "true" }));

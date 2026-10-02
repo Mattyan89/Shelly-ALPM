@@ -90,6 +90,19 @@ Shelly suggests `shelly -Is <package>`. Explicit local builds with
 `shelly build /path/to/PKGBUILD` and removal of installed packages remain
 available without an AUR availability check.
 
+To build an AUR package in a fresh native build root before installing it:
+
+```bash
+shelly -Ia --isolated <package>
+```
+
+Repository build dependencies stay in the guest; the exported package and its
+runtime dependencies are installed on the host. This also supports `--needed`
+and `--version`. As with `shelly build --isolated`, AUR-only build dependencies
+and package signing are not yet supported. `--isolated` cannot be combined with
+`--chroot` or dependency-only installation. See [isolated builds](docs/isolated-builds.md)
+for requirements and limitations.
+
 ## PKGBUILD review
 
 Terminal PKGBUILD reviews show changed lines with three unchanged lines of

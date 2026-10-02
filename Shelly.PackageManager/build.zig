@@ -933,6 +933,7 @@ pub fn build(b: *std.Build) void {
             "archive virtual ownership is shared by package and mtree writers",
             "AUR operation-hooked public APIs compile",
             "coordinator child build arguments bind review package set and policies",
+            "AUR isolated",
             "clean invoking-user build command",
             "build progress parser recognizes makepkg percentage lines",
             "build environment exports flags hosts and compiler wrapper paths",
