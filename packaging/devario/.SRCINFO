@@ -1,4 +1,4 @@
-pkgbase = shelly-git
+pkgbase = shelly
 	pkgver = 3.1.6.r7.g66dd2891
 	pkgrel = 2
 	url = https://github.com/Seafoam-Labs/Shelly-ALPM
@@ -20,23 +20,22 @@ pkgbase = shelly-git
 	source = Shelly-ALPM::git+https://github.com/Seafoam-Labs/Shelly-ALPM.git#branch=development
 	sha256sums = SKIP
 
-pkgname = shelly-git
-	pkgdesc = Shelly: A Modern Arch Package Manager (git version)
-	depends = shelly-cli-git=3.1.6.r7.g66dd2891-2
-	depends = shelly-flatpak-backend-git=3.1.6.r7.g66dd2891-2
-	depends = shelly-notify-git
+pkgname = shelly
+	pkgdesc = Shelly: A Modern Arch Package Manager (Devario development build)
+	depends = shelly-cli=3.1.6.r7.g66dd2891-2
+	depends = shelly-flatpak-backend=3.1.6.r7.g66dd2891-2
+	depends = shelly-notify
 	depends = glib2
 	depends = glibc
 	depends = gtk4
 	depends = hicolor-icon-theme
 	optdepends = fuse2: run AppImages that require FUSE 2
 	optdepends = libstarfish: dependency viewer for arch packages
-	provides = shelly=3.1.6.r7.g66dd2891
-	conflicts = shelly
+	conflicts = shelly-git
 	conflicts = shelly-bin
 
-pkgname = shelly-cli-git
-	pkgdesc = Native Shelly package-manager CLI (git version)
+pkgname = shelly-cli
+	pkgdesc = Native Shelly package-manager CLI (Devario development build)
 	depends = curl
 	depends = diffutils
 	depends = git
@@ -52,38 +51,37 @@ pkgname = shelly-cli-git
 	optdepends = gtk-update-icon-cache: update AppImage icons
 	optdepends = opendoas: alternative privilege elevator to sudo
 	optdepends = plocate: locate-based pacfile discovery
-	optdepends = shelly-flatpak-backend-git: Flatpak package management support
+	optdepends = shelly-flatpak-backend: Flatpak package management support
 	optdepends = systemd: run isolated build containers with systemd-nspawn
 	optdepends = util-linux: isolate fresh-root provisioning for --isolated builds
 	optdepends = vim: default visual pacfile diff viewer
-	provides = shelly-cli=3.1.6.r7.g66dd2891
 	conflicts = shelly<3.1.6-2
 	conflicts = shelly-git<3.1.6.r0
 	conflicts = shelly-bin
-	conflicts = shelly-cli
+	conflicts = shelly-cli-git
 	backup = etc/shellybuild.conf
 
-pkgname = shelly-flatpak-backend-git
-	pkgdesc = Optional native Flatpak backend for Shelly (git version)
-	depends = shelly-cli-git=3.1.6.r7.g66dd2891-2
+pkgname = shelly-flatpak-backend
+	pkgdesc = Optional native Flatpak backend for Shelly (Devario development build)
+	depends = shelly-cli=3.1.6.r7.g66dd2891-2
 	depends = flatpak
 	depends = glib2
 	depends = glibc
-	provides = shelly-flatpak-backend=3.1.6.r7.g66dd2891
-	conflicts = shelly-flatpak-backend
+	conflicts = shelly-flatpak-backend-git
 	conflicts = shelly-flatpak-backend-bin
 	conflicts = shelly-cli-flatpak-backend-git
 	replaces = shelly-cli-flatpak-backend-git
 
-pkgname = shelly-notify-git
-	pkgdesc = Notification tray for Shelly (git version)
-	depends = shelly-git=3.1.6.r7.g66dd2891-2
+pkgname = shelly-notify
+	pkgdesc = Notification tray for Shelly (Devario development build)
+	depends = shelly=3.1.6.r7.g66dd2891-2
 	depends = glibc
-	provides = shelly-notify=3.1.6.r7.g66dd2891
-	conflicts = shelly-notify
-
-pkgname = shelly-notify-none-git
-	pkgdesc = Placeholder that satisfies Shelly (git version) without the notification tray
-	arch = any
-	provides = shelly-notify-git
 	conflicts = shelly-notify-git
+
+pkgname = shelly-notify-none
+	pkgdesc = Placeholder that satisfies Shelly without the notification tray
+	arch = any
+	provides = shelly-notify
+	conflicts = shelly-notify
+	conflicts = shelly-notify-git
+	conflicts = shelly-notify-none-git

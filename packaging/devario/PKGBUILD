@@ -2,13 +2,13 @@
 # Maintainer: Caroline Snyder <hirpeng@gmail.com>
 # Maintainer: Piotr Górski <lucjan.lucjanov@gmail.com>
 
-pkgbase=shelly-git
+pkgbase=shelly
 pkgname=(
-  'shelly-git'
-  'shelly-cli-git'
-  'shelly-flatpak-backend-git'
-  'shelly-notify-git'
-  'shelly-notify-none-git'
+  'shelly'
+  'shelly-cli'
+  'shelly-flatpak-backend'
+  'shelly-notify'
+  'shelly-notify-none'
 )
 pkgver=3.1.6.r7.g66dd2891
 pkgrel=2
@@ -96,7 +96,7 @@ build() {
 
   (cd Shelly.Ui.Gtk && _zig_build \
     --prefix "${srcdir}/out-ui" \
-    -Dflatpak-backend-package=shelly-flatpak-backend-git \
+    -Dflatpak-backend-package=shelly-flatpak-backend \
     -Doptimize=ReleaseSafe)
 
   # Generate documentation with a fresh configuration, independent of the
@@ -144,14 +144,14 @@ check() {
     "${srcdir}/out-flatpak-backend/lib/libshelly-flatpak-backend.so.1"
 }
 
-package_shelly-git() {
-  pkgdesc='Shelly: A Modern Arch Package Manager (git version)'
+package_shelly() {
+  pkgdesc='Shelly: A Modern Arch Package Manager (Devario development build)'
   depends=(
-    "shelly-cli-git=${pkgver}-${pkgrel}"
-    "shelly-flatpak-backend-git=${pkgver}-${pkgrel}"
-    # Unversioned on purpose: satisfied by shelly-notify-git or by the
-    # shelly-notify-none-git placeholder, which lets users drop the tray.
-    'shelly-notify-git'
+    "shelly-cli=${pkgver}-${pkgrel}"
+    "shelly-flatpak-backend=${pkgver}-${pkgrel}"
+    # Unversioned on purpose: satisfied by shelly-notify or by the
+    # shelly-notify-none placeholder, which lets users drop the tray.
+    'shelly-notify'
     'glib2'
     'glibc'
     'gtk4'
@@ -161,8 +161,7 @@ package_shelly-git() {
     'fuse2: run AppImages that require FUSE 2'
     'libstarfish: dependency viewer for arch packages'
   )
-  provides=("shelly=${pkgver}")
-  conflicts=('shelly' 'shelly-bin')
+  conflicts=('shelly-git' 'shelly-bin')
 
   cd "${_srcdir}"
 
@@ -178,8 +177,8 @@ package_shelly-git() {
   done
 }
 
-package_shelly-cli-git() {
-  pkgdesc='Native Shelly package-manager CLI (git version)'
+package_shelly-cli() {
+  pkgdesc='Native Shelly package-manager CLI (Devario development build)'
   depends=(
     'curl'
     'diffutils'
@@ -200,15 +199,14 @@ package_shelly-cli-git() {
     'gtk-update-icon-cache: update AppImage icons'
     'opendoas: alternative privilege elevator to sudo'
     'plocate: locate-based pacfile discovery'
-    'shelly-flatpak-backend-git: Flatpak package management support'
+    'shelly-flatpak-backend: Flatpak package management support'
     'systemd: run isolated build containers with systemd-nspawn'
     'util-linux: isolate fresh-root provisioning for --isolated builds'
     'vim: default visual pacfile diff viewer'
   )
   # The CLI used to ship inside the monolithic shelly packages: shelly up to
   # 3.1.6-1 and shelly-git before the split (3.1.6rNNNN.gHASH versions).
-  provides=("shelly-cli=${pkgver}")
-  conflicts=('shelly<3.1.6-2' 'shelly-git<3.1.6.r0' 'shelly-bin' 'shelly-cli')
+  conflicts=('shelly<3.1.6-2' 'shelly-git<3.1.6.r0' 'shelly-bin' 'shelly-cli-git')
   backup=('etc/shellybuild.conf')
 
   cd "${_srcdir}"
@@ -255,12 +253,11 @@ package_shelly-cli-git() {
 EOF
 }
 
-package_shelly-flatpak-backend-git() {
-  pkgdesc='Optional native Flatpak backend for Shelly (git version)'
-  depends=("shelly-cli-git=${pkgver}-${pkgrel}" 'flatpak' 'glib2' 'glibc')
-  provides=("shelly-flatpak-backend=${pkgver}")
+package_shelly-flatpak-backend() {
+  pkgdesc='Optional native Flatpak backend for Shelly (Devario development build)'
+  depends=("shelly-cli=${pkgver}-${pkgrel}" 'flatpak' 'glib2' 'glibc')
   conflicts=(
-    'shelly-flatpak-backend'
+    'shelly-flatpak-backend-git'
     'shelly-flatpak-backend-bin'
     'shelly-cli-flatpak-backend-git'
   )
@@ -273,11 +270,10 @@ package_shelly-flatpak-backend-git() {
     "${pkgdir}/usr/lib/shelly/libshelly-flatpak-backend.so.1"
 }
 
-package_shelly-notify-git() {
-  pkgdesc='Notification tray for Shelly (git version)'
-  depends=("shelly-git=${pkgver}-${pkgrel}" 'glibc')
-  provides=("shelly-notify=${pkgver}")
-  conflicts=('shelly-notify')
+package_shelly-notify() {
+  pkgdesc='Notification tray for Shelly (Devario development build)'
+  depends=("shelly=${pkgver}-${pkgrel}" 'glibc')
+  conflicts=('shelly-notify-git')
 
   cd "${_srcdir}"
 
@@ -297,9 +293,9 @@ package_shelly-notify-git() {
   done
 }
 
-package_shelly-notify-none-git() {
-  pkgdesc='Placeholder that satisfies Shelly (git version) without the notification tray'
+package_shelly-notify-none() {
+  pkgdesc='Placeholder that satisfies Shelly without the notification tray'
   arch=('any')
-  provides=('shelly-notify-git')
-  conflicts=('shelly-notify-git')
+  provides=('shelly-notify')
+  conflicts=('shelly-notify' 'shelly-notify-git' 'shelly-notify-none-git')
 }
