@@ -4164,6 +4164,133 @@ test "PackageBuilder extracts source archives into srcdir" {
     try fixture.temporary.dir.access(io, "pkg/demo/usr/share/demo/source.txt", .{});
 }
 
+test "PackageBuilder extracts fish source archive duplicate regular files using the last entry" {
+    const allocator = testing.allocator;
+    const io = testing.io;
+    var fixture = try Fixture.create(allocator,
+        \\pkgname=demo
+        \\pkgver=1
+        \\pkgrel=1
+        \\arch=('any')
+        \\source=('fish-4.9.3.tar.xz')
+        \\sha256sums=('SKIP')
+        \\prepare() {
+        \\  test "$(cat "$srcdir/fish-4.9.3/Cargo.toml")" = release || return 1
+        \\  test "$(cat "$srcdir/fish-4.9.3/Cargo.lock")" = locked || return 1
+        \\}
+        \\package() { install -Dm644 "$srcdir/fish-4.9.3/Cargo.toml" "$pkgdir/usr/share/demo/Cargo.toml"; }
+    , null, null);
+    defer fixture.destroy();
+    const path = try std.fs.path.join(allocator, &.{ fixture.build_dir, "fish-4.9.3.tar.xz" });
+    defer allocator.free(path);
+    const original_mtime: std.Io.Timestamp = .{ .nanoseconds = 1_234_567_890 * std.time.ns_per_s };
+    const release_mtime: std.Io.Timestamp = .{ .nanoseconds = original_mtime.nanoseconds + 7 * std.time.ns_per_s };
+    // Release tarballs can append revised manifests after the original tree.
+    // Include a read-only original, shorter replacement, empty replacement,
+    // normalized duplicate path, and links resolved after the final revision.
+    try archive.writeFixture(allocator, path, .xz, &.{
+        .{ .path = "manifest-link", .kind = .hard_link, .link_target = "fish-4.9.3/Cargo.toml" },
+        .{ .path = "fish-4.9.3/Cargo.toml", .contents = "development manifest\n", .permissions = 0o444, .mtime = original_mtime },
+        .{ .path = "fish-4.9.3/Cargo.lock", .contents = "development lockfile\n" },
+        .{ .path = "fish-4.9.3/empty", .contents = "removed contents" },
+        .{ .path = "lock-link", .kind = .hard_link, .link_target = "fish-4.9.3/Cargo.lock" },
+        .{ .path = "fish-4.9.3/Cargo.toml", .contents = "release\n", .permissions = 0o640, .mtime = release_mtime },
+        .{ .path = "./fish-4.9.3//Cargo.lock", .contents = "locked\n" },
+        .{ .path = "fish-4.9.3/empty" },
+    });
+    fixture.builder.options.sources_prepared = false;
+    const artifacts = try fixture.builder.BuildPackage();
+    defer builder_mod.deinitArtifacts(allocator, artifacts);
+    const packaged = try fixture.temporary.dir.readFileAlloc(io, "pkg/demo/usr/share/demo/Cargo.toml", allocator, .unlimited);
+    defer allocator.free(packaged);
+    try testing.expectEqualStrings("release\n", packaged);
+    const manifest = try fixture.temporary.dir.statFile(io, "src/fish-4.9.3/Cargo.toml", .{});
+    try testing.expectEqual(@as(u32, 0o640), manifest.permissions.toMode() & 0o777);
+    try testing.expectEqual(release_mtime.nanoseconds, manifest.mtime.nanoseconds);
+    const empty = try fixture.temporary.dir.statFile(io, "src/fish-4.9.3/empty", .{});
+    try testing.expectEqual(@as(u64, 0), empty.size);
+    for ([_][2][]const u8{
+        .{ "src/fish-4.9.3/Cargo.toml", "src/manifest-link" },
+        .{ "src/fish-4.9.3/Cargo.lock", "src/lock-link" },
+    }) |pair| {
+        const original = try fixture.temporary.dir.statFile(io, pair[0], .{});
+        const link = try fixture.temporary.dir.statFile(io, pair[1], .{ .follow_symlinks = false });
+        try testing.expectEqual(std.Io.File.Kind.file, link.kind);
+        try testing.expectEqual(original.inode, link.inode);
+    }
+}
+
+test "PackageBuilder rejects duplicate source archive entries with conflicting types" {
+    const allocator = testing.allocator;
+    const io = testing.io;
+    const cases = [_][]const archive.FixtureEntry{
+        &.{ .{ .path = "entry", .kind = .directory }, .{ .path = "entry", .contents = "replacement" } },
+        &.{ .{ .path = "entry", .contents = "original" }, .{ .path = "entry", .kind = .directory } },
+        &.{ .{ .path = "entry", .link_target = "target" }, .{ .path = "entry", .contents = "replacement" } },
+        &.{ .{ .path = "entry", .contents = "original" }, .{ .path = "entry", .link_target = "target" } },
+        &.{ .{ .path = "entry", .kind = .hard_link, .link_target = "target" }, .{ .path = "entry", .contents = "replacement" } },
+        &.{ .{ .path = "entry", .contents = "original" }, .{ .path = "entry", .kind = .hard_link, .link_target = "target" } },
+        &.{ .{ .path = "entry/child", .contents = "implicit directory" }, .{ .path = "entry", .contents = "replacement" } },
+        &.{ .{ .path = "entry", .contents = "original" }, .{ .path = "entry", .contents = "revision" }, .{ .path = "entry", .link_target = "target" } },
+    };
+    for (cases) |entries| {
+        var fixture = try Fixture.create(allocator,
+            \\pkgname=demo
+            \\pkgver=1
+            \\pkgrel=1
+            \\arch=('any')
+            \\source=('payload.tar.gz')
+            \\sha256sums=('SKIP')
+            \\prepare() { touch "$startdir/prepare-ran"; }
+            \\package() { :; }
+        , null, null);
+        defer fixture.destroy();
+        const path = try std.fs.path.join(allocator, &.{ fixture.build_dir, "payload.tar.gz" });
+        defer allocator.free(path);
+        try archive.writeFixture(allocator, path, .gzip, entries);
+        try fixture.temporary.dir.writeFile(io, .{ .sub_path = "src/keep", .data = "previous source tree" });
+        fixture.builder.options.sources_prepared = false;
+        try testing.expectError(error.BuildFailed, fixture.builder.BuildPackage());
+        const kept = try fixture.temporary.dir.readFileAlloc(io, "src/keep", allocator, .unlimited);
+        defer allocator.free(kept);
+        try testing.expectEqualStrings("previous source tree", kept);
+        try testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, ".src.shelly-staging", .{}));
+        try testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "prepare-ran", .{}));
+    }
+}
+
+test "PackageBuilder rejects duplicate regular files from another source archive" {
+    const allocator = testing.allocator;
+    const io = testing.io;
+    var fixture = try Fixture.create(allocator,
+        \\pkgname=demo
+        \\pkgver=1
+        \\pkgrel=1
+        \\arch=('any')
+        \\source=('first.tar.gz' 'second.tar.gz')
+        \\sha256sums=('SKIP' 'SKIP')
+        \\prepare() { touch "$startdir/prepare-ran"; }
+        \\package() { :; }
+    , null, null);
+    defer fixture.destroy();
+    for ([_][]const u8{ "first.tar.gz", "second.tar.gz" }) |name| {
+        const path = try std.fs.path.join(allocator, &.{ fixture.build_dir, name });
+        defer allocator.free(path);
+        try archive.writeFixture(allocator, path, .gzip, &.{
+            .{ .path = "demo/Cargo.toml", .contents = name },
+            .{ .path = "demo/Cargo.toml", .contents = "revision" },
+        });
+    }
+    try fixture.temporary.dir.writeFile(io, .{ .sub_path = "src/keep", .data = "previous source tree" });
+    fixture.builder.options.sources_prepared = false;
+    try testing.expectError(error.BuildFailed, fixture.builder.BuildPackage());
+    const kept = try fixture.temporary.dir.readFileAlloc(io, "src/keep", allocator, .unlimited);
+    defer allocator.free(kept);
+    try testing.expectEqualStrings("previous source tree", kept);
+    try testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, ".src.shelly-staging", .{}));
+    try testing.expectError(error.FileNotFound, fixture.temporary.dir.access(io, "prepare-ran", .{}));
+}
+
 test "PackageBuilder extracts libblockdev source hard links and forward chains" {
     const allocator = testing.allocator;
     const io = testing.io;

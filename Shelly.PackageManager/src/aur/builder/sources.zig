@@ -792,7 +792,7 @@ fn extractSourceArchiveIfRecognized(
             defer self.allocator.free(relative);
             const destination = try std.fs.path.join(self.allocator, &.{ destination_root, relative });
             defer self.allocator.free(destination);
-            try members.add(self.allocator, relative, entry.kind, entry.link_target);
+            const replacing_regular_file = try members.add(self.allocator, relative, entry.kind, entry.link_target);
             switch (entry.kind) {
                 .directory => {
                     try ensureSafeArchivePath(self, destination_root, relative, true);
@@ -807,9 +807,19 @@ fn extractSourceArchiveIfRecognized(
                 },
                 .regular_file => {
                     try ensureSafeArchivePath(self, destination_root, relative, false);
-                    try rejectExistingDestination(self.io, destination);
+                    if (replacing_regular_file) {
+                        const stat = try std.Io.Dir.cwd().statFile(self.io, destination, .{ .follow_symlinks = false });
+                        if (stat.kind != .file) return error.UnsafeSourceArchivePath;
+                        // Recreate only a regular file from this archive. This
+                        // accepts appended revisions (e.g. fish's Cargo files),
+                        // including read-only originals, and applies the latest
+                        // header's mode without writing through an existing inode.
+                        try std.Io.Dir.cwd().deleteFile(self.io, destination);
+                    } else {
+                        try rejectExistingDestination(self.io, destination);
+                    }
                     var output = try std.Io.Dir.cwd().createFile(self.io, destination, .{
-                        .truncate = true,
+                        .exclusive = true,
                         .permissions = std.Io.File.Permissions.fromMode(entry.permissions & 0o777),
                     });
                     defer output.close(self.io);
@@ -888,9 +898,12 @@ const SourceArchiveMembers = struct {
         self.entries.deinit(allocator);
     }
 
-    fn add(self: *SourceArchiveMembers, allocator: std.mem.Allocator, path: []const u8, kind: archive.EntryKind, link_target: ?[]const u8) !void {
+    /// Returns true only for a repeated regular file within this archive.
+    fn add(self: *SourceArchiveMembers, allocator: std.mem.Allocator, path: []const u8, kind: archive.EntryKind, link_target: ?[]const u8) !bool {
         if (self.entries.getIndex(path)) |index| {
-            if (kind == .directory and self.entries.values()[index].kind == .directory) return;
+            const previous_kind = self.entries.values()[index].kind;
+            if (kind == .directory and previous_kind == .directory) return false;
+            if (kind == .regular_file and previous_kind == .regular_file) return true;
             return error.UnsafeSourceArchivePath;
         }
         var parent = std.fs.path.dirname(path);
@@ -908,6 +921,7 @@ const SourceArchiveMembers = struct {
             null;
         errdefer if (target) |value| allocator.free(value);
         try self.entries.putNoClobber(allocator, owned_path, .{ .kind = kind, .target = target });
+        return false;
     }
 
     fn resolve(self: *SourceArchiveMembers, builder: *PackageBuilder, operation: *op_context.Operation, archive_path: []const u8, root: []const u8) !void {
