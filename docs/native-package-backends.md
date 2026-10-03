@@ -46,6 +46,7 @@ The shared `Shelly.Paths` module supplies these defaults:
 | Database | `/var/lib/pacman` | `/var/lib/shelly` |
 | Package cache | `/var/cache/pacman/pkg` | `/var/cache/shelly/pkg` |
 | Keyring | `/etc/pacman.d/gnupg` | `/etc/shelly.d/gnupg` |
+| Public key bundles | `/usr/share/pacman/keyrings` | `/usr/share/shelly/keyrings` |
 | Transaction log | `/var/log/shelly.log` | `/var/log/shelly.log` |
 | System hooks | `/usr/share/libalpm/hooks` | `/usr/share/rlpm/hooks` |
 | Administrator hooks | `/etc/pacman.d/hooks` | `/etc/shelly.d/hooks` |
@@ -53,6 +54,12 @@ The shared `Shelly.Paths` module supplies these defaults:
 Bootstrap uses the selected profile too; the default profile retains its legacy
 `/var/log/pacman.log` bootstrap log. Profiles supply defaults, not a migration:
 building a new profile does not move an existing database or keyring.
+
+`shelly-key --populate` reads public bundles and their trusted/revoked lists from
+the profile's public key bundle directory. `--populate-from` overrides that
+source directory. Devario keyring packages must install their bundles under
+`/usr/share/shelly/keyrings`; the Devario profile does not fall back to the pacman
+bundle directory.
 
 Select another native package configuration for an invocation with the global
 `--config` option, before or after the command:

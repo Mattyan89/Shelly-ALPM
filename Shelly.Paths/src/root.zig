@@ -6,6 +6,7 @@ pub const config_directory = if (devario) "/etc/shelly.d" else "/etc/pacman.d";
 pub const database = if (devario) "/var/lib/shelly" else "/var/lib/pacman";
 pub const cache = if (devario) "/var/cache/shelly/pkg" else "/var/cache/pacman/pkg";
 pub const keyring = config_directory ++ "/gnupg";
+pub const keyring_bundles = if (devario) "/usr/share/shelly/keyrings" else "/usr/share/pacman/keyrings";
 pub const mirrorlist = config_directory ++ "/mirrorlist";
 pub const log = "/var/log/shelly.log";
 // Preserve the legacy bootstrap log for the default profile.

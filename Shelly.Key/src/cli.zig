@@ -489,7 +489,15 @@ test "printHelp prints the expected usage text" {
         default_gpgdir,
     );
     defer std.testing.allocator.free(expected);
-    try std.testing.expectEqualStrings(expected, aw.written());
+    const profile_expected = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        expected,
+        "/usr/share/pacman/keyrings",
+        default_populate_from,
+    );
+    defer std.testing.allocator.free(profile_expected);
+    try std.testing.expectEqualStrings(profile_expected, aw.written());
 }
 
 test "parse recognizes --recv-keys with a single key id" {
