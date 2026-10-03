@@ -501,7 +501,7 @@ test "native backend auto architecture and default hook paths survive refresh" {
         } else expected = names;
         if (backend == .rlpm) {
             const hooks = manager.engine.?.rlpm.owner.configuration.hook_directories.?;
-            const system = try std.fs.path.join(fixture.arena.allocator(), &.{ fixture.options.root_directory.?, "usr/share/libalpm/hooks" });
+            const system = pm.paths.system_hooks;
             try t.expectEqualStrings(system, std.mem.trimEnd(u8, hooks[0], "/"));
             try t.expect(hooks.len >= 2);
         }
@@ -604,4 +604,32 @@ test "native backend output observers receive preparation and transaction progre
     const previous_events = capture.events;
     try manager.install_local_packages(&.{fixture.archive}, .{ .needed = true, .nohooks = true, .noscriptlet = true });
     try t.expectEqual(previous_events, capture.events);
+}
+
+test "native backend hook replacements and API overrides remain authoritative after refresh" {
+    for ([_]pm.Manager.Backend{ .rlpm, .libalpm }) |backend| {
+        if (!backend.available()) continue;
+        var fixture = try Fixture.init(backend);
+        defer fixture.deinit();
+        fixture.options.root_hooks_only = false;
+        try fixture.temp.dir.writeFile(t.io, .{ .sub_path = "pacman.conf", .data = "[options]\nArchitecture = auto\nSigLevel = Never\nHookDirMode = Replace\nHookDir = /custom/system /custom/admin\n" });
+        const configured = [_][]const u8{ "/custom/system", "/custom/admin" };
+        const overridden = [_][]const u8{"/api/hooks"};
+        for ([_]?[]const []const u8{ null, &overridden, &.{} }) |override| {
+            fixture.options.hook_directories = override;
+            const manager = try fixture.manager();
+            defer manager.deinit();
+            const expected = override orelse &configured;
+            for (0..2) |iteration| {
+                if (iteration == 1) try manager.refresh();
+                try t.expectEqual(expected.len, manager.config.hook_directory.items.len);
+                for (expected, manager.config.hook_directory.items) |left, right| try t.expectEqualStrings(left, right);
+                if (backend == .rlpm) {
+                    const actual = manager.engine.?.rlpm.owner.configuration.hook_directories.?;
+                    try t.expectEqual(expected.len, actual.len);
+                    for (expected, actual) |left, right| try t.expectEqualStrings(left, std.mem.trimEnd(u8, right, "/"));
+                }
+            }
+        }
+    }
 }

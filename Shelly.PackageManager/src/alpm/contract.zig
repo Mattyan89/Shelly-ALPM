@@ -147,6 +147,8 @@ pub const RestartCheckOptions = struct {
 pub const InitOptions = struct {
     backend: ?backend_selection.Backend = null,
     config_path: ?[]const u8 = null,
+    /// Replaces the configured list. Empty disables hook discovery; null uses configuration.
+    hook_directories: ?[]const []const u8 = null,
     use_root: bool = false,
     temp_root_path: ?[]const u8 = null,
     operation_context: ?*operation_api.OperationContext = null,
@@ -183,9 +185,15 @@ pub fn applyInitPathOverrides(
         config.log_file = try allocator.dupeSentinel(u8, value, 0);
     if (options.gpg_directory) |value|
         config.gpg_directory = try allocator.dupeSentinel(u8, value, 0);
+    if (options.hook_directories) |directories| {
+        config.hook_directory.clearRetainingCapacity();
+        for (directories) |path|
+            try config.hook_directory.append(allocator, try allocator.dupeSentinel(u8, path, 0));
+    }
     if (options.root_hooks_only) {
         config.hook_directory.clearRetainingCapacity();
-        for ([_][]const u8{ "usr/share/libalpm/hooks", "etc/pacman.d/hooks" }) |relative| {
+        for (options.hook_directories orelse &@import("paths").hook_directories) |directory| {
+            const relative = std.mem.trimStart(u8, directory, "/");
             const path = try std.fs.path.join(allocator, &.{ config.root_directory, relative });
             try config.hook_directory.append(allocator, try allocator.dupeSentinel(u8, path, 0));
         }

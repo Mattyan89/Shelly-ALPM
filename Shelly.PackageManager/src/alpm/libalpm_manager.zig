@@ -95,14 +95,14 @@ pub const Manager = struct {
         return default_parallel_download_count.load(.acquire);
     }
 
-    /// If null is passed for config it will use the default /etc/pacman.conf.
+    /// A null config path selects the distribution profile default.
     /// The caller owns the returned manager and must call deinit when finished.
     pub fn init(
         allocator: std.mem.Allocator,
         environ: std.process.Environ,
         options: InitOptions,
     ) InitError!*Manager {
-        const config_path = options.config_path orelse "/etc/pacman.conf";
+        const config_path = options.config_path orelse @import("paths").config_file;
         const self = allocator.create(Manager) catch return InitError.InitFailed;
         errdefer allocator.destroy(self);
 
@@ -140,7 +140,7 @@ pub const Manager = struct {
 
         errdefer self.threaded.deinit();
         errdefer self.dispatcher.deinit();
-        self.config = configuration.Configuration.parse(allocator, self.io(), config_path) catch {
+        self.config = (if (options.config_path != null) &configuration.Configuration.parseStrict else &configuration.Configuration.parse)(allocator, self.io(), config_path) catch {
             return InitError.ConfigParseFailed;
         };
         errdefer self.config.deinitialize();
@@ -2366,9 +2366,8 @@ pub const Manager = struct {
 
         if (self.hooks_disabled) {
             self.replaceHookDirsWithSentinel(h);
-        } else if (self.root_hooks_only) {
-            // Replace libalpm's compiled-in default too; appending would still
-            // leave the host's /usr/share/libalpm/hooks in the search path.
+        } else {
+            // The resolved configuration is authoritative, including an empty list.
             var directories: ?*rawLibalpm.alpm_list_t = null;
             defer rawLibalpm.alpm_list_free(directories);
             for (config.hook_directory.items) |path| {
@@ -2377,10 +2376,6 @@ pub const Manager = struct {
             }
             if (rawLibalpm.alpm_option_set_hookdirs(h, directories) != 0)
                 return error.HookConfigurationFailed;
-        } else {
-            for (config.hook_directory.items) |hook_dir| {
-                self.check("hook_directory", rawLibalpm.alpm_option_add_hookdir(h, hook_dir.ptr));
-            }
         }
 
         self.check("gpgdir", rawLibalpm.alpm_option_set_gpgdir(h, config.gpg_directory.ptr));
@@ -5287,8 +5282,8 @@ test "ALPM init path overrides replace parsed host paths for target provisioning
     try testing.expectEqualStrings("/target/var/log/pacman.log", config.log_file);
     try testing.expectEqualStrings("/target/etc/pacman.d/gnupg", config.gpg_directory);
     try testing.expectEqual(@as(usize, 2), config.hook_directory.items.len);
-    try testing.expectEqualStrings("/target/usr/share/libalpm/hooks", config.hook_directory.items[0]);
-    try testing.expectEqualStrings("/target/etc/pacman.d/hooks", config.hook_directory.items[1]);
+    try testing.expectEqualStrings("/target" ++ @import("paths").system_hooks, config.hook_directory.items[0]);
+    try testing.expectEqualStrings("/target" ++ @import("paths").admin_hooks, config.hook_directory.items[1]);
 }
 
 test "provisioning log errors retain the hook name and mark setup incomplete" {

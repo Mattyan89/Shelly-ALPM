@@ -1,4 +1,5 @@
 const std = @import("std");
+const paths = @import("paths");
 const Io = std.Io;
 const Bindings = struct {
     pub const libalpm = @import("types.zig");
@@ -36,6 +37,8 @@ inline fn sig(level: SigLevel) u32 {
 inline fn usageBit(flag: DatabaseUsage) u32 {
     return @intFromEnum(flag);
 }
+
+pub const ParseError = Allocator.Error || error{ ConfigReadFailed, InvalidHookDirMode };
 
 pub const Configuration = struct {
     pub const Repository = struct {
@@ -86,10 +89,10 @@ pub const Configuration = struct {
             var conf = Config{
                 .arena = arena,
                 .root_directory = "/",
-                .database_path = "/var/lib/pacman",
-                .cache_directory = "/var/cache/pacman/pkg",
-                .log_file = "/var/log/shelly.log",
-                .gpg_directory = "/etc/pacman.d/gnupg",
+                .database_path = paths.database,
+                .cache_directory = paths.cache,
+                .log_file = paths.log,
+                .gpg_directory = paths.keyring,
                 .hook_directory = .empty,
                 .hold_packages = .empty,
                 .transfer_command = "/usr/bin/curl -L -C - -f -o %o %u",
@@ -108,8 +111,7 @@ pub const Configuration = struct {
                 .local_file_signature_level = sig(.{ .package_optional = true }) | sig(.{ .database_optional = true }),
                 .remote_file_signature_level = sig(.{ .package = true }) | sig(.{ .database = true }),
             };
-            try conf.hook_directory.append(alloc, "/usr/share/libalpm/hooks");
-            try conf.hook_directory.append(alloc, "/etc/pacman.d/hooks");
+            try conf.hook_directory.appendSlice(alloc, &paths.hook_directories);
             try conf.hold_packages.append(alloc, "pacman");
             try conf.hold_packages.append(alloc, "glibc");
             try conf.hold_packages.append(alloc, "shelly");
@@ -717,7 +719,15 @@ pub const Configuration = struct {
         }
     }
 
-    pub fn parse(gpa: Allocator, io: Io, path: []const u8) Allocator.Error!Config {
+    pub fn parse(gpa: Allocator, io: Io, path: []const u8) ParseError!Config {
+        return parseWithReadPolicy(gpa, io, path, false);
+    }
+
+    pub fn parseStrict(gpa: Allocator, io: Io, path: []const u8) ParseError!Config {
+        return parseWithReadPolicy(gpa, io, path, true);
+    }
+
+    fn parseWithReadPolicy(gpa: Allocator, io: Io, path: []const u8, strict_reads: bool) ParseError!Config {
         const arena = try gpa.create(std.heap.ArenaAllocator);
         errdefer gpa.destroy(arena);
         arena.* = .init(gpa);
@@ -729,13 +739,14 @@ pub const Configuration = struct {
             .scratch_allocator = gpa,
             .arena_allocater = arena.allocator(),
             .config = &conf,
+            .strict_reads = strict_reads,
         };
         try parser.parse_file(path);
         try parser.finish();
         return conf;
     }
 
-    pub fn parse_string(gpa: Allocator, io: Io, text: []const u8) Allocator.Error!Config {
+    pub fn parse_string(gpa: Allocator, io: Io, text: []const u8) ParseError!Config {
         const arena = try gpa.create(std.heap.ArenaAllocator);
         errdefer gpa.destroy(arena);
         arena.* = .init(gpa);
@@ -825,11 +836,17 @@ pub const Configuration = struct {
         config: *Config,
         section: []const u8 = "",
         current_repository: ?Repository = null,
+        strict_reads: bool = false,
         depth: usize = 0,
+        configured_hooks: std.ArrayList([:0]const u8) = .empty,
+        replace_hooks: bool = false,
 
-        fn parse_file(self: *Parser, path: []const u8) Allocator.Error!void {
+        fn parse_file(self: *Parser, path: []const u8) ParseError!void {
             if (self.depth >= max_include_depth) return;
-            const bytes = read_whole_file(self.io, self.scratch_allocator, path) catch return;
+            const bytes = read_whole_file(self.io, self.scratch_allocator, path) catch {
+                if (self.strict_reads) return error.ConfigReadFailed;
+                return;
+            };
             defer self.scratch_allocator.free(bytes);
 
             self.depth += 1;
@@ -837,7 +854,7 @@ pub const Configuration = struct {
             try self.parse_buffer(bytes);
         }
 
-        fn parse_buffer(self: *Parser, bytes: []const u8) Allocator.Error!void {
+        fn parse_buffer(self: *Parser, bytes: []const u8) ParseError!void {
             var lines = std.mem.splitScalar(u8, bytes, '\n');
             while (lines.next()) |raw| {
                 const line = std.mem.trim(u8, raw, " \t\r\n");
@@ -875,7 +892,7 @@ pub const Configuration = struct {
             }
         }
 
-        fn parse_option(self: *Parser, key: []const u8, value: []const u8) Allocator.Error!void {
+        fn parse_option(self: *Parser, key: []const u8, value: []const u8) ParseError!void {
             const c = self.config;
             if (equalIgnoreCase(key, "rootdir")) {
                 c.root_directory = try self.dupe(value);
@@ -889,7 +906,13 @@ pub const Configuration = struct {
             } else if (equalIgnoreCase(key, "gpgdir")) {
                 c.gpg_directory = try self.dupe(value);
             } else if (equalIgnoreCase(key, "hookdir")) {
-                try self.add_split(&c.hook_directory, value);
+                try self.add_split(&self.configured_hooks, value);
+            } else if (equalIgnoreCase(key, "hookdirmode")) {
+                if (equalIgnoreCase(value, "replace")) {
+                    self.replace_hooks = true;
+                } else if (equalIgnoreCase(value, "append")) {
+                    self.replace_hooks = false;
+                } else return error.InvalidHookDirMode;
             } else if (equalIgnoreCase(key, "holdpkg")) {
                 c.hold_packages.clearRetainingCapacity();
                 try self.add_split(&c.hold_packages, value);
@@ -967,6 +990,8 @@ pub const Configuration = struct {
         }
 
         fn finish(self: *Parser) Allocator.Error!void {
+            if (self.replace_hooks) self.config.hook_directory.clearRetainingCapacity();
+            try self.config.hook_directory.appendSlice(self.arena_allocater, self.configured_hooks.items);
             if (self.current_repository) |repo| {
                 try self.config.repositories.append(self.arena_allocater, repo);
                 self.current_repository = null;
@@ -993,7 +1018,7 @@ test "empty input yields defaults" {
     defer conf.deinitialize();
 
     try testing.expectEqualStrings("/", conf.root_directory);
-    try testing.expectEqualStrings("/var/lib/pacman", conf.database_path);
+    try testing.expectEqualStrings(paths.database, conf.database_path);
     try testing.expectEqual(@as(usize, 0), conf.repositories.items.len);
     try testing.expectEqual(@as(usize, 3), conf.hold_packages.items.len);
     try testing.expectEqual(sig(.{ .package = true }) | sig(.{ .database = true }) | sig(.{ .database_optional = true }), conf.signature_level);
@@ -1690,4 +1715,50 @@ test "remove_repository is a no-op for unknown repositories" {
     );
     defer testing.allocator.free(rewritten);
     try testing.expectEqualStrings(original, rewritten);
+}
+
+test "hook policy preserves additive defaults and replaces them independent of directive order" {
+    var additive = try Configuration.parse_string(testing.allocator, testing.io, "[options]\nHookDir = /custom/hooks\n");
+    defer additive.deinitialize();
+    try testing.expectEqual(@as(usize, 3), additive.hook_directory.items.len);
+    try testing.expectEqualStrings(paths.system_hooks, additive.hook_directory.items[0]);
+    try testing.expectEqualStrings(paths.admin_hooks, additive.hook_directory.items[1]);
+    try testing.expectEqualStrings("/custom/hooks", additive.hook_directory.items[2]);
+    for ([_][]const u8{
+        "[options]\nHookDirMode = Replace\nHookDir = /usr/share/rlpm/hooks/\nHookDir = /etc/shelly.d/hooks/\n",
+        "[options]\nHookDir = /usr/share/rlpm/hooks/\nHookDirMode = Replace\nHookDir = /etc/shelly.d/hooks/\n",
+    }) |input| {
+        var replacement = try Configuration.parse_string(testing.allocator, testing.io, input);
+        defer replacement.deinitialize();
+        try testing.expectEqual(@as(usize, 2), replacement.hook_directory.items.len);
+        try testing.expectEqualStrings("/usr/share/rlpm/hooks/", replacement.hook_directory.items[0]);
+        try testing.expectEqualStrings("/etc/shelly.d/hooks/", replacement.hook_directory.items[1]);
+    }
+    var empty = try Configuration.parse_string(testing.allocator, testing.io, "[options]\nHookDirMode = Replace\n");
+    defer empty.deinitialize();
+    try testing.expectEqual(@as(usize, 0), empty.hook_directory.items.len);
+    try testing.expectError(error.InvalidHookDirMode, Configuration.parse_string(testing.allocator, testing.io, "[options]\nHookDirMode = typo\n"));
+}
+
+test "strict configuration rejects missing explicit files and preserves hook policy across includes" {
+    var temporary = testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const directory = try temporary.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(directory);
+    const config_path = try std.fs.path.join(testing.allocator, &.{ directory, "custom.conf" });
+    defer testing.allocator.free(config_path);
+    try testing.expectError(error.ConfigReadFailed, Configuration.parseStrict(testing.allocator, testing.io, config_path));
+    const include_path = try std.fs.path.join(testing.allocator, &.{ directory, "hooks.conf" });
+    defer testing.allocator.free(include_path);
+    const contents = try std.fmt.allocPrint(testing.allocator, "[options]\nHookDir = /first\nInclude = {s}\nHookDir = /last\n", .{include_path});
+    defer testing.allocator.free(contents);
+    try temporary.dir.writeFile(testing.io, .{ .sub_path = "custom.conf", .data = contents });
+    try testing.expectError(error.ConfigReadFailed, Configuration.parseStrict(testing.allocator, testing.io, config_path));
+    try temporary.dir.writeFile(testing.io, .{ .sub_path = "hooks.conf", .data = "HookDirMode = Replace\nHookDir = /middle\n" });
+    var config = try Configuration.parseStrict(testing.allocator, testing.io, config_path);
+    defer config.deinitialize();
+    try testing.expectEqual(@as(usize, 3), config.hook_directory.items.len);
+    try testing.expectEqualStrings("/first", config.hook_directory.items[0]);
+    try testing.expectEqualStrings("/middle", config.hook_directory.items[1]);
+    try testing.expectEqualStrings("/last", config.hook_directory.items[2]);
 }

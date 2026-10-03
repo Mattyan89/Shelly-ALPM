@@ -289,7 +289,7 @@ fn runStandard(
     const manager = try PackageManager.Manager.init(
         context.allocator,
         context.environ,
-        .{ .use_root = false },
+        .{ .config_path = context.config_path, .use_root = false },
     );
     defer manager.deinit();
     if (show_hidden and !manager.show_hidden_packages) _ = manager.toggle_hidden_packages();
@@ -449,6 +449,7 @@ fn runAur(
 ) !AurResult {
     const aur_base = try aur_url.resolveFor(context, invocation);
     var manager = try PackageManager.AurManager.init(context.allocator, context.environ, .{
+        .config_path = context.config_path,
         .aur_git_base_url = aur_base,
     });
     defer manager.deinit();

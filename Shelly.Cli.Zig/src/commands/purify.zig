@@ -61,6 +61,7 @@ const Real = struct {
         switch (backend) {
             .standard => {
                 const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{
+                    .config_path = context.config_path,
                     .use_root = true,
                     .operation_context = operation_context,
                 });

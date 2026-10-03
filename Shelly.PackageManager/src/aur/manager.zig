@@ -241,6 +241,7 @@ pub const Manager = struct {
     aur_git_base_url: []u8,
     makepkg_command: ?[]u8,
     build_command: ?[]u8,
+    config_path: ?[:0]u8 = null,
     shellybuild_config: *ShellyBuildConfiguration,
     vcs_store_path: []u8,
     chroot_path: []u8,
@@ -307,6 +308,11 @@ pub const Manager = struct {
         else
             null;
         errdefer if (build_command) |command| allocator.free(command);
+        const config_path = if (options.config_path) |path|
+            try std.Io.Dir.cwd().realPathFileAlloc(alpm.io(), path, allocator)
+        else
+            null;
+        errdefer if (config_path) |path| allocator.free(path);
         const vcs_store_path = try std.fs.path.join(allocator, &.{ data_home, "Shelly", "vcs.json" });
         errdefer allocator.free(vcs_store_path);
         const chroot_path = try allocator.dupe(u8, options.chroot_path);
@@ -332,6 +338,7 @@ pub const Manager = struct {
             .aur_git_base_url = aur_git_base_url,
             .makepkg_command = makepkg_command,
             .build_command = build_command,
+            .config_path = config_path,
             .shellybuild_config = shellybuild_config,
             .vcs_store_path = vcs_store_path,
             .chroot_path = chroot_path,
@@ -388,6 +395,7 @@ pub const Manager = struct {
         allocator.free(self.aur_git_base_url);
         if (self.makepkg_command) |command| allocator.free(command);
         if (self.build_command) |command| allocator.free(command);
+        if (self.config_path) |path| allocator.free(path);
         allocator.free(self.vcs_store_path);
         allocator.free(self.chroot_path);
         allocator.destroy(self);
@@ -2194,6 +2202,8 @@ pub const Manager = struct {
             historical,
             self.use_isolated,
         );
+        if (self.config_path) |path|
+            try arguments.appendSlice(self.allocator, &.{ "--config", path });
         // AUR artifact selection reads the checkout; do not let a configured
         // standalone build destination redirect the coordinator's exports.
         if (self.use_isolated)
@@ -2371,11 +2381,10 @@ pub const Manager = struct {
         reviewed_digest: package_builder.pkgbuild_review.Digest,
     ) ![]u8 {
         const digest_hex = std.fmt.bytesToHex(reviewed_digest, .lower);
-        var command = try builder.invokingUserCleanCommand(
+        var arguments: std.ArrayList([]const u8) = .empty;
+        defer arguments.deinit(self.allocator);
+        try arguments.appendSlice(
             self.allocator,
-            self.io(),
-            self.environ,
-            command_path,
             &.{
                 "build",
                 "--makesrcinfo",
@@ -2384,6 +2393,14 @@ pub const Manager = struct {
                 "--no-confirm",
                 prepared.pkgbuild_path,
             },
+        );
+        if (self.config_path) |path| try arguments.appendSlice(self.allocator, &.{ "--config", path });
+        var command = try builder.invokingUserCleanCommand(
+            self.allocator,
+            self.io(),
+            self.environ,
+            command_path,
+            arguments.items,
         );
         defer command.deinit(self.allocator);
         var result = try builder.runWithEnvironment(
@@ -4002,6 +4019,9 @@ test "AUR isolated builds execute the coordinator and propagate failure without 
     try std.testing.expect(std.mem.indexOf(u8, args, "--review-digest\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, args, "--coordinator-child") == null);
     try std.testing.expect(std.mem.indexOf(u8, args, "--package-destination\n") != null);
+    const config_argument = try std.fmt.allocPrint(allocator, "--config\n{s}\n", .{paths.config_path});
+    defer allocator.free(config_argument);
+    try std.testing.expect(std.mem.indexOf(u8, args, config_argument) != null);
     const artifacts = try manager.selectBuiltPackageFiles(prepared.cache_path, &.{"demo"});
     defer builder.deinitPaths(allocator, artifacts);
     try std.testing.expectEqual(@as(usize, 0), artifacts.len);

@@ -24,12 +24,6 @@ pub fn createOwner(io: std.Io, allocator: std.mem.Allocator, c: *const Config, p
     const a = arena.allocator();
     var arches = try architecture_utils.expand(a, c.architectures.items, c.architecture);
     const server_arch = arches.items[0];
-    var hooks: std.ArrayList([]const u8) = .empty;
-    const system_hooks = try std.fs.path.join(a, &.{ c.root_directory, "usr/share/libalpm/hooks" });
-    try hooks.append(a, system_hooks);
-    for (c.hook_directory.items) |path| {
-        if (!std.mem.eql(u8, std.mem.trimEnd(u8, path, "/"), system_hooks)) try hooks.append(a, path);
-    }
     const repos = try a.alloc(rlpm.DatabaseConfiguration, c.repositories.items.len);
     for (c.repositories.items, repos) |repo, *registration| {
         const usage = if (repo.usage == 0) 15 else repo.usage;
@@ -67,7 +61,7 @@ pub fn createOwner(io: std.Io, allocator: std.mem.Allocator, c: *const Config, p
         .root = c.root_directory,
         .database_path = c.database_path,
         .cache_directories = try slices(a, if (c.cache_directories.items.len != 0) c.cache_directories.items else &.{c.cache_directory}),
-        .hook_directories = hooks.items,
+        .hook_directories = try slices(a, c.hook_directory.items),
         .gpg_directory = c.gpg_directory,
         .log_file = c.log_file,
         .architectures = arches.items,

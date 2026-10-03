@@ -36,7 +36,7 @@ pub const Manager = struct {
     pub fn init(allocator: std.mem.Allocator, environ: std.process.Environ, options: contract.InitOptions) !*Manager {
         const self = try allocator.create(Manager);
         errdefer allocator.destroy(self);
-        const owned_config_path = try allocator.dupe(u8, options.config_path orelse "/etc/pacman.conf");
+        const owned_config_path = try allocator.dupe(u8, options.config_path orelse @import("paths").config_file);
         errdefer allocator.free(owned_config_path);
         self.* = .{
             .allocator = allocator,
@@ -54,7 +54,7 @@ pub const Manager = struct {
         errdefer self.threaded.deinit();
         errdefer self.dispatcher.deinit();
         errdefer self.names.deinit();
-        self.config = configuration.Configuration.parse(allocator, self.io(), self.config_path) catch return error.ConfigParseFailed;
+        self.config = (if (options.config_path != null) &configuration.Configuration.parseStrict else &configuration.Configuration.parse)(allocator, self.io(), self.config_path) catch return error.ConfigParseFailed;
         errdefer self.config.deinitialize();
         if (self.config.parallel_downloads == 0) return error.ConfigParseFailed;
         try contract.applyInitPathOverrides(&self.config, options);

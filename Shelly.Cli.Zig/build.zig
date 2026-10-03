@@ -4,6 +4,7 @@ const package_manifest = @import("build.zig.zon");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const path_profile = b.option([]const u8, "path-profile", "Distribution path defaults: pacman or devario") orelse "pacman";
     const enable_libalpm = b.option(bool, "libalpm", "Include the libalpm backend alongside RLPM") orelse true;
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
     const flatpak_backend_path = b.option(
@@ -14,6 +15,7 @@ pub fn build(b: *std.Build) void {
 
     const package_manager_dependency = b.dependency("package_manager", .{
         .libalpm = enable_libalpm,
+        .@"path-profile" = path_profile,
         .target = target,
         .optimize = optimize,
         .@"flatpak-backend-path" = flatpak_backend_path,
@@ -54,6 +56,13 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run Shelly");
     run_step.dependOn(&run_command.step);
+
+    const configuration_tests = b.addTest(.{
+        .root_module = cli,
+        .filters = &.{ "global config", "config selection", "keyring config", "shellystrap", "hook replacements" },
+    });
+    const configuration_step = b.step("configuration-test", "Test native configuration selection and subprocess forwarding");
+    configuration_step.dependOn(&b.addRunArtifact(configuration_tests).step);
 
     const module_tests = b.addTest(.{
         .root_module = cli,
@@ -101,6 +110,12 @@ pub fn build(b: *std.Build) void {
     builder_test_module.addImport("diagnostics", diagnostics);
     builder_test_module.addImport("PackageManager", package_manager);
     builder_test_module.addOptions("build_options", build_options);
+    const bootstrap_configuration_tests = b.addTest(.{
+        .name = "bootstrap-configuration-test",
+        .root_module = builder_test_module,
+        .filters = &.{"shellystrap"},
+    });
+    configuration_step.dependOn(&b.addRunArtifact(bootstrap_configuration_tests).step);
     const builder_tests = b.addTest(.{
         .name = "builder-command-test",
         .root_module = builder_test_module,

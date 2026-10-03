@@ -3,6 +3,7 @@ const spec = @import("spec.zig");
 const diagnostics = @import("diagnostics");
 
 pub const GlobalOptions = struct {
+    config_path: ?[]const u8 = null,
     no_confirm: bool = false,
     ui_mode: bool = false,
     json: bool = false,
@@ -299,6 +300,7 @@ fn inChoices(choices: []const []const u8, value: []const u8) bool {
 }
 
 fn applyGlobal(globals: *GlobalOptions, name: []const u8, value: ?[]const u8) void {
+    if (std.mem.eql(u8, name, "--config")) globals.config_path = value;
     const enabled = value == null or !std.ascii.eqlIgnoreCase(value.?, "false");
     if (std.mem.eql(u8, name, "--no-confirm")) globals.no_confirm = enabled;
     if (std.mem.eql(u8, name, "--ui-mode")) globals.ui_mode = enabled;
@@ -455,4 +457,21 @@ test "unknown old root paths fall back to search while known commands still vali
     const upgrade_all = try parse(arena.allocator(), &manifest, &.{"upgrade-all"});
     try std.testing.expect(upgrade_all == .dispatch);
     try std.testing.expectEqualStrings("shelly", upgrade_all.dispatch.command.path);
+}
+
+test "global config accepts separate and equals values and rejects missing values" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const manifest = try spec.Manifest.load(a);
+    for ([_][]const []const u8{
+        &.{ "--config", "/custom config", "search", "standard", "test" },
+        &.{ "search", "standard", "--config=/custom config", "test" },
+    }) |args| {
+        const outcome = try parse(a, &manifest, args);
+        try std.testing.expect(outcome == .dispatch);
+        try std.testing.expectEqualStrings("/custom config", outcome.dispatch.globals.config_path.?);
+    }
+    const missing = try parse(a, &manifest, &.{ "search", "standard", "--config" });
+    try std.testing.expect(missing == .failure);
 }

@@ -19,8 +19,10 @@ pub fn isRoot() bool {
 /// elevated child's exit code and must be returned by the caller immediately.
 pub fn relaunchIfNeeded(
     context: *context_module.RuntimeContext,
-    arguments: []const []const u8,
+    original_arguments: []const []const u8,
 ) !?u8 {
+    const arguments = try context.childArguments(original_arguments);
+    defer context.allocator.free(arguments);
     if (builtin.os.tag != .linux) return error.UnsupportedPlatform;
     if (isRoot()) return null;
 
@@ -59,9 +61,11 @@ pub const CancellableRelaunchResult = struct {
 /// immediately.
 pub fn relaunchIfNeededCancellable(
     context: *context_module.RuntimeContext,
-    arguments: []const []const u8,
+    original_arguments: []const []const u8,
     capture_stdout: bool,
 ) !?CancellableRelaunchResult {
+    const arguments = try context.childArguments(original_arguments);
+    defer context.allocator.free(arguments);
     if (builtin.os.tag != .linux) return error.UnsupportedPlatform;
     if (isRoot()) return null;
 
@@ -232,8 +236,10 @@ fn processExists(pid: std.posix.pid_t) bool {
 /// caller-preserving tool.
 pub fn runAsInvokingUser(
     context: *context_module.RuntimeContext,
-    arguments: []const []const u8,
+    original_arguments: []const []const u8,
 ) !?u8 {
+    const arguments = try context.childArguments(original_arguments);
+    defer context.allocator.free(arguments);
     const identity = (try invokingUser(context)) orelse return null;
     defer identity.deinit(context.allocator);
     const home = try invokingUserHome(context, identity.username);
@@ -319,9 +325,11 @@ pub const CapturedRun = struct {
 /// machine-readable result document.
 pub fn runAsInvokingUserCapture(
     context: *context_module.RuntimeContext,
-    arguments: []const []const u8,
+    original_arguments: []const []const u8,
     operation_context: *PackageManager.OperationContext,
 ) !?CapturedRun {
+    const arguments = try context.childArguments(original_arguments);
+    defer context.allocator.free(arguments);
     const identity = (try invokingUser(context)) orelse return null;
     defer identity.deinit(context.allocator);
     const home = try invokingUserHome(context, identity.username);

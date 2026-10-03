@@ -1708,7 +1708,7 @@ fn runIsolatedCoordinator(
     defer context.allocator.free(executable_allocated);
     const executable = std.mem.trimEnd(u8, executable_allocated, " (deleted)");
     operation.status(.information, "Provisioning clean build root", "build.isolation.provision", null);
-    try root.bootstrap(context.environ, executable, bootstrap_packages.items, &operation);
+    try root.bootstrap(context.environ, executable, bootstrap_packages.items, context.config_path, &operation);
     try root.stageReviewedInputs(context.environ, pkgbuild_content, review.reviewed_files, &operation);
 
     try root.stageExecutable(executable);
@@ -1794,7 +1794,9 @@ fn validateIsolatedArtifacts(
     artifact_directory: []const u8,
     expected_names: []const []const u8,
 ) ![]isolated_build.ValidatedArtifact {
-    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{});
+    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{
+        .config_path = context.config_path,
+    });
     defer manager.deinit();
 
     const found = try context.allocator.alloc(bool, expected_names.len);
@@ -2030,7 +2032,7 @@ fn runHostBuildCoordinator(
         manager = try PackageManager.Manager.init(
             context.allocator,
             context.environ,
-            .{ .use_root = true, .operation_context = operation_context },
+            .{ .config_path = context.config_path, .use_root = true, .operation_context = operation_context },
         );
         const alpm = manager.?;
         try alpm.sync(false);
@@ -2065,6 +2067,7 @@ fn runHostBuildCoordinator(
             const build_command = std.mem.trimEnd(u8, executable, " (deleted)");
             const aur_base = try aur_url.resolveFor(context, invocation);
             const aur_manager = try PackageManager.AurManager.init(context.allocator, context.environ, .{
+                .config_path = context.config_path,
                 .aur_git_base_url = aur_base,
                 .root = true,
                 .check = checkOverride(invocation),
@@ -2222,7 +2225,7 @@ const ReviewRepositories = struct {
             null;
         defer if (log_path) |path| context.allocator.free(path);
         const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{
-            .config_path = config_path,
+            .config_path = config_path orelse context.config_path,
             .use_root = false,
             .operation_context = operation_context,
             .database_path = database_path,
@@ -2597,6 +2600,7 @@ fn runDeferredCleanupOperation(
     try renderer.attach(&operation_context);
     try renderer.begin("Cleaning up build dependencies...");
     var manager = try PackageManager.Manager.init(context.allocator, context.environ, .{
+        .config_path = context.config_path,
         .use_root = true,
         .operation_context = &operation_context,
     });

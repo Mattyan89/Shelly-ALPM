@@ -58,7 +58,9 @@ pub fn dispatch(
         const manager_optional = PackageManager.Manager.init(
             context.allocator,
             context.environ,
-            .{},
+            .{
+                .config_path = context.config_path,
+            },
         ) catch null;
         if (manager_optional) |manager| {
             defer manager.deinit();

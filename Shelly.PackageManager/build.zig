@@ -42,8 +42,10 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+    const path_profile = b.option([]const u8, "path-profile", "Distribution path defaults: pacman or devario") orelse "pacman";
+    const paths = b.dependency("shelly_paths", .{ .target = target, .optimize = optimize, .@"path-profile" = path_profile }).module("paths");
     const enable_libalpm = b.option(bool, "libalpm", "Include the libalpm backend alongside RLPM") orelse true;
-    const rlpm_dependency = b.dependency("shelly_rlpm", .{ .target = target, .optimize = optimize });
+    const rlpm_dependency = b.dependency("shelly_rlpm", .{ .target = target, .optimize = optimize, .@"path-profile" = path_profile });
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
     const operation_context_mod = b.createModule(.{
         .root_source_file = b.path("src/shared/operation_context.zig"),
@@ -135,6 +137,7 @@ pub fn build(b: *std.Build) void {
     });
     mod.addImport("native_output", native_output);
     mod.addImport("diagnostics", diagnostics);
+    mod.addImport("paths", paths);
     mod.addImport("Shelly_Download", shelly_download);
     if (enable_libalpm) {
         const translate_alpm = b.addTranslateC(.{

@@ -1,10 +1,11 @@
 # Maintainer: Devario maintainers
 # RLPM-only upstream build for Devario; no libalpm or pacman dependency.
-# Uses upstream runtime paths (/etc/pacman.conf and /var/lib/pacman).
+# Uses Devario runtime paths (/etc/shelly.conf and /var/lib/shelly).
 
 pkgname=shelly
 pkgver=3.1.6
-pkgrel=2
+pkgrel=3
+# Update this pin to the published commit introducing -Dpath-profile before release.
 _commit=bcbba6aaaf003aefdbe30b75023142c75e96e604
 pkgdesc="Shelly for Devario with the native RLPM backend"
 arch=('x86_64')
@@ -68,14 +69,14 @@ build() {
     -Dcpu=baseline \
     -Doptimize=ReleaseSafe)
 
-  (cd Shelly.Cli.Zig && zig build -Dlibalpm=false --verbose \
+  (cd Shelly.Cli.Zig && zig build -Dlibalpm=false -Dpath-profile=devario --verbose \
     --prefix "$srcdir/${_source_dir}/out-cli" \
     --cache-dir "$srcdir/zig-cache" \
     --global-cache-dir "$srcdir/zig-global-cache" \
     -Dcpu=baseline \
     -Doptimize=ReleaseSmall)
 
-  (cd Shelly.Key && zig build --verbose \
+  (cd Shelly.Key && zig build -Dpath-profile=devario --verbose \
     --prefix "$srcdir/${_source_dir}/out-key" \
     --cache-dir "$srcdir/zig-cache" \
     --global-cache-dir "$srcdir/zig-global-cache" \
@@ -119,17 +120,18 @@ build() {
 check() {
   cd "$srcdir/${_source_dir}"
 
-  # Keep checks on the same compiled variant as the shipped CLI.
-  (cd Shelly.Cli.Zig && zig build test -Dlibalpm=false \
+  # Keep checks on the same native backend and path profile as the shipped CLI.
+  (cd Shelly.Cli.Zig && zig build test -Dlibalpm=false -Dpath-profile=devario \
     --cache-dir "$srcdir/zig-cache" \
     --global-cache-dir "$srcdir/zig-global-cache")
   (cd Shelly.PackageManager && zig build native-backend-test rlpm-adapter-test bootstrap-test -Dlibalpm=false \
+    -Dpath-profile=devario \
     --cache-dir "$srcdir/zig-cache" \
     --global-cache-dir "$srcdir/zig-global-cache")
-  (cd Shelly.Rlpm && zig build test \
+  (cd Shelly.Rlpm && zig build test -Dpath-profile=devario \
     --cache-dir "$srcdir/zig-cache" \
     --global-cache-dir "$srcdir/zig-global-cache")
-  (cd Shelly.Key && zig build test \
+  (cd Shelly.Key && zig build test -Dpath-profile=devario \
     --cache-dir "$srcdir/zig-cache" \
     --global-cache-dir "$srcdir/zig-global-cache")
 }

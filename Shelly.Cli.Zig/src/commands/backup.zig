@@ -204,7 +204,7 @@ fn collectState(context: *runtime.RuntimeContext, aur_base: []const u8) !State {
     defer flatpaks.deinit(context.allocator);
 
     {
-        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = false });
+        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .config_path = context.config_path, .use_root = false });
         defer manager.deinit();
         if (!manager.show_hidden_packages) _ = manager.toggle_hidden_packages();
 
@@ -225,6 +225,7 @@ fn collectState(context: *runtime.RuntimeContext, aur_base: []const u8) !State {
 
     {
         const manager = try PackageManager.AurManager.init(context.allocator, context.environ, .{
+            .config_path = context.config_path,
             .aur_git_base_url = aur_base,
             .show_hidden_packages = true,
         });

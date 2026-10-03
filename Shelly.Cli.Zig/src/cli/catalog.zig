@@ -47,6 +47,7 @@ pub const root_options = [_]Option{
     core.globalFlag("--no-confirm", &.{"-n"}, "Use safe automatic answers instead of prompting"),
     core.globalFlag("--ui-mode", &.{"-U"}, "Emit framed output for the Shelly UI"),
     core.globalFlag("--json", &.{"-j"}, "Output structured JSON where the command supports it"),
+    core.globalStringOption("--config", &.{}, "Read native package configuration from this file"),
     core.globalStringOption(
         "--aur-url",
         &.{},

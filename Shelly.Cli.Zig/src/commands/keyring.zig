@@ -158,9 +158,12 @@ fn runKeyringCommand(
     context: *runtime.RuntimeContext,
     arguments: []const []const u8,
 ) !u8 {
+    var arena = std.heap.ArenaAllocator.init(context.allocator);
+    defer arena.deinit();
+    const key_arguments = try context.keyArguments(arena.allocator(), arguments);
     try flush(context);
     var child = try std.process.spawn(context.io, .{
-        .argv = arguments,
+        .argv = key_arguments,
         .stdin = .inherit,
         .stdout = .inherit,
         .stderr = .inherit,

@@ -36,10 +36,10 @@ pub fn run(
         return 1;
     }
 
-    var config = try PackageManager.Manager.configuration.Configuration.parse(
+    var config = try (if (context.config_path != null) &PackageManager.Manager.configuration.Configuration.parseStrict else &PackageManager.Manager.configuration.Configuration.parse)(
         context.allocator,
         context.io,
-        "/etc/pacman.conf",
+        context.config_path orelse PackageManager.paths.config_file,
     );
     defer config.deinitialize();
 

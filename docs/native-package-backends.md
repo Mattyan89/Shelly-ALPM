@@ -27,6 +27,77 @@ work. There is no fallback after initialization or transaction failure.
 explicit backend survives changing builds; an omitted setting uses the compiled
 default.
 
+## Distribution paths and configuration
+
+Path selection is independent of backend selection. Builds use the `pacman`
+profile by default, including RLPM-only builds. Opt into Devario defaults with:
+
+```sh
+(cd Shelly.Cli.Zig && zig build -Dlibalpm=false -Dpath-profile=devario)
+(cd Shelly.Key && zig build -Dpath-profile=devario)
+```
+
+`Shelly.PackageManager` accepts the same `-Dpath-profile=pacman|devario` option.
+The shared `Shelly.Paths` module supplies these defaults:
+
+| Setting | `pacman` (default) | `devario` |
+| --- | --- | --- |
+| Configuration | `/etc/pacman.conf` | `/etc/shelly.conf` |
+| Database | `/var/lib/pacman` | `/var/lib/shelly` |
+| Package cache | `/var/cache/pacman/pkg` | `/var/cache/shelly/pkg` |
+| Keyring | `/etc/pacman.d/gnupg` | `/etc/shelly.d/gnupg` |
+| Transaction log | `/var/log/shelly.log` | `/var/log/shelly.log` |
+| System hooks | `/usr/share/libalpm/hooks` | `/usr/share/rlpm/hooks` |
+| Administrator hooks | `/etc/pacman.d/hooks` | `/etc/shelly.d/hooks` |
+
+Bootstrap uses the selected profile too; the default profile retains its legacy
+`/var/log/pacman.log` bootstrap log. Profiles supply defaults, not a migration:
+building a new profile does not move an existing database or keyring.
+
+Select another native package configuration for an invocation with the global
+`--config` option, before or after the command:
+
+```sh
+shelly --config /etc/shelly.conf search standard --repos
+shelly search standard --config=/etc/shelly.conf firefox
+```
+
+The selected path is made absolute before dispatch and retained across elevation,
+AUR build coordinators, and native bootstrap subprocesses. Native key commands
+use the selected file's `GPGDir`; `keyring ... --user` still uses the user's keys.
+An explicitly selected unreadable file or unreadable include fails instead of
+silently using defaults. The existing tolerant read policy remains in place when
+no explicit configuration was supplied.
+
+Configuration directives (`DBPath`, `CacheDir`, `GPGDir`, `LogFile`, `HookDir`,
+and others) override the profile defaults. Library callers can override those
+values with `Manager.InitOptions`; `config_path` selects the file to read.
+
+### Hook directory policy
+
+`HookDir` remains additive by default. To use only the listed directories:
+
+```ini
+[options]
+HookDirMode = Replace
+HookDir = /usr/share/rlpm/hooks/
+HookDir = /etc/shelly.d/hooks/
+```
+
+`HookDirMode = Append` is the default. Mode selection applies to the complete
+list, including entries from included files, regardless of where the mode is
+specified. In replacement mode, omitting `HookDir` disables discovery. An unknown
+mode is an error. Directory order is preserved so later administrator hooks and
+`/dev/null` masks can override earlier system hooks.
+
+Both native backends receive the resolved list; neither adapter adds a legacy
+hook directory afterward. Library callers can set
+`Manager.InitOptions.hook_directories` to replace the complete list: `null` uses
+configuration, `&.{}` disables discovery, and a nonempty slice specifies the
+ordered directories. With `root_hooks_only`, explicitly supplied directories
+are interpreted beneath the target root; otherwise that mode uses the profile's
+system and administrator hook locations beneath the target root.
+
 ## Build and package
 
 ```sh
