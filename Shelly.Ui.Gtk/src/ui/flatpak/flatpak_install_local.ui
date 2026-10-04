@@ -136,7 +136,6 @@
                 <property name="hexpand">true</property>
                 <style>
                   <class name="suggested-action"/>
-                  <class name="pill"/>
                 </style>
               </object>
             </child>
