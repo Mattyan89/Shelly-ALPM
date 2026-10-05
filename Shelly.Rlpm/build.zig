@@ -3,7 +3,8 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const shelly_key = b.dependency("shelly_key", .{ .target = target, .optimize = optimize });
+    const path_profile = b.option([]const u8, "path-profile", "Distribution defaults for the key utility") orelse "pacman";
+    const shelly_key = b.dependency("shelly_key", .{ .target = target, .optimize = optimize, .@"path-profile" = path_profile });
 
     const mod = b.addModule("Shelly_Rlpm", .{
         .root_source_file = b.path("src/root.zig"),

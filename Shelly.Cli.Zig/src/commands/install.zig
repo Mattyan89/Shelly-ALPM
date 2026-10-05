@@ -12,6 +12,7 @@ const list_updates = @import("list_updates.zig");
 const parser = @import("../cli/parser.zig");
 const runtime = @import("../runtime/context.zig");
 const elevation = @import("../runtime/elevation.zig");
+const signals = @import("../runtime/signals.zig");
 const xdg = @import("../runtime/xdg.zig");
 const spec = @import("../cli/spec.zig");
 const aur_url = @import("../config/aur_url.zig");
@@ -155,6 +156,15 @@ pub fn dispatch(
 ) !?u8 {
     if (!isInstallPath(invocation.command.path)) return null;
 
+    if (std.mem.eql(u8, invocation.command.path, aur_command_path) and optionEnabled(invocation, "--isolated")) {
+        if (optionEnabled(invocation, "--chroot"))
+            return try reportValidationFailure(context, invocation, "Choose either --isolated or --chroot.");
+        if (optionEnabled(invocation, "--build-deps") or optionEnabled(invocation, "--make-deps"))
+            return try reportValidationFailure(context, invocation, "Cannot combine --isolated with dependency-only installation options.");
+        if (signOverride(invocation) == true)
+            return try reportValidationFailure(context, invocation, "Isolated builds do not support --sign. Sign exported packages separately, or use --nosign.");
+    }
+
     if (isAurVersionInstall(invocation)) {
         if (invocation.positionals.len == 0)
             return try reportValidationFailure(context, invocation, "Specify at least one package name. See the command help for usage.");
@@ -243,6 +253,16 @@ pub fn dispatch(
         else
             invocation.arguments;
         defer if (carries_aur) context.allocator.free(elevated_arguments);
+        if (carries_aur and optionEnabled(invocation, "--isolated")) {
+            const elevated = elevation.relaunchIfNeededCancellable(context, elevated_arguments, false) catch |err| {
+                try context.stderr.print("Could not obtain administrator privileges for package installation. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
+                return 1;
+            };
+            if (elevated) |result| {
+                defer result.deinit(context.allocator);
+                return result.exit_code;
+            }
+        }
         const elevated_exit = elevation.relaunchIfNeeded(context, elevated_arguments) catch |err| {
             try context.stderr.print("Could not obtain administrator privileges for package installation. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
@@ -250,7 +270,8 @@ pub fn dispatch(
         if (elevated_exit) |exit_code| return exit_code;
     }
 
-    return try executeWithRunner(context, invocation, Real{});
+    const exit_code = try executeWithRunner(context, invocation, Real{});
+    return if (optionEnabled(invocation, "--isolated") and signals.wasInterrupted()) 130 else exit_code;
 }
 
 fn executeWithRunner(
@@ -512,7 +533,7 @@ const LocalArchiveInstaller = struct {
         invocation: *const parser.Invocation,
         paths: []const []const u8,
     ) !void {
-        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .config_path = context.config_path, .use_root = true, .operation_context = operation_context });
         defer manager.deinit();
         manager.setOperationContext(operation_context);
         defer manager.setOperationContext(null);
@@ -528,7 +549,7 @@ fn installRepositoryPackages(
     invocation: *const parser.Invocation,
     package_names: []const []const u8,
 ) !void {
-    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .config_path = context.config_path, .use_root = true, .operation_context = operation_context });
     defer manager.deinit();
     manager.setOperationContext(operation_context);
     defer manager.setOperationContext(null);
@@ -647,6 +668,10 @@ fn runAur(
     operation_context: *PackageManager.OperationContext,
     invocation: *const parser.Invocation,
 ) !void {
+    var cancellation_watcher: signals.CancellationWatcher = .{};
+    if (optionEnabled(invocation, "--isolated"))
+        try cancellation_watcher.start(context.io, operation_context);
+    defer cancellation_watcher.deinit();
     if (!isAurVersionInstall(invocation) and
         optionEnabled(invocation, "--build-deps") and invocation.positionals.len > 1)
         return error.MultipleDependencyTargets;
@@ -655,10 +680,12 @@ fn runAur(
     const build_command = std.mem.trimEnd(u8, executable, " (deleted)");
     const aur_base = try aur_url.resolveFor(context, invocation);
     const manager = try PackageManager.AurManager.init(context.allocator, context.environ, .{
+        .config_path = context.config_path,
         .aur_git_base_url = aur_base,
         .root = true,
         .needed = optionEnabled(invocation, "--needed"),
         .use_chroot = optionEnabled(invocation, "--chroot"),
+        .use_isolated = optionEnabled(invocation, "--isolated"),
         .check = checkOverride(invocation),
         .sign = signOverride(invocation),
         .build_command = build_command,
@@ -1452,6 +1479,41 @@ test "standard install needed flag works before and after targets and preserves 
         try std.testing.expectEqual(case.needed, flags.needed);
         try std.testing.expectEqual(case.nodeps, flags.nodeps);
         try std.testing.expectEqual(case.no_confirm, invocation.globals.no_confirm);
+    }
+}
+
+test "AUR isolated flag survives shortcode parsing and elevation arguments" {
+    var tc: test_support.TestContext = .{};
+    tc.init();
+    defer tc.deinit();
+    const manifest = try spec.Manifest.load(tc.arena.allocator());
+    const shortcodes = @import("../cli/shortcodes.zig");
+    for ([_][]const []const u8{
+        &.{ "-Ia", "--isolated", "demo", "--needed" },
+        &.{ "install", "aur", "demo", "--isolated", "--check", "--nosign" },
+        &.{ "-Iav", "demo", "deadbeef", "--isolated" },
+    }) |args| {
+        const translation = try shortcodes.translate(tc.arena.allocator(), &manifest, args);
+        const parsed = try parser.parse(tc.arena.allocator(), &manifest, translation.arguments().?);
+        try std.testing.expectEqualStrings(aur_command_path, parsed.dispatch.command.path);
+        try std.testing.expect(optionEnabled(&parsed.dispatch, "--isolated"));
+        const elevated_args = try aur_url.argumentsWithEffectiveBase(&tc.context, &parsed.dispatch);
+        const elevated = try parser.parse(tc.arena.allocator(), &manifest, elevated_args);
+        try std.testing.expect(optionEnabled(&elevated.dispatch, "--isolated"));
+        try std.testing.expectEqual(parsed.dispatch.positionals.len, elevated.dispatch.positionals.len);
+        for (parsed.dispatch.positionals, elevated.dispatch.positionals) |expected, actual|
+            try std.testing.expectEqualStrings(expected, actual);
+    }
+}
+
+test "AUR isolated conflicts fail before elevation or package operations" {
+    var tc: test_support.TestContext = .{};
+    tc.init();
+    defer tc.deinit();
+    const manifest = try spec.Manifest.load(tc.arena.allocator());
+    for ([_][]const u8{ "--chroot", "--build-deps", "--make-deps", "--sign" }) |conflict| {
+        const parsed = try parser.parse(tc.arena.allocator(), &manifest, &.{ "install", "aur", "demo", "--isolated", conflict });
+        try std.testing.expectEqual(@as(?u8, 1), try dispatch(&tc.context, &parsed.dispatch));
     }
 }
 

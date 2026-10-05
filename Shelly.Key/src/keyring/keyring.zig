@@ -9,10 +9,10 @@ const keydir = @import("keydir.zig");
 const keyfiles = @import("keyfiles.zig");
 
 /// Default keyring location, used when `--init` is invoked without a path.
-pub const default_gpgdir = "/etc/pacman.d/gnupg";
+pub const default_gpgdir = @import("paths").keyring;
 
 /// Default source directory for `--populate`, used when `--populate-from` is not given.
-pub const default_populate_from = "/usr/share/pacman/keyrings";
+pub const default_populate_from = @import("paths").keyring_bundles;
 
 /// UID of the locally generated master key, excluded from `--refresh-keys`
 /// because it does not exist on remote servers.

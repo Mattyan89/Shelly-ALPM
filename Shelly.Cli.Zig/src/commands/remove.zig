@@ -162,7 +162,7 @@ fn runStandard(
 
     if (partition.alpm.len > 0) {
         const dependency_removal = dependencyRemoval(invocation, true, true);
-        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+        const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .config_path = context.config_path, .use_root = true, .operation_context = operation_context });
         defer manager.deinit();
         manager.setOperationContext(operation_context);
         defer manager.setOperationContext(null);
@@ -189,6 +189,7 @@ fn runAur(
     const dependency_removal = dependencyRemoval(invocation, false, false);
     const aur_base = try aur_url.resolveFor(context, invocation);
     const manager = try PackageManager.AurManager.init(context.allocator, context.environ, .{
+        .config_path = context.config_path,
         .aur_git_base_url = aur_base,
         .root = true,
         .operation_context = operation_context,

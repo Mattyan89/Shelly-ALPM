@@ -158,7 +158,7 @@ fn discoverStandard(
     const manager = try PackageManager.Manager.init(
         context.allocator,
         context.environ,
-        .{ .use_root = false },
+        .{ .config_path = context.config_path, .use_root = false },
     );
     defer manager.deinit();
     const packages = try manager.get_available_packages();
@@ -187,6 +187,7 @@ fn discoverAur(
 ) !void {
     if (query.len < 2) return;
     const manager = try PackageManager.AurManager.init(context.allocator, context.environ, .{
+        .config_path = context.config_path,
         .aur_git_base_url = aur_base,
     });
     defer manager.deinit();

@@ -90,6 +90,19 @@ Shelly suggests `shelly -Is <package>`. Explicit local builds with
 `shelly build /path/to/PKGBUILD` and removal of installed packages remain
 available without an AUR availability check.
 
+To build an AUR package in a fresh native build root before installing it:
+
+```bash
+shelly -Ia --isolated <package>
+```
+
+Repository build dependencies stay in the guest; the exported package and its
+runtime dependencies are installed on the host. This also supports `--needed`
+and `--version`. As with `shelly build --isolated`, AUR-only build dependencies
+and package signing are not yet supported. `--isolated` cannot be combined with
+`--chroot` or dependency-only installation. See [isolated builds](docs/isolated-builds.md)
+for requirements and limitations.
+
 ## PKGBUILD review
 
 Terminal PKGBUILD reviews show changed lines with three unchanged lines of
@@ -307,6 +320,12 @@ front: the build itself runs as your regular user, and the elevated
 coordinator installs the built archives after the build completes. Like
 `makepkg -i`, the install transaction adds only the built archives, so
 combine it with `--sync-deps` when the package's dependencies may be missing.
+
+Choose package compression with `shelly build --compression-level 3` (also
+supported with `--isolated`). Presets 1–5 range from conservative resource use
+to maximum compression effort. Set `package.compression_level` in
+`shellybuild.conf` for a persistent preference; omission preserves library
+defaults. See the [preset mappings and tradeoffs](docs/shellybuild.conf.md#package-compression).
 
 Versioned JSON contracts for unattended package-building services are
 available. Probe an installed binary with `shelly --version --json` before

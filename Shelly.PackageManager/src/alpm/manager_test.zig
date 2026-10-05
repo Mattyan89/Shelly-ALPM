@@ -4070,3 +4070,27 @@ test "owned package result builders release partial snapshots after allocation f
     try expectOwnedPackageAllocationCleanup(mgr, .available);
     try expectOwnedUpdateAllocationCleanup(mgr);
 }
+
+test "native libalpm hook override replaces compiled defaults including an empty list" {
+    const allocator = testing.allocator;
+    var threaded: std.Io.Threaded = .init(allocator, .{});
+    defer threaded.deinit();
+    var workspace = try SyncTestWorkspace.create(allocator, threaded.io());
+    defer workspace.cleanup(allocator);
+    for ([_][]const []const u8{ &.{"/custom/hooks"}, &.{} }) |directories| {
+        const mgr = try Manager.init(allocator, testing.environ, .{
+            .config_path = workspace.config_path,
+            .hook_directories = directories,
+        });
+        defer mgr.deinit();
+        for (0..2) |iteration| {
+            if (iteration == 1) try mgr.refresh();
+            const hooks = rawLibalpm.alpm_option_get_hookdirs(mgr.handle);
+            try testing.expect(!rawDirectoryListContains(hooks, "/usr/share/libalpm/hooks"));
+            try testing.expect(!rawDirectoryListContains(hooks, "/etc/pacman.d/hooks"));
+            if (directories.len == 0) {
+                try testing.expect(hooks == null);
+            } else try testing.expect(rawDirectoryListContains(hooks, directories[0]));
+        }
+    }
+}

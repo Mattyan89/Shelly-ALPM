@@ -42,8 +42,10 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+    const path_profile = b.option([]const u8, "path-profile", "Distribution path defaults: pacman or devario") orelse "pacman";
+    const paths = b.dependency("shelly_paths", .{ .target = target, .optimize = optimize, .@"path-profile" = path_profile }).module("paths");
     const enable_libalpm = b.option(bool, "libalpm", "Include the libalpm backend alongside RLPM") orelse true;
-    const rlpm_dependency = b.dependency("shelly_rlpm", .{ .target = target, .optimize = optimize });
+    const rlpm_dependency = b.dependency("shelly_rlpm", .{ .target = target, .optimize = optimize, .@"path-profile" = path_profile });
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
     const operation_context_mod = b.createModule(.{
         .root_source_file = b.path("src/shared/operation_context.zig"),
@@ -106,6 +108,11 @@ pub fn build(b: *std.Build) void {
     });
     archive_mod.addImport("diagnostics", diagnostics);
     archive_mod.linkSystemLibrary("archive", .{});
+    const compression_tests = b.addRunArtifact(b.addTest(.{
+        .root_module = archive_mod,
+        .filters = &.{ "compression presets", "archive writer", "archive virtual ownership" },
+    }));
+    b.step("compression-test", "Test package compression presets and metadata round trips").dependOn(&compression_tests.step);
 
     // This creates a module, which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
@@ -130,6 +137,7 @@ pub fn build(b: *std.Build) void {
     });
     mod.addImport("native_output", native_output);
     mod.addImport("diagnostics", diagnostics);
+    mod.addImport("paths", paths);
     mod.addImport("Shelly_Download", shelly_download);
     if (enable_libalpm) {
         const translate_alpm = b.addTranslateC(.{
@@ -318,6 +326,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&rlpm_adapter_tests.step);
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&compression_tests.step);
 
     const bootstrap_tests = b.addTest(.{
         .root_module = mod,
@@ -372,6 +381,7 @@ pub fn build(b: *std.Build) void {
     const run_builder_tests = b.addRunArtifact(builder_tests);
     const builder_test_step = b.step("builder-test", "Run native package builder regressions");
     builder_test_step.dependOn(&run_builder_tests.step);
+    builder_test_step.dependOn(&compression_tests.step);
 
     const shellybuild_test_module = b.createModule(.{
         .root_source_file = b.path("src/aur/shellybuild.zig"),
@@ -381,6 +391,7 @@ pub fn build(b: *std.Build) void {
     });
     shellybuild_test_module.addImport("native_output", native_output);
     shellybuild_test_module.addImport("diagnostics", diagnostics);
+    shellybuild_test_module.addImport("archive", archive_mod);
     shellybuild_test_module.addImport("Shelly_Download", shelly_download);
     shellybuild_test_module.addImport("toml", toml_module);
     shellybuild_test_module.addImport("operation_context", operation_context_mod);
@@ -878,6 +889,9 @@ pub fn build(b: *std.Build) void {
             "PackageBuilder leaves packages unsigned when signing is disabled",
             "PackageBuilder rejects a source checksum mismatch without committing srcdir",
             "PackageBuilder extracts source archives into srcdir",
+            "PackageBuilder extracts fish source archive duplicate regular files using the last entry",
+            "PackageBuilder rejects duplicate source archive entries with conflicting types",
+            "PackageBuilder rejects duplicate regular files from another source archive",
             "PackageBuilder standalone",
             "PackageBuilder detects source archives by content including zip and tar zstd",
             "PackageBuilder preserves literal backslashes in GStreamer source archive filenames",
@@ -925,6 +939,7 @@ pub fn build(b: *std.Build) void {
             "archive virtual ownership is shared by package and mtree writers",
             "AUR operation-hooked public APIs compile",
             "coordinator child build arguments bind review package set and policies",
+            "AUR isolated",
             "clean invoking-user build command",
             "build progress parser recognizes makepkg percentage lines",
             "build environment exports flags hosts and compiler wrapper paths",

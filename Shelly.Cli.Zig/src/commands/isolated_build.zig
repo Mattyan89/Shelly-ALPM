@@ -139,14 +139,24 @@ pub const Root = struct {
         environ: std.process.Environ,
         executable: []const u8,
         extra_packages: []const []const u8,
+        config_path: ?[]const u8,
         operation: *const PackageManager.Operation,
     ) !void {
         try self.validateRuntimeAt(environ, operation, executable);
-        const argv = try shellystrapArguments(
+        const Configuration = PackageManager.Manager.configuration.Configuration;
+        var config = try (if (config_path != null) &Configuration.parseStrict else &Configuration.parse)(
+            self.allocator,
+            self.io,
+            config_path orelse PackageManager.paths.config_file,
+        );
+        defer config.deinitialize();
+        const argv = try shellystrapArgumentsWithConfig(
             self.allocator,
             executable,
             self.root_path,
             extra_packages,
+            config_path,
+            config.gpg_directory,
         );
         defer self.allocator.free(argv);
         var output_context: BootstrapOutputContext = .{ .operation = operation };
@@ -566,6 +576,17 @@ pub fn shellystrapArguments(
     root_path: []const u8,
     extra_packages: []const []const u8,
 ) ![]const []const u8 {
+    return shellystrapArgumentsWithConfig(allocator, executable, root_path, extra_packages, null, PackageManager.paths.keyring);
+}
+
+pub fn shellystrapArgumentsWithConfig(
+    allocator: std.mem.Allocator,
+    executable: []const u8,
+    root_path: []const u8,
+    extra_packages: []const []const u8,
+    config_path: ?[]const u8,
+    gpg_directory: []const u8,
+) ![]const []const u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
     try argv.appendSlice(allocator, &.{
@@ -585,9 +606,9 @@ pub fn shellystrapArguments(
         "--root",
         root_path,
         "--config",
-        "/etc/pacman.conf",
+        config_path orelse PackageManager.paths.config_file,
         "--gpgdir",
-        "/etc/pacman.d/gnupg",
+        gpg_directory,
         "--",
     });
     const packages_start = argv.items.len;
@@ -1121,4 +1142,12 @@ test "failed or cancelled isolated roots remove their complete operation directo
         error.FileNotFound,
         temporary.dir.access(io, "operation", .{}),
     );
+}
+
+test "shellystrap forwards the selected native configuration and keyring" {
+    const args = try shellystrapArgumentsWithConfig(std.testing.allocator, "/usr/bin/shelly", "/target", &.{}, "/custom/shelly.conf", "/custom/gnupg");
+    defer std.testing.allocator.free(args);
+    try std.testing.expect(containsArgument(args, "/custom/shelly.conf"));
+    try std.testing.expect(containsArgument(args, "/custom/gnupg"));
+    try std.testing.expect(!containsArgument(args, PackageManager.paths.config_file));
 }

@@ -456,7 +456,9 @@ test "printHelp prints the expected usage text" {
 
     try printHelp(&aw.writer);
 
-    try std.testing.expectEqualStrings(
+    const expected = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
         \\Usage: shelly-key [OPTIONS] operation [targets]
         \\
         \\Operations:
@@ -483,8 +485,19 @@ test "printHelp prints the expected usage text" {
         \\  -h, --help                Show this help message
         \\
     ,
-        aw.written(),
+        "/etc/pacman.d/gnupg",
+        default_gpgdir,
     );
+    defer std.testing.allocator.free(expected);
+    const profile_expected = try std.mem.replaceOwned(
+        u8,
+        std.testing.allocator,
+        expected,
+        "/usr/share/pacman/keyrings",
+        default_populate_from,
+    );
+    defer std.testing.allocator.free(profile_expected);
+    try std.testing.expectEqualStrings(profile_expected, aw.written());
 }
 
 test "parse recognizes --recv-keys with a single key id" {
@@ -511,7 +524,7 @@ test "parse recognizes the -r alias with multiple key ids" {
 }
 
 test "parse recognizes --refresh-keys without key ids" {
-    const args: []const []const u8 = &.{exe_name, "--refresh-keys"};
+    const args: []const []const u8 = &.{ exe_name, "--refresh-keys" };
     const opts = try parse(std.testing.allocator, args);
 
     try std.testing.expectEqual(Command.refresh_keys, opts.command);

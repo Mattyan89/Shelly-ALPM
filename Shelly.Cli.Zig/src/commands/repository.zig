@@ -365,7 +365,7 @@ fn listReal(
     const manager = try PackageManager.Manager.init(
         context.allocator,
         context.environ,
-        .{ .use_root = false, .operation_context = operation_context },
+        .{ .config_path = context.config_path, .use_root = false, .operation_context = operation_context },
     );
     defer manager.deinit();
     manager.setOperationContext(operation_context);
@@ -384,7 +384,7 @@ fn mutateReal(
         const manager = try PackageManager.Manager.init(
             context.allocator,
             context.environ,
-            .{ .use_root = true, .operation_context = operation_context },
+            .{ .config_path = context.config_path, .use_root = true, .operation_context = operation_context },
         );
         defer manager.deinit();
         manager.setOperationContext(operation_context);
@@ -417,7 +417,7 @@ fn syncReal(
     const manager = try PackageManager.Manager.init(
         context.allocator,
         context.environ,
-        .{ .use_root = true, .operation_context = operation_context },
+        .{ .config_path = context.config_path, .use_root = true, .operation_context = operation_context },
     );
     defer manager.deinit();
     manager.setOperationContext(operation_context);
@@ -429,10 +429,13 @@ fn runShellyKey(
     context: *runtime.RuntimeContext,
     arguments: []const []const u8,
 ) !u8 {
+    var arena = std.heap.ArenaAllocator.init(context.allocator);
+    defer arena.deinit();
+    const key_arguments = try context.keyArguments(arena.allocator(), arguments);
     try context.stdout.flush();
     try context.stderr.flush();
     var child = try std.process.spawn(context.io, .{
-        .argv = arguments,
+        .argv = key_arguments,
         .stdin = .inherit,
         .stdout = .inherit,
         .stderr = .inherit,

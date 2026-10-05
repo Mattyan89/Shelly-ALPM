@@ -415,7 +415,7 @@ fn listReal(
     operation_context: *PackageManager.OperationContext,
     kind: MarkKind,
 ) !PackageList {
-    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = false, .operation_context = operation_context });
+    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .config_path = context.config_path, .use_root = false, .operation_context = operation_context });
     defer manager.deinit();
     manager.setOperationContext(operation_context);
     defer manager.setOperationContext(null);
@@ -443,7 +443,7 @@ fn mutateReal(
     action: ListAction,
     packages: []const []const u8,
 ) !void {
-    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .config_path = context.config_path, .use_root = true, .operation_context = operation_context });
     defer manager.deinit();
     manager.setOperationContext(operation_context);
     defer manager.setOperationContext(null);
@@ -483,7 +483,7 @@ fn reasonReal(
     kind: MarkKind,
     package: []const u8,
 ) !void {
-    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .use_root = true, .operation_context = operation_context });
+    const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{ .config_path = context.config_path, .use_root = true, .operation_context = operation_context });
     defer manager.deinit();
     manager.setOperationContext(operation_context);
     defer manager.setOperationContext(null);

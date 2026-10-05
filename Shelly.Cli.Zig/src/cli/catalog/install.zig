@@ -57,6 +57,7 @@ pub const variants = [_]types.Variant{
             flag("--build-deps", &.{"-b"}, "Install build dependencies for the requested packages"),
             flag("--make-deps", &.{"-m"}, "Install make dependencies for the requested packages"),
             flag("--chroot", &.{"-c"}, "Build packages in a clean chroot with makechrootpkg"),
+            flag("--isolated", &.{}, "Build in a fresh systemd-nspawn root with repository build dependencies, then install the exported packages"),
             flag("--check", &.{}, "Enable the PKGBUILD check() function during package builds"),
             flag("--no-check", &.{}, "Disable the PKGBUILD check() function during package builds"),
             flag("--sign", &.{}, "Sign built packages with GPG"),

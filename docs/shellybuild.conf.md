@@ -40,6 +40,8 @@ env = {}
 [package]
 packager = "Unknown Packager"
 extension = ".pkg.tar.zst"
+# Optional; omission preserves the compression library's defaults.
+# compression_level = 3
 options = ["strip", "docs", "emptydirs", "zipman", "purge", "lto"]
 strip_binaries = ["--strip-all"]
 strip_shared = ["--strip-debug"]
@@ -64,6 +66,76 @@ Flag and host arrays are joined with spaces only when a child process is launche
 Supported package options are `strip`, `docs`, `libtool`, `staticlibs`, `emptydirs`, `zipman`, `purge`, `debug`, `lto`, `autodeps`, `buildflags`, and `makeflags`. Content tidy operations currently implement stripping and standard purge cleanup.
 
 `purge` is enabled by default. Before writing package metadata and the archive, it removes `usr/info/dir` and `usr/share/info/dir` relative to `$pkgdir`, plus non-directory entries named `.packlist` or matching `*.pod` anywhere in that package tree. Directories are preserved, and cleanup does not follow symlinks. PKGBUILD `options=('!purge')` disables this cleanup, including when set inside a split-package function. Purge runs independently of `strip`, so `!strip` does not disable it. Custom `PURGE_TARGETS` and makepkg shell configuration are not read by the native builder. This behavior also applies to `shelly build --isolated`.
+
+## Package compression
+
+Set `package.compression_level` to an integer from 1 to 5, or override it for
+one invocation with `shelly build --compression-level 3`. The CLI overrides the
+user configuration, which overrides the system configuration. Omitting the
+setting everywhere preserves the compression library's defaults; level 3 is a
+recommended explicit starting point, not a new default.
+
+The package extension selects the format. Each preset maps to a backend level:
+
+| Level | Preset | zstd | gzip | xz | bzip2 | Intended tradeoff |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| 1 | Conservative | 1 | 1 | 0 | 1 | Low resource use; larger packages |
+| 2 | Fast | 3 | 3 | 3 | 3 | Quick builds; reasonable compression |
+| 3 | Balanced | 6 | 6 | 6 | 5 | Recommended starting point |
+| 4 | Compact | 12 | 8 | 7 | 7 | Favor smaller packages |
+| 5 | Maximum | 19 | 9 | 9 | 9 | Highest compression effort offered |
+
+All presets are lossless. Reliability here means reducing memory pressure and
+build time. Higher levels generally spend more CPU time and memory to reduce
+size, but smaller output is not guaranteed for every input. xz and zstd request
+one compression worker for explicit presets. zstd presets use standard levels
+through 19, without enabling long-distance matching or ultra levels.
+
+Presets support `.pkg.tar.zst`, `.pkg.tar.gz`, `.pkg.tar.xz`, and `.pkg.tar.bz2`.
+Invalid levels, incompatible extensions, and unsupported native filter options
+fail before PKGBUILD execution. Shelly does not silently substitute another
+preset or fall back to an external compression program for explicit presets.
+
+The setting applies to every selected split package, elevated build children,
+and `--isolated` builds. Configuration also applies to native AUR builds. The
+build log records the preset, format, and backend level. Compression changes
+the outer archive only; package contents, `.MTREE` generation, and signing
+policy retain their existing behavior. Signatures cover the completed archive.
+
+### Measured tradeoffs
+
+A local benchmark on 2026-10-01 exercised all 20 preset/format combinations
+on three payloads: 3,511,405 bytes of concatenated PackageManager Zig sources,
+1,287,528 bytes from `/usr/bin/bash` and `/usr/bin/python3`, and a 1,260,092-byte
+gzip stream of those two payloads. Each payload was archived as one file.
+The harness called the production `Writer.initWithOptions` and `Reader.init`
+directly, built with Zig 0.16.0 ReleaseFast. Compression includes archive
+creation; decoding reads every entry to completion without writing extracted
+files. Times are medians of three runs including process startup; peak RSS
+is the maximum across those runs. Results are illustrative, not memory caps
+or promises for other packages.
+
+Environment: x86_64 AMD Ryzen 9 9950X3D, libarchive 3.8.9, zstd 1.5.7,
+xz/liblzma 5.8.4, zlib 1.3.1.zlib-ng, and bzip2 1.0.8.
+
+Zstandard results for the source payload:
+
+| Preset | Archive KiB | Compression ms | Decode ms | Compression peak MiB |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 662.2 | 7.0 | 3.2 | 14.7 |
+| 2 | 608.1 | 7.9 | 3.3 | 15.4 |
+| 3 | 518.9 | 19.2 | 3.1 | 17.2 |
+| 4 | 480.8 | 60.9 | 3.1 | 55.2 |
+| 5 | 426.7 | 547.9 | 3.5 | 96.0 |
+
+Level 3 reduced this archive by about 22% versus level 1. Level 5 reduced it
+further, with substantially more compression time and memory. For the gzip
+payload, zstd levels 1–4 produced identical archive sizes; extra effort did
+not improve that result. These measurements support retaining the five
+mappings and recommending level 3 as an explicit starting point.
+
+[Full measurements for all formats and payloads](benchmarks/compression-presets.csv)
+include compression and decoding times and peak RSS for each case.
 
 ## Build executable search path
 

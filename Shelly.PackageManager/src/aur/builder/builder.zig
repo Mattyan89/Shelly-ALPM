@@ -310,6 +310,7 @@ pub const PackageBuilder = struct {
         self: *PackageBuilder,
         operation: *op_context.Operation,
     ) ![]BuildArtifact {
+        try @import("archive").validateCompression(self.shellybuild_config.package.extension, self.shellybuild_config.package.compression_level);
         const reviewed_digest = self.options.reviewed_pkgbuild_digest orelse
             return error.UnreviewedBuilderRequest;
         if (self.options.pkgbuild_path) |pkgbuild_path| {
@@ -347,6 +348,14 @@ pub const PackageBuilder = struct {
         self.active_log = &log;
         defer self.active_log = null;
         try log.writeRecord("build", "started");
+        if (self.shellybuild_config.package.compression_level) |preset| {
+            const format = try @import("archive").compression_policy.Format.fromPath(self.shellybuild_config.package.extension);
+            const message = try std.fmt.allocPrint(self.allocator, "preset {d} ({s}), {s} level {s}", .{
+                @intFromEnum(preset), @tagName(preset), format.filterName(), preset.backendLevel(format),
+            });
+            defer self.allocator.free(message);
+            try log.writeRecord("compression", message);
+        }
         const artifacts = self.buildPackage(operation) catch |err| {
             const location = self.failure_location;
             const detail = std.fmt.allocPrint(self.allocator, "{s}: {s}: {s}", .{

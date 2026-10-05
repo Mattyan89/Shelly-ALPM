@@ -46,12 +46,14 @@ pub fn init(entries: []const Entry, compression: Compression) !Fixture {
     const extended = for (entries) |item| {
         if (item.xattr != null or item.capabilities or item.sparse or item.acl) break true;
     } else false;
+    // Restricted PAX handles long paths and absolute link targets from deep
+    // checkouts. Keep full PAX for fixtures requiring extended metadata.
     try std.testing.expectEqual(
         c.ARCHIVE_OK,
         if (extended)
             c.archive_write_set_format_pax(writer)
         else
-            c.archive_write_set_format_ustar(writer),
+            c.archive_write_set_format_pax_restricted(writer),
     );
     try std.testing.expectEqual(c.ARCHIVE_OK, c.archive_write_open_filename(writer, path.ptr));
     for (entries) |item| {

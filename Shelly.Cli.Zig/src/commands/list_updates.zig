@@ -685,6 +685,7 @@ fn runStandard(context: *runtime.RuntimeContext) !Result {
         context.allocator,
         context.environ,
         .{
+            .config_path = context.config_path,
             .use_root = false,
             .temp_root_path = database_path,
         },
@@ -736,6 +737,7 @@ fn runAur(context: *runtime.RuntimeContext, options: CheckOptions) !Result {
 
     const aur_base = try aur_url.resolve(context, options.aur_url);
     const manager = try PackageManager.AurManager.init(context.allocator, context.environ, .{
+        .config_path = context.config_path,
         .aur_git_base_url = aur_base,
         .use_temp_path = true,
         .temp_path = database_path,

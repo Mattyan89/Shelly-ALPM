@@ -3,6 +3,8 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const path_profile = b.option([]const u8, "path-profile", "Distribution path defaults: pacman or devario") orelse "pacman";
+    const paths = b.dependency("shelly_paths", .{ .target = target, .optimize = optimize, .@"path-profile" = path_profile }).module("paths");
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
 
     const mod = b.addModule("Shelly_Key", .{
@@ -10,6 +12,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
     mod.addImport("diagnostics", diagnostics);
+    mod.addImport("paths", paths);
 
     const exe = b.addExecutable(.{
         .name = "shelly-key",

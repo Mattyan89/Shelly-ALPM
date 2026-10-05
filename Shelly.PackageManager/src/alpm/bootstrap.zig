@@ -5,6 +5,7 @@
 //! repository transaction without depending on the `pacstrap` shell script.
 
 const std = @import("std");
+const paths = @import("paths");
 const backend_selection = @import("backend.zig");
 const diagnostics_module = @import("diagnostics");
 const native_output = @import("native_output");
@@ -20,8 +21,8 @@ pub const marker_name = ".shelly-bootstrap-root";
 pub const Options = struct {
     backend: ?backend_selection.Backend = null,
     root_path: []const u8,
-    config_path: []const u8 = "/etc/pacman.conf",
-    host_gpg_directory: []const u8 = "/etc/pacman.d/gnupg",
+    config_path: []const u8 = paths.config_file,
+    host_gpg_directory: []const u8 = paths.keyring,
     packages: []const []const u8,
 };
 
@@ -52,8 +53,8 @@ pub fn runInternal(
 pub fn parseArguments(arguments: []const []const u8) !Options {
     var root_path: ?[]const u8 = null;
     var backend: ?backend_selection.Backend = null;
-    var config_path: []const u8 = "/etc/pacman.conf";
-    var gpg_directory: []const u8 = "/etc/pacman.d/gnupg";
+    var config_path: []const u8 = paths.config_file;
+    var gpg_directory: []const u8 = paths.keyring;
     var index: usize = 0;
     while (index < arguments.len) : (index += 1) {
         const argument = arguments[index];
@@ -319,7 +320,11 @@ const DiagnosticOutput = struct {
         self.lock();
         defer self.unlock();
         defer self.stderr.flush() catch {};
-        self.stderr.print("Could not provision the isolated build root: {0f}.\n", .{diagnostics_module.safe(std.mem.trimEnd(u8, args.message, "\r\n"))}) catch {};
+        const message = std.mem.trimEnd(u8, args.message, "\r\n");
+        // Detailed transaction failures already contain punctuation and technical
+        // codes. Preserve those lines without appending a dot to the error code.
+        const suffix = if (std.mem.indexOfScalar(u8, message, '\n') != null or std.mem.endsWith(u8, message, ".")) "" else ".";
+        self.stderr.print("Could not provision the isolated build root: {f}{s}\n", .{ diagnostics_module.safe(message), suffix }) catch {};
     }
 
     fn handleScriptlet(data: ?*anyopaque, args: events.ScriptletArgs) void {
@@ -445,13 +450,13 @@ fn bootstrapReporting(
         !std.fs.path.isAbsolute(options.host_gpg_directory))
         return error.InvalidBootstrapPath;
 
-    const database_path = try rootJoin(allocator, options.root_path, "var/lib/pacman");
+    const database_path = try rootJoin(allocator, options.root_path, paths.database[1..]);
     defer allocator.free(database_path);
-    const cache_path = try rootJoin(allocator, options.root_path, "var/cache/pacman/pkg");
+    const cache_path = try rootJoin(allocator, options.root_path, paths.cache[1..]);
     defer allocator.free(cache_path);
-    const log_path = try rootJoin(allocator, options.root_path, "var/log/pacman.log");
+    const log_path = try rootJoin(allocator, options.root_path, paths.bootstrap_log[1..]);
     defer allocator.free(log_path);
-    const target_gpg_path = try rootJoin(allocator, options.root_path, "etc/pacman.d/gnupg");
+    const target_gpg_path = try rootJoin(allocator, options.root_path, paths.keyring[1..]);
     defer allocator.free(target_gpg_path);
 
     try prepareFilesystem(allocator, io, options, database_path, cache_path, target_gpg_path);
@@ -521,7 +526,7 @@ fn bootstrapReporting(
     }
     if (installed.len == 0) return error.EmptyBootstrapRoot;
     try requireFile(io, allocator, options.root_path, "usr/bin/bash");
-    try requireDirectory(io, allocator, options.root_path, "var/lib/pacman/local");
+    try requireDirectory(io, allocator, options.root_path, paths.database[1..] ++ "/local");
     try finalizeRoot(allocator, io, environ, options.root_path, diagnostic_writer);
     try requireFile(io, allocator, options.root_path, "etc/ld.so.cache");
     try requireFile(io, allocator, options.root_path, "etc/passwd");
@@ -539,14 +544,14 @@ fn prepareGuestQueries(io: std.Io, root: std.Io.Dir) !void {
     // Dependencies are provisioned by the coordinator. Guest metadata queries
     // need only the local database, not host repository Include paths.
     try root.writeFile(io, .{
-        .sub_path = "etc/pacman.conf",
+        .sub_path = paths.config_file[1..],
         .data = "[options]\nArchitecture = auto\nSigLevel = Required DatabaseOptional\nLocalFileSigLevel = Optional\n",
     });
     // Without the pacman package these paths retain the provisioning umask.
     // The unprivileged builder needs them to query installed package metadata.
-    for ([_][]const u8{ "var/lib/pacman", "var/lib/pacman/local" }) |path|
+    for ([_][]const u8{ paths.database[1..], paths.database[1..] ++ "/local" }) |path|
         try root.setFilePermissions(io, path, .fromMode(0o755), .{});
-    for ([_][]const u8{ "etc/pacman.conf", "var/lib/pacman/local/ALPM_DB_VERSION" }) |path|
+    for ([_][]const u8{ paths.config_file[1..], paths.database[1..] ++ "/local/ALPM_DB_VERSION" }) |path|
         try root.setFilePermissions(io, path, .fromMode(0o644), .{});
 }
 
@@ -555,23 +560,23 @@ test "bootstrap guest package queries can read configuration and database under 
     var fixture = t.tmpDir(.{});
     defer fixture.cleanup();
     try fixture.dir.createDirPath(t.io, "etc");
-    try fixture.dir.createDirPath(t.io, "var/lib/pacman/local");
-    for ([_][]const u8{ "var/lib/pacman", "var/lib/pacman/local" }) |path|
+    try fixture.dir.createDirPath(t.io, paths.database[1..] ++ "/local");
+    for ([_][]const u8{ paths.database[1..], paths.database[1..] ++ "/local" }) |path|
         try fixture.dir.setFilePermissions(t.io, path, .fromMode(0o700), .{});
-    try fixture.dir.writeFile(t.io, .{ .sub_path = "etc/pacman.conf", .data = "[host]\nInclude = /host-only/mirrorlist\n" });
-    try fixture.dir.writeFile(t.io, .{ .sub_path = "var/lib/pacman/local/ALPM_DB_VERSION", .data = "9\n" });
-    for ([_][]const u8{ "etc/pacman.conf", "var/lib/pacman/local/ALPM_DB_VERSION" }) |path|
+    try fixture.dir.writeFile(t.io, .{ .sub_path = paths.config_file[1..], .data = "[host]\nInclude = /host-only/mirrorlist\n" });
+    try fixture.dir.writeFile(t.io, .{ .sub_path = paths.database[1..] ++ "/local/ALPM_DB_VERSION", .data = "9\n" });
+    for ([_][]const u8{ paths.config_file[1..], paths.database[1..] ++ "/local/ALPM_DB_VERSION" }) |path|
         try fixture.dir.setFilePermissions(t.io, path, .fromMode(0o600), .{});
     try prepareGuestQueries(t.io, fixture.dir);
-    for ([_][]const u8{ "var/lib/pacman", "var/lib/pacman/local" }) |path|
+    for ([_][]const u8{ paths.database[1..], paths.database[1..] ++ "/local" }) |path|
         try t.expectEqual(@as(u32, 0o755), (try fixture.dir.statFile(t.io, path, .{})).permissions.toMode() & 0o7777);
-    for ([_][]const u8{ "etc/pacman.conf", "var/lib/pacman/local/ALPM_DB_VERSION" }) |path|
+    for ([_][]const u8{ paths.config_file[1..], paths.database[1..] ++ "/local/ALPM_DB_VERSION" }) |path|
         try t.expectEqual(@as(u32, 0o644), (try fixture.dir.statFile(t.io, path, .{})).permissions.toMode() & 0o7777);
-    const config = try fixture.dir.readFileAlloc(t.io, "etc/pacman.conf", t.allocator, .limited(4096));
+    const config = try fixture.dir.readFileAlloc(t.io, paths.config_file[1..], t.allocator, .limited(4096));
     defer t.allocator.free(config);
     try t.expect(std.mem.indexOf(u8, config, "Include") == null);
     try t.expect(std.mem.indexOf(u8, config, "SigLevel = Required") != null);
-    const version = try fixture.dir.readFileAlloc(t.io, "var/lib/pacman/local/ALPM_DB_VERSION", t.allocator, .limited(32));
+    const version = try fixture.dir.readFileAlloc(t.io, paths.database[1..] ++ "/local/ALPM_DB_VERSION", t.allocator, .limited(32));
     defer t.allocator.free(version);
     try t.expectEqualStrings("9\n", version);
 }
@@ -604,8 +609,8 @@ fn prepareFilesystem(
     target_gpg_path: []const u8,
 ) !void {
     const directories = [_][]const u8{
-        "etc/pacman.d", "var/lib/pacman", "var/cache/pacman/pkg", "var/log",
-        "proc",         "sys",            "dev",                  "run",
+        paths.config_directory[1..], paths.database[1..], paths.cache[1..], "var/log",
+        "proc",                      "sys",               "dev",            "run",
         "tmp",
     };
     for (directories) |relative| {
@@ -619,13 +624,13 @@ fn prepareFilesystem(
     try std.Io.Dir.cwd().createDirPath(io, database_path);
     try std.Io.Dir.cwd().createDirPath(io, cache_path);
 
-    const target_config = try rootJoin(allocator, options.root_path, "etc/pacman.conf");
+    const target_config = try rootJoin(allocator, options.root_path, paths.config_file[1..]);
     defer allocator.free(target_config);
     try std.Io.Dir.copyFile(.cwd(), options.config_path, .cwd(), target_config, io, .{});
 
-    const host_mirrorlist = "/etc/pacman.d/mirrorlist";
+    const host_mirrorlist = paths.mirrorlist;
     if (std.Io.Dir.cwd().statFile(io, host_mirrorlist, .{})) |_| {
-        const target_mirrorlist = try rootJoin(allocator, options.root_path, "etc/pacman.d/mirrorlist");
+        const target_mirrorlist = try rootJoin(allocator, options.root_path, paths.mirrorlist[1..]);
         defer allocator.free(target_mirrorlist);
         try std.Io.Dir.copyFile(.cwd(), host_mirrorlist, .cwd(), target_mirrorlist, io, .{});
     } else |_| {}
@@ -976,4 +981,15 @@ test "bootstrap aggregates interleaved transfers and flushes terminal output for
     try t.expectEqualStrings(legacy.written(), shared.written());
     try t.expectEqual(@as(usize, 1), std.mem.count(u8, shared.written(), "Package retrieval completed: first.pkg"));
     try t.expect(std.mem.indexOf(u8, shared.written(), "Retrying download: second.pkg") != null);
+}
+
+test "bootstrap preserves multiline dependency failures and technical details" {
+    var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer output.deinit();
+    var diagnostics: DiagnosticOutput = .{ .stderr = &output.writer };
+    const message = "\"first\" requires \"missing-lib>=2.0\", which could not be satisfied.\n" ++
+        "\"second\" requires \"other-lib=3\", which could not be satisfied.\n\n" ++
+        "Technical details: UnsatisfiedDependencies";
+    DiagnosticOutput.handleError(&diagnostics, .{ .message = message });
+    try std.testing.expectEqualStrings("Could not provision the isolated build root: " ++ message ++ "\n", output.written());
 }
