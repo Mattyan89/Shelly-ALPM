@@ -1,5 +1,7 @@
 //! Dependency string parsing and variable-reference resolution.
 const std = @import("std");
+const shell_word = @import("word.zig");
+const diagnostics = @import("diagnostics");
 const types = @import("types.zig");
 const shell_scan = @import("shell_scan.zig");
 const expansion = @import("expansion.zig");
@@ -46,7 +48,10 @@ fn match_array_expansion(text: []const u8) !?ArrayExpansion {
     if (!std.mem.startsWith(u8, text, "${") or !std.mem.endsWith(u8, text, "}")) return null;
     const name_end = shell_scan.scan_word_chars(text, 2);
     if (name_end == 2 or !std.mem.startsWith(u8, text[name_end..], "[")) return null;
-    if (!std.mem.startsWith(u8, text[name_end..], "[@]")) return error.UnsupportedArrayExpansion;
+    if (!std.mem.startsWith(u8, text[name_end..], "[@]")) {
+        if (try expansion.match_array_element(text) != null) return null;
+        return error.UnsupportedArrayExpansion;
+    }
     const rest = text[name_end + 3 .. text.len - 1];
     if (rest.len == 0) return .{ .name = text[2..name_end] };
     if (rest[0] != '#' and rest[0] != '%') return error.UnsupportedArrayExpansion;
@@ -114,11 +119,13 @@ fn resolve_variable_references_mode(self: PkgbuildParser, content: []const u8, v
     }
 
     for (items) |item| {
-        const word = try @import("word.zig").read(self.allocator, item, 0);
+        const word = try shell_word.read(self.allocator, item, 0);
         defer word.deinit(self.allocator);
         var reference: ?ArrayExpansion = null;
         if (!shell_scan.contains_command_substitution(item)) for (word.parts) |part| {
             if (part.kind != .parameter) continue;
+            if (try expansion.match_array_element(item[part.start..part.end]) != null and !part.quoted)
+                return error.UnsupportedArrayExpansion;
             if (try match_array_expansion(item[part.start..part.end])) |matched| {
                 if (word.parts.len != 1) return error.UnsupportedArrayExpansion;
                 // Trimming unquoted arrays also invokes word splitting and
@@ -157,7 +164,9 @@ fn resolve_variable_references_mode(self: PkgbuildParser, content: []const u8, v
                 try resolved.append(self.allocator, value);
             }
         } else {
-            const value = try expansion.resolve_word(self, item, vars);
+            var word_parser = self;
+            word_parser.array_reference_content = content;
+            const value = try expansion.resolve_word(word_parser, item, vars);
             errdefer self.allocator.free(value.value);
             if (value.unresolved) if (self.deferred_source_words) |deferred| try deferred.put(@intFromPtr(value.value.ptr), {});
             try resolved.append(self.allocator, value.value);
@@ -170,7 +179,7 @@ fn resolve_variable_references_mode(self: PkgbuildParser, content: []const u8, v
             cleaned = strip_dangling_operator(dep);
         }
         if (!std.mem.eql(u8, cleaned, dep)) {
-            std.debug.print("Could not resolve dependency version constraint {0f}; using {1f}. Review the dependency requirements before building.\n", .{ @import("diagnostics").safe(dep), @import("diagnostics").safe(cleaned) });
+            std.debug.print("Could not resolve dependency version constraint {0f}; using {1f}. Review the dependency requirements before building.\n", .{ diagnostics.safe(dep), diagnostics.safe(cleaned) });
             const cleaned_owned = try self.allocator.dupe(u8, cleaned);
             self.allocator.free(dep);
             resolved.items[idx] = cleaned_owned;

@@ -1,5 +1,6 @@
 const std = @import("std");
-const Zigalpm = @import("Zigalpm");
+const diagnostics = @import("diagnostics");
+const PackageManager = @import("PackageManager");
 const test_support = @import("test_support.zig");
 const output = @import("../output/config.zig");
 const standard_single_pane = @import("../output/standard_single_pane.zig");
@@ -28,15 +29,15 @@ const Options = struct {
     aur_cache: bool = false,
     aur_cache_root: ?[]const u8 = null,
     plan_only: bool = false,
-    cache_plan: ?*const Zigalpm.alpm.CacheRemovalPlan = null,
-    aur_cache_plans: ?[]const Zigalpm.alpm.CacheRemovalPlan = null,
+    cache_plan: ?*const PackageManager.Manager.CacheRemovalPlan = null,
+    aur_cache_plans: ?[]const PackageManager.Manager.CacheRemovalPlan = null,
 };
 
 const Result = struct {
     targets: []const [:0]const u8 = &.{},
     owns_targets: bool = false,
-    cache_plan: ?Zigalpm.alpm.CacheRemovalPlan = null,
-    aur_cache_plans: []Zigalpm.alpm.CacheRemovalPlan = &.{},
+    cache_plan: ?PackageManager.Manager.CacheRemovalPlan = null,
+    aur_cache_plans: []PackageManager.Manager.CacheRemovalPlan = &.{},
 
     fn deinit(self: *Result, allocator: std.mem.Allocator) void {
         if (self.owns_targets) {
@@ -53,13 +54,14 @@ const Real = struct {
     pub fn run(
         _: Real,
         context: *runtime.RuntimeContext,
-        operation_context: *Zigalpm.OperationContext,
+        operation_context: *PackageManager.OperationContext,
         backend: Backend,
         options: Options,
     ) !Result {
         switch (backend) {
             .standard => {
-                const manager = try Zigalpm.AlpmManager.init(context.allocator, context.environ, .{
+                const manager = try PackageManager.Manager.init(context.allocator, context.environ, .{
+                    .config_path = context.config_path,
                     .use_root = true,
                     .operation_context = operation_context,
                 });
@@ -75,12 +77,12 @@ const Real = struct {
 
                 if (!planning and options.cache_versions != null) {
                     const cache_plan = options.cache_plan orelse return PurifyError.CachePlanMissing;
-                    var cache_manager = Zigalpm.alpm.CacheManager.init(
+                    var cache_manager = PackageManager.Manager.CacheManager.init(
                         context.allocator,
                         context.io,
                         .{
                             .cache_directory = cache_plan.cache_directory,
-                            .handle = manager.handle,
+                            .manager = manager,
                         },
                     );
                     cache_manager.setOperationContext(operation_context);
@@ -95,12 +97,12 @@ const Real = struct {
 
                 if (planning) {
                     if (options.cache_versions) |keep| {
-                        var cache_manager = Zigalpm.alpm.CacheManager.init(
+                        var cache_manager = PackageManager.Manager.CacheManager.init(
                             context.allocator,
                             context.io,
                             .{
                                 .cache_directory = manager.config.cache_directory,
-                                .handle = manager.handle,
+                                .manager = manager,
                             },
                         );
                         cache_manager.setOperationContext(operation_context);
@@ -122,13 +124,13 @@ const Real = struct {
                 return result;
             },
             .flatpak => {
-                var manager = Zigalpm.FlatpakManager{ .allocator = context.allocator, .io = context.io };
+                var manager = PackageManager.FlatpakManager{ .allocator = context.allocator, .io = context.io };
                 defer manager.deinit();
                 try manager.setOperationContext(operation_context);
                 defer manager.setOperationContext(null) catch {};
                 if (options.plan_only or options.dry_run) {
                     const dependencies = try manager.list_unused_dependencies();
-                    defer Zigalpm.flatpak.UnusedDependency.deinitSlice(context.allocator, dependencies);
+                    defer PackageManager.flatpak.UnusedDependency.deinitSlice(context.allocator, dependencies);
                     const targets = try context.allocator.alloc([:0]const u8, dependencies.len);
                     var initialized: usize = 0;
                     errdefer {
@@ -162,7 +164,7 @@ pub fn dispatch(
         const arguments = try elevatedPurifyArguments(context, invocation);
         defer context.allocator.free(arguments);
         const elevated_exit = elevation.relaunchIfNeeded(context, arguments) catch |err| {
-            try context.stderr.print("Could not obtain administrator privileges for unneeded-package removal. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+            try context.stderr.print("Could not obtain administrator privileges for unneeded-package removal. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
             return 1;
         };
         if (elevated_exit) |exit_code| return exit_code;
@@ -217,7 +219,7 @@ fn buildPlan(
     options: Options,
     runner: anytype,
 ) anyerror!Result {
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     defer operation_context.deinit();
     var plan_options = options;
     plan_options.plan_only = true;
@@ -258,7 +260,7 @@ fn confirmPurify(context: *runtime.RuntimeContext) !bool {
 }
 
 fn confirmPurifyUi(context: *runtime.RuntimeContext, backend: Backend) !bool {
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     defer operation_context.deinit();
     var question_responder: ui_operation.QuestionResponder = .{
         .context = context,
@@ -315,7 +317,7 @@ fn executeStandard(
         pub fn run(
             self: *@This(),
             runtime_context: *runtime.RuntimeContext,
-            operation_context: *Zigalpm.OperationContext,
+            operation_context: *PackageManager.OperationContext,
             _: *const parser.Invocation,
         ) !void {
             self.result = try self.runner.run(
@@ -349,7 +351,7 @@ fn executeQuiet(
     options: Options,
     runner: anytype,
 ) anyerror!u8 {
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
     if (invocation.globals.no_confirm) {
@@ -363,7 +365,7 @@ fn executeQuiet(
         backend,
         options,
     ) catch |err| {
-        try context.stderr.print("Could not remove unneeded packages. {0s}\n\nTechnical details: {1s}\n", .{ @import("diagnostics").cause(err), @errorName(err) });
+        try context.stderr.print("Could not remove unneeded packages. {0s}\n\nTechnical details: {1s}\n", .{ diagnostics.cause(err), @errorName(err) });
         return 1;
     };
     defer result.deinit(context.allocator);
@@ -377,7 +379,7 @@ fn executeUi(
     options: Options,
     runner: anytype,
 ) anyerror!u8 {
-    var operation_context = Zigalpm.OperationContext.init(context.allocator, context.io);
+    var operation_context = PackageManager.OperationContext.init(context.allocator, context.io);
     context.attachTransactionLog(&operation_context);
     defer operation_context.deinit();
     var question_responder: ui_operation.QuestionResponder = .{
@@ -403,7 +405,7 @@ fn executeUi(
         backend,
         options,
     ) catch |err| {
-        const message = try std.fmt.allocPrint(context.allocator, "Could not remove unneeded packages. {0s}\n\nTechnical details: {1s}", .{ @import("diagnostics").cause(err), @errorName(err) });
+        const message = try std.fmt.allocPrint(context.allocator, "Could not remove unneeded packages. {0s}\n\nTechnical details: {1s}", .{ diagnostics.cause(err), @errorName(err) });
         defer context.allocator.free(message);
         try output.writeErrorFrame(context, message);
         try output.writeAlpmInfoFrame(context, "TransactionFailed", failureMessage(backend));
@@ -420,7 +422,7 @@ fn executeUi(
 fn appendCacheTargets(
     allocator: std.mem.Allocator,
     result: *Result,
-    cache_plan: *const Zigalpm.alpm.CacheRemovalPlan,
+    cache_plan: *const PackageManager.Manager.CacheRemovalPlan,
     label: []const u8,
 ) !void {
     std.debug.assert(result.owns_targets);
@@ -543,7 +545,7 @@ fn writePlanFailure(
     err: anyerror,
 ) !void {
     if (backend == .flatpak) {
-        if (Zigalpm.flatpak.errors.unavailableMessage(err)) |message| {
+        if (PackageManager.flatpak.errors.unavailableMessage(err)) |message| {
             if (invocation.globals.ui_mode)
                 try output.writeErrorFrame(context, message)
             else if (invocation.globals.json)
@@ -556,7 +558,7 @@ fn writePlanFailure(
     const message = try std.fmt.allocPrint(
         context.allocator,
         "Could not determine which {0f} packages can be removed. {1s}\n\nTechnical details: {2s}",
-        .{ @import("diagnostics").safe(@tagName(backend)), @import("diagnostics").cause(err), @errorName(err) },
+        .{ diagnostics.safe(@tagName(backend)), diagnostics.cause(err), @errorName(err) },
     );
     defer context.allocator.free(message);
     if (invocation.globals.ui_mode)
@@ -761,7 +763,7 @@ test "AUR cache cleanup previews files and deletes only after confirmation" {
     const Runner = struct {
         mutations: usize = 0,
 
-        fn run(self: *@This(), context: *runtime.RuntimeContext, operations: *Zigalpm.OperationContext, backend: Backend, options: Options) !Result {
+        fn run(self: *@This(), context: *runtime.RuntimeContext, operations: *PackageManager.OperationContext, backend: Backend, options: Options) !Result {
             try std.testing.expectEqual(Backend.standard, backend);
             try std.testing.expect(options.aur_cache);
             if (options.plan_only) {
@@ -840,7 +842,7 @@ test "destructive purify shows its plan before confirmation and mutates only aft
         pub fn run(
             self: *@This(),
             runtime_context: *runtime.RuntimeContext,
-            _: *Zigalpm.OperationContext,
+            _: *PackageManager.OperationContext,
             _: Backend,
             options: Options,
         ) !Result {
@@ -850,7 +852,7 @@ test "destructive purify shows its plan before confirmation and mutates only aft
                 try std.testing.expectEqual(@as(?usize, 3), options.cache_versions);
                 const cache_directory = try runtime_context.allocator.dupe(u8, "/tmp/cache");
                 errdefer runtime_context.allocator.free(cache_directory);
-                const cache_items = try runtime_context.allocator.alloc(Zigalpm.alpm.CacheRemovalItem, 0);
+                const cache_items = try runtime_context.allocator.alloc(PackageManager.Manager.CacheRemovalItem, 0);
                 return .{
                     .targets = &.{ "orphan-one", "[cache] cached-one 1.0-1 (12 B)" },
                     .cache_plan = .{
@@ -907,7 +909,7 @@ test "empty purify plans skip confirmation and backend mutation" {
         pub fn run(
             self: *@This(),
             _: *runtime.RuntimeContext,
-            _: *Zigalpm.OperationContext,
+            _: *PackageManager.OperationContext,
             _: Backend,
             options: Options,
         ) !Result {
@@ -942,7 +944,7 @@ test "no-confirm JSON emits one plan before quiet execution" {
         pub fn run(
             self: *@This(),
             _: *runtime.RuntimeContext,
-            _: *Zigalpm.OperationContext,
+            _: *PackageManager.OperationContext,
             _: Backend,
             options: Options,
         ) !Result {
@@ -975,7 +977,7 @@ test "routes purify backends and preserves standard result formats" {
         pub fn run(
             self: *@This(),
             _: *runtime.RuntimeContext,
-            _: *Zigalpm.OperationContext,
+            _: *PackageManager.OperationContext,
             backend: Backend,
             options: Options,
         ) !Result {
@@ -1028,7 +1030,7 @@ test "purify UI emits result and transaction frames" {
         pub fn run(
             _: @This(),
             _: *runtime.RuntimeContext,
-            _: *Zigalpm.OperationContext,
+            _: *PackageManager.OperationContext,
             _: Backend,
             _: Options,
         ) !Result {
@@ -1083,7 +1085,7 @@ test "purify UI presents the plan before a compatible confirmation frame" {
         pub fn run(
             self: *@This(),
             _: *runtime.RuntimeContext,
-            _: *Zigalpm.OperationContext,
+            _: *PackageManager.OperationContext,
             _: Backend,
             options: Options,
         ) !Result {
@@ -1139,7 +1141,7 @@ test "purify backend failures return nonzero" {
         pub fn run(
             _: @This(),
             _: *runtime.RuntimeContext,
-            _: *Zigalpm.OperationContext,
+            _: *PackageManager.OperationContext,
             _: Backend,
             _: Options,
         ) !Result {

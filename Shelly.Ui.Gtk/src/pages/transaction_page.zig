@@ -368,7 +368,12 @@ pub const TransactionPage = extern struct {
                 appendAlpmProgress(self, pr);
 
                 if (is_transaction_phase(pr.progress_type)) {
-                    setLabel(self.priv().status_label, phase_label(pr.progress_type));
+                    var phase_buffer: [1024]u8 = undefined;
+                    const label = if (nonEmpty(pr.message)) |message|
+                        std.fmt.bufPrint(&phase_buffer, "{s}: {s}", .{ message, pr.package_name }) catch message
+                    else
+                        phase_label(pr.progress_type);
+                    setLabel(self.priv().status_label, label);
                     return;
                 }
 
@@ -1044,9 +1049,15 @@ pub const TransactionPage = extern struct {
                 pending.on_dismiss = &dismiss_question;
                 pending.dismiss_ctx = self;
 
+                const a = pending.arena.allocator();
+                const provider_title = if (q.prompt.len == 0)
+                    "Select Provider"
+                else
+                    std.fmt.allocPrint(a, "Select a provider for {s}", .{q.prompt}) catch "Select Provider";
+
                 const dialog = ProviderDialog.new(
-                    pending.arena.allocator(),
-                    "Select Provider",
+                    a,
+                    provider_title,
                     q.options,
                     &on_single_select_response,
                     pending,

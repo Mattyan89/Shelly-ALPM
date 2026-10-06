@@ -98,7 +98,8 @@ temp dir leaves the real `/etc/pacman.d/gnupg` untouched.
 ### Prerequisites
 
 The source keyring files must exist under the `--populate-from` directory
-(default `/usr/share/pacman/keyrings`). On Arch they are provided by the
+(default `/usr/share/pacman/keyrings`, or `/usr/share/shelly/keyrings` when built
+with `-Dpath-profile=devario`). On Arch they are provided by the
 `archlinux-keyring` package. For each keyring `<id>` the populate pipeline may
 read:
 

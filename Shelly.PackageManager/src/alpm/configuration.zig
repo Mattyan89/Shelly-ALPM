@@ -1,6 +1,9 @@
 const std = @import("std");
+const paths = @import("paths");
 const Io = std.Io;
-const Bindings = @import("bindings.zig");
+const Bindings = struct {
+    pub const libalpm = @import("types.zig");
+};
 const Allocator = std.mem.Allocator;
 
 const equalIgnoreCase = std.ascii.eqlIgnoreCase;
@@ -35,16 +38,29 @@ inline fn usageBit(flag: DatabaseUsage) u32 {
     return @intFromEnum(flag);
 }
 
+pub const ParseError = Allocator.Error || error{ ConfigReadFailed, InvalidHookDirMode };
+
 pub const Configuration = struct {
     pub const Repository = struct {
         name: []const u8,
         servers: std.ArrayList([]const u8) = .empty,
+        cache_servers: std.ArrayList([]const u8) = .empty,
         sig_level: u32 = sig(.{ .use_default = true }),
         usage: u32 = 0,
     };
 
     pub const Config = struct {
         arena: *std.heap.ArenaAllocator,
+        cache_directories: std.ArrayList([:0]const u8) = .empty,
+        architectures: std.ArrayList([:0]const u8) = .empty,
+        assume_installed: std.ArrayList([:0]const u8) = .empty,
+        parallel_downloads: ?u8 = null,
+        sandbox_user: ?[:0]const u8 = null,
+        disable_sandbox: bool = false,
+        disable_sandbox_filesystem: bool = false,
+        disable_sandbox_syscalls: bool = false,
+        disable_sandbox_network: bool = false,
+        disable_download_timeout: bool = false,
 
         root_directory: [:0]const u8,
         database_path: [:0]const u8,
@@ -73,10 +89,10 @@ pub const Configuration = struct {
             var conf = Config{
                 .arena = arena,
                 .root_directory = "/",
-                .database_path = "/var/lib/pacman",
-                .cache_directory = "/var/cache/pacman/pkg",
-                .log_file = "/var/log/shelly.log",
-                .gpg_directory = "/etc/pacman.d/gnupg",
+                .database_path = paths.database,
+                .cache_directory = paths.cache,
+                .log_file = paths.log,
+                .gpg_directory = paths.keyring,
                 .hook_directory = .empty,
                 .hold_packages = .empty,
                 .transfer_command = "/usr/bin/curl -L -C - -f -o %o %u",
@@ -95,8 +111,7 @@ pub const Configuration = struct {
                 .local_file_signature_level = sig(.{ .package_optional = true }) | sig(.{ .database_optional = true }),
                 .remote_file_signature_level = sig(.{ .package = true }) | sig(.{ .database = true }),
             };
-            try conf.hook_directory.append(alloc, "/usr/share/libalpm/hooks");
-            try conf.hook_directory.append(alloc, "/etc/pacman.d/hooks");
+            try conf.hook_directory.appendSlice(alloc, &paths.hook_directories);
             try conf.hold_packages.append(alloc, "pacman");
             try conf.hold_packages.append(alloc, "glibc");
             try conf.hold_packages.append(alloc, "shelly");
@@ -704,7 +719,15 @@ pub const Configuration = struct {
         }
     }
 
-    pub fn parse(gpa: Allocator, io: Io, path: []const u8) Allocator.Error!Config {
+    pub fn parse(gpa: Allocator, io: Io, path: []const u8) ParseError!Config {
+        return parseWithReadPolicy(gpa, io, path, false);
+    }
+
+    pub fn parseStrict(gpa: Allocator, io: Io, path: []const u8) ParseError!Config {
+        return parseWithReadPolicy(gpa, io, path, true);
+    }
+
+    fn parseWithReadPolicy(gpa: Allocator, io: Io, path: []const u8, strict_reads: bool) ParseError!Config {
         const arena = try gpa.create(std.heap.ArenaAllocator);
         errdefer gpa.destroy(arena);
         arena.* = .init(gpa);
@@ -716,13 +739,14 @@ pub const Configuration = struct {
             .scratch_allocator = gpa,
             .arena_allocater = arena.allocator(),
             .config = &conf,
+            .strict_reads = strict_reads,
         };
         try parser.parse_file(path);
         try parser.finish();
         return conf;
     }
 
-    pub fn parse_string(gpa: Allocator, io: Io, text: []const u8) Allocator.Error!Config {
+    pub fn parse_string(gpa: Allocator, io: Io, text: []const u8) ParseError!Config {
         const arena = try gpa.create(std.heap.ArenaAllocator);
         errdefer gpa.destroy(arena);
         arena.* = .init(gpa);
@@ -812,11 +836,17 @@ pub const Configuration = struct {
         config: *Config,
         section: []const u8 = "",
         current_repository: ?Repository = null,
+        strict_reads: bool = false,
         depth: usize = 0,
+        configured_hooks: std.ArrayList([:0]const u8) = .empty,
+        replace_hooks: bool = false,
 
-        fn parse_file(self: *Parser, path: []const u8) Allocator.Error!void {
+        fn parse_file(self: *Parser, path: []const u8) ParseError!void {
             if (self.depth >= max_include_depth) return;
-            const bytes = read_whole_file(self.io, self.scratch_allocator, path) catch return;
+            const bytes = read_whole_file(self.io, self.scratch_allocator, path) catch {
+                if (self.strict_reads) return error.ConfigReadFailed;
+                return;
+            };
             defer self.scratch_allocator.free(bytes);
 
             self.depth += 1;
@@ -824,7 +854,7 @@ pub const Configuration = struct {
             try self.parse_buffer(bytes);
         }
 
-        fn parse_buffer(self: *Parser, bytes: []const u8) Allocator.Error!void {
+        fn parse_buffer(self: *Parser, bytes: []const u8) ParseError!void {
             var lines = std.mem.splitScalar(u8, bytes, '\n');
             while (lines.next()) |raw| {
                 const line = std.mem.trim(u8, raw, " \t\r\n");
@@ -862,20 +892,27 @@ pub const Configuration = struct {
             }
         }
 
-        fn parse_option(self: *Parser, key: []const u8, value: []const u8) Allocator.Error!void {
+        fn parse_option(self: *Parser, key: []const u8, value: []const u8) ParseError!void {
             const c = self.config;
             if (equalIgnoreCase(key, "rootdir")) {
                 c.root_directory = try self.dupe(value);
             } else if (equalIgnoreCase(key, "dbpath")) {
                 c.database_path = try self.dupe(value);
             } else if (equalIgnoreCase(key, "cachedir")) {
-                c.cache_directory = try self.dupe(value);
+                try self.add_split(&c.cache_directories, value);
+                if (c.cache_directories.items.len != 0) c.cache_directory = c.cache_directories.items[0];
             } else if (equalIgnoreCase(key, "logfile")) {
                 c.log_file = try self.dupe(value);
             } else if (equalIgnoreCase(key, "gpgdir")) {
                 c.gpg_directory = try self.dupe(value);
             } else if (equalIgnoreCase(key, "hookdir")) {
-                try self.add_split(&c.hook_directory, value);
+                try self.add_split(&self.configured_hooks, value);
+            } else if (equalIgnoreCase(key, "hookdirmode")) {
+                if (equalIgnoreCase(value, "replace")) {
+                    self.replace_hooks = true;
+                } else if (equalIgnoreCase(value, "append")) {
+                    self.replace_hooks = false;
+                } else return error.InvalidHookDirMode;
             } else if (equalIgnoreCase(key, "holdpkg")) {
                 c.hold_packages.clearRetainingCapacity();
                 try self.add_split(&c.hold_packages, value);
@@ -901,6 +938,23 @@ pub const Configuration = struct {
                 } else |_| {}
             } else if (equalIgnoreCase(key, "architecture")) {
                 c.architecture = try self.dupe(value);
+                try self.add_split(&c.architectures, value);
+            } else if (equalIgnoreCase(key, "assumeinstalled")) {
+                try self.add_split(&c.assume_installed, value);
+            } else if (equalIgnoreCase(key, "paralleldownloads")) {
+                c.parallel_downloads = std.fmt.parseInt(u8, value, 10) catch 0;
+            } else if (equalIgnoreCase(key, "downloaduser")) {
+                c.sandbox_user = try self.dupe(value);
+            } else if (equalIgnoreCase(key, "disabledownloadtimeout")) {
+                c.disable_download_timeout = true;
+            } else if (equalIgnoreCase(key, "disablesandbox")) {
+                c.disable_sandbox = true;
+            } else if (equalIgnoreCase(key, "disablesandboxfilesystem")) {
+                c.disable_sandbox_filesystem = true;
+            } else if (equalIgnoreCase(key, "disablesandboxsyscalls")) {
+                c.disable_sandbox_syscalls = true;
+            } else if (equalIgnoreCase(key, "disablesandboxnetwork")) {
+                c.disable_sandbox_network = true;
             } else if (equalIgnoreCase(key, "ignorepkg")) {
                 try self.add_split(&c.ignore_package, value);
             } else if (equalIgnoreCase(key, "ignoregroup")) {
@@ -926,6 +980,8 @@ pub const Configuration = struct {
             const repo = &self.current_repository.?;
             if (equalIgnoreCase(key, "server")) {
                 try repo.servers.append(self.arena_allocater, try self.dupe(value));
+            } else if (equalIgnoreCase(key, "cacheserver")) {
+                try repo.cache_servers.append(self.arena_allocater, try self.dupe(value));
             } else if (equalIgnoreCase(key, "siglevel")) {
                 repo.sig_level = parse_signature_level(value);
             } else if (equalIgnoreCase(key, "usage")) {
@@ -934,6 +990,8 @@ pub const Configuration = struct {
         }
 
         fn finish(self: *Parser) Allocator.Error!void {
+            if (self.replace_hooks) self.config.hook_directory.clearRetainingCapacity();
+            try self.config.hook_directory.appendSlice(self.arena_allocater, self.configured_hooks.items);
             if (self.current_repository) |repo| {
                 try self.config.repositories.append(self.arena_allocater, repo);
                 self.current_repository = null;
@@ -960,7 +1018,7 @@ test "empty input yields defaults" {
     defer conf.deinitialize();
 
     try testing.expectEqualStrings("/", conf.root_directory);
-    try testing.expectEqualStrings("/var/lib/pacman", conf.database_path);
+    try testing.expectEqualStrings(paths.database, conf.database_path);
     try testing.expectEqual(@as(usize, 0), conf.repositories.items.len);
     try testing.expectEqual(@as(usize, 3), conf.hold_packages.items.len);
     try testing.expectEqual(sig(.{ .package = true }) | sig(.{ .database = true }) | sig(.{ .database_optional = true }), conf.signature_level);
@@ -1657,4 +1715,50 @@ test "remove_repository is a no-op for unknown repositories" {
     );
     defer testing.allocator.free(rewritten);
     try testing.expectEqualStrings(original, rewritten);
+}
+
+test "hook policy preserves additive defaults and replaces them independent of directive order" {
+    var additive = try Configuration.parse_string(testing.allocator, testing.io, "[options]\nHookDir = /custom/hooks\n");
+    defer additive.deinitialize();
+    try testing.expectEqual(@as(usize, 3), additive.hook_directory.items.len);
+    try testing.expectEqualStrings(paths.system_hooks, additive.hook_directory.items[0]);
+    try testing.expectEqualStrings(paths.admin_hooks, additive.hook_directory.items[1]);
+    try testing.expectEqualStrings("/custom/hooks", additive.hook_directory.items[2]);
+    for ([_][]const u8{
+        "[options]\nHookDirMode = Replace\nHookDir = /usr/share/rlpm/hooks/\nHookDir = /etc/shelly.d/hooks/\n",
+        "[options]\nHookDir = /usr/share/rlpm/hooks/\nHookDirMode = Replace\nHookDir = /etc/shelly.d/hooks/\n",
+    }) |input| {
+        var replacement = try Configuration.parse_string(testing.allocator, testing.io, input);
+        defer replacement.deinitialize();
+        try testing.expectEqual(@as(usize, 2), replacement.hook_directory.items.len);
+        try testing.expectEqualStrings("/usr/share/rlpm/hooks/", replacement.hook_directory.items[0]);
+        try testing.expectEqualStrings("/etc/shelly.d/hooks/", replacement.hook_directory.items[1]);
+    }
+    var empty = try Configuration.parse_string(testing.allocator, testing.io, "[options]\nHookDirMode = Replace\n");
+    defer empty.deinitialize();
+    try testing.expectEqual(@as(usize, 0), empty.hook_directory.items.len);
+    try testing.expectError(error.InvalidHookDirMode, Configuration.parse_string(testing.allocator, testing.io, "[options]\nHookDirMode = typo\n"));
+}
+
+test "strict configuration rejects missing explicit files and preserves hook policy across includes" {
+    var temporary = testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const directory = try temporary.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(directory);
+    const config_path = try std.fs.path.join(testing.allocator, &.{ directory, "custom.conf" });
+    defer testing.allocator.free(config_path);
+    try testing.expectError(error.ConfigReadFailed, Configuration.parseStrict(testing.allocator, testing.io, config_path));
+    const include_path = try std.fs.path.join(testing.allocator, &.{ directory, "hooks.conf" });
+    defer testing.allocator.free(include_path);
+    const contents = try std.fmt.allocPrint(testing.allocator, "[options]\nHookDir = /first\nInclude = {s}\nHookDir = /last\n", .{include_path});
+    defer testing.allocator.free(contents);
+    try temporary.dir.writeFile(testing.io, .{ .sub_path = "custom.conf", .data = contents });
+    try testing.expectError(error.ConfigReadFailed, Configuration.parseStrict(testing.allocator, testing.io, config_path));
+    try temporary.dir.writeFile(testing.io, .{ .sub_path = "hooks.conf", .data = "HookDirMode = Replace\nHookDir = /middle\n" });
+    var config = try Configuration.parseStrict(testing.allocator, testing.io, config_path);
+    defer config.deinitialize();
+    try testing.expectEqual(@as(usize, 3), config.hook_directory.items.len);
+    try testing.expectEqualStrings("/first", config.hook_directory.items[0]);
+    try testing.expectEqualStrings("/middle", config.hook_directory.items[1]);
+    try testing.expectEqualStrings("/last", config.hook_directory.items[2]);
 }

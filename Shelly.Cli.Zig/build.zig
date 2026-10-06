@@ -4,6 +4,8 @@ const package_manifest = @import("build.zig.zon");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const path_profile = b.option([]const u8, "path-profile", "Distribution path defaults: pacman or devario") orelse "pacman";
+    const enable_libalpm = b.option(bool, "libalpm", "Include the libalpm backend alongside RLPM") orelse true;
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
     const flatpak_backend_path = b.option(
         []const u8,
@@ -11,12 +13,14 @@ pub fn build(b: *std.Build) void {
         "Absolute path to the Shelly Flatpak backend shared library",
     ) orelse "/usr/lib/shelly/libshelly-flatpak-backend.so.1";
 
-    const zigalpm_dependency = b.dependency("zigalpm", .{
+    const package_manager_dependency = b.dependency("package_manager", .{
+        .libalpm = enable_libalpm,
+        .@"path-profile" = path_profile,
         .target = target,
         .optimize = optimize,
         .@"flatpak-backend-path" = flatpak_backend_path,
     });
-    const zigalpm = zigalpm_dependency.module("Zigalpm");
+    const package_manager = package_manager_dependency.module("PackageManager");
 
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "version", package_manifest.version);
@@ -27,7 +31,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     cli.addImport("diagnostics", diagnostics);
-    cli.addImport("Zigalpm", zigalpm);
+    cli.addImport("PackageManager", package_manager);
     cli.addOptions("build_options", build_options);
 
     const executable_module = b.createModule(.{
@@ -37,7 +41,7 @@ pub fn build(b: *std.Build) void {
     });
     executable_module.addImport("diagnostics", diagnostics);
     executable_module.addImport("Shelly_Cli_Zig", cli);
-    executable_module.addImport("Zigalpm", zigalpm);
+    executable_module.addImport("PackageManager", package_manager);
 
     const executable = b.addExecutable(.{
         .name = "shelly",
@@ -52,6 +56,13 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run Shelly");
     run_step.dependOn(&run_command.step);
+
+    const configuration_tests = b.addTest(.{
+        .root_module = cli,
+        .filters = &.{ "global config", "config selection", "keyring config", "shellystrap", "hook replacements" },
+    });
+    const configuration_step = b.step("configuration-test", "Test native configuration selection and subprocess forwarding");
+    configuration_step.dependOn(&b.addRunArtifact(configuration_tests).step);
 
     const module_tests = b.addTest(.{
         .root_module = cli,
@@ -97,13 +108,20 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     builder_test_module.addImport("diagnostics", diagnostics);
-    builder_test_module.addImport("Zigalpm", zigalpm);
+    builder_test_module.addImport("PackageManager", package_manager);
     builder_test_module.addOptions("build_options", build_options);
+    const bootstrap_configuration_tests = b.addTest(.{
+        .name = "bootstrap-configuration-test",
+        .root_module = builder_test_module,
+        .filters = &.{"shellystrap"},
+    });
+    configuration_step.dependOn(&b.addRunArtifact(bootstrap_configuration_tests).step);
     const builder_tests = b.addTest(.{
         .name = "builder-command-test",
         .root_module = builder_test_module,
         .filters = &.{
             "makesrcinfo emits clean stdout and never runs lifecycle functions",
+            "compression presets",
             "review-only accepts Heroic array trimming",
             "review-only accepts filesystem here-strings",
             "sync deps",
@@ -121,6 +139,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     const run_builder_tests = b.addRunArtifact(builder_tests);
+    b.step("builder-command-test", "Test native build command configuration and coordinator transport").dependOn(&run_builder_tests.step);
     test_step.dependOn(&run_builder_tests.step);
     const source_key_test_step = b.step("isolated-source-keys-test", "Test isolated source key approval, transport, and signature verification");
     source_key_test_step.dependOn(&run_builder_tests.step);
@@ -131,11 +150,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     isolated_test_module.addImport("diagnostics", diagnostics);
-    isolated_test_module.addImport("Zigalpm", zigalpm);
+    isolated_test_module.addImport("PackageManager", package_manager);
     const isolated_tests = b.addTest(.{
         .name = "isolated-build-test",
         .root_module = isolated_test_module,
         .filters = &.{
+            "shellystrap",
             "isolated pkgver",
             "reviewed input paths cannot escape the staged source root",
             "isolated command failures preserve the stage and native exit code",

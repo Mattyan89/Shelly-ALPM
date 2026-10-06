@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const bindings = @import("Shelly_Ui_Gtk");
 const glib = bindings.glib;
 const JsonPackFrame = @import("../helpers/ui_decode.zig").JsonPackFrame;
@@ -572,7 +573,7 @@ pub const ShellyOperation = struct {
         }
 
         const term = self.child.wait(self.io) catch |err| {
-            log.debug("Could not collect the result of the requested operation. {0s} Its final status could not be confirmed.\n\nTechnical details: {1s}", .{ @import("diagnostics").cause(err), @errorName(err) });
+            log.debug("Could not collect the result of the requested operation. {0s} Its final status could not be confirmed.\n\nTechnical details: {1s}", .{ diagnostics.cause(err), @errorName(err) });
             post_done(self, 255);
             return;
         };
@@ -872,12 +873,6 @@ fn parseSelection(op: *ShellyOperation, json: []const u8, kind: []const u8) !?*P
 
     if (std.mem.eql(u8, kind, "q.optdeps")) {
         pending.request = .{ .select_many = .{
-            .question_id = qid,
-            .prompt = qa.dupe(u8, e.value.QuestionText) catch "",
-            .options = opts,
-        } };
-    } else if (std.mem.eql(u8, kind, "q.provider")) {
-        pending.request = .{ .select_one = .{
             .question_id = qid,
             .prompt = qa.dupe(u8, e.value.QuestionText) catch "",
             .options = opts,

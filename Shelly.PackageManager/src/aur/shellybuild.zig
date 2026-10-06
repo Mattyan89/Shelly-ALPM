@@ -1,6 +1,8 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const toml = @import("toml");
 const process_runner = @import("builder.zig");
+const compression = @import("archive").compression_policy;
 
 pub const system_path = "/etc/shellybuild.conf";
 pub const file_name = "shellybuild.conf";
@@ -30,6 +32,7 @@ pub const BuildConfiguration = struct {
 pub const PackageConfiguration = struct {
     packager: []const u8,
     extension: []const u8,
+    compression_level: ?compression.Preset = null,
     options: []const []const u8,
     strip_binaries: []const []const u8,
     strip_shared: []const []const u8,
@@ -74,6 +77,7 @@ const BuildLayer = struct {
 const PackageLayer = struct {
     packager: ?[]const u8 = null,
     extension: ?[]const u8 = null,
+    compression_level: ?i64 = null,
     options: ?[]const []const u8 = null,
     strip_binaries: ?[]const []const u8 = null,
     strip_shared: ?[]const []const u8 = null,
@@ -248,6 +252,7 @@ pub const ShellyBuildConfiguration = struct {
         if (layer.package) |package| {
             if (package.packager) |value| self.package.packager = try allocator.dupe(u8, value);
             if (package.extension) |value| self.package.extension = try allocator.dupe(u8, value);
+            if (package.compression_level) |value| self.package.compression_level = try compression.Preset.fromInt(value);
             if (package.options) |value| self.package.options = try duplicateStrings(allocator, value);
             if (package.strip_binaries) |value| self.package.strip_binaries = try duplicateStrings(allocator, value);
             if (package.strip_shared) |value| self.package.strip_shared = try duplicateStrings(allocator, value);
@@ -277,6 +282,7 @@ pub const ShellyBuildConfiguration = struct {
         }
         if (!isValidPackageExtension(self.package.extension))
             return error.InvalidPackageExtension;
+        try @import("archive").validateCompression(self.package.extension, self.package.compression_level);
         if (self.package.sign_key) |key| {
             if (key.len == 0) return error.InvalidConfiguration;
         }
@@ -350,6 +356,13 @@ fn validateKnownKeys(allocator: std.mem.Allocator, content: []const u8, diagnost
         var fields = table.iterator();
         while (fields.next()) |field| {
             if (!containsString(allowed, field.key_ptr.*)) return error.UnknownConfigurationKey;
+            if (std.mem.eql(u8, entry.key_ptr.*, "package") and std.mem.eql(u8, field.key_ptr.*, "compression_level")) {
+                const level = switch (field.value_ptr.*) {
+                    .integer => |value| value,
+                    else => return error.InvalidCompressionLevel,
+                };
+                _ = try compression.Preset.fromInt(level);
+            }
             if (std.mem.eql(u8, entry.key_ptr.*, "build") and std.mem.eql(u8, field.key_ptr.*, "env")) {
                 const environment = switch (field.value_ptr.*) {
                     .table => |value| value,
@@ -379,7 +392,7 @@ fn validateKnownKeys(allocator: std.mem.Allocator, content: []const u8, diagnost
 }
 
 const build_keys: []const []const u8 = &.{ "carch", "chost", "cppflags", "cflags", "cxxflags", "ldflags", "ltoflags", "makeflags", "check", "ccache", "distcc", "distcc_hosts", "extra_path", "env" };
-const package_keys: []const []const u8 = &.{ "packager", "extension", "options", "strip_binaries", "strip_shared", "strip_static", "sign", "sign_key" };
+const package_keys: []const []const u8 = &.{ "packager", "extension", "compression_level", "options", "strip_binaries", "strip_shared", "strip_static", "sign", "sign_key" };
 const destination_keys: []const []const u8 = &.{ "build", "packages", "sources", "logs" };
 const sandbox_keys: []const []const u8 = &.{ "enabled", "extra_read", "extra_write" };
 
@@ -410,7 +423,7 @@ pub fn environmentErrorReason(err: anyerror) []const u8 {
 }
 
 fn writeEnvironmentDiagnostic(writer: ?*std.Io.Writer, name: []const u8, reason: []const u8) !void {
-    if (writer) |output| try output.print("Invalid build.env variable '{f}': {s}.", .{ @import("diagnostics").safe(name), reason });
+    if (writer) |output| try output.print("Invalid build.env variable '{f}': {s}.", .{ diagnostics.safe(name), reason });
 }
 
 fn containsString(values: []const []const u8, expected: []const u8) bool {
@@ -479,6 +492,39 @@ test "shellybuild comment-only sections do not override compiled defaults" {
     try expectOptionalUnset(config.destinations.packages);
     try expectOptionalUnset(config.destinations.sources);
     try expectOptionalUnset(config.destinations.logs);
+}
+
+test "shellybuild compression presets merge without changing omitted defaults" {
+    const allocator = std.testing.allocator;
+    const defaults = try ShellyBuildConfiguration.initFromBuffers(allocator, null, null);
+    defer defaults.deinit();
+    try std.testing.expect(defaults.package.compression_level == null);
+    const system = "[package]\ncompression_level = 2\n";
+    const inherited = try ShellyBuildConfiguration.initFromBuffers(allocator, system, "[package]\npackager = 'User'\n");
+    defer inherited.deinit();
+    try std.testing.expectEqual(compression.Preset.fast, inherited.package.compression_level.?);
+    for (1..6) |level| {
+        const user = try std.fmt.allocPrint(allocator, "[package]\ncompression_level = {d}\n", .{level});
+        defer allocator.free(user);
+        const config = try ShellyBuildConfiguration.initFromBuffers(allocator, system, user);
+        defer config.deinit();
+        try std.testing.expectEqual(level, @intFromEnum(config.package.compression_level.?));
+        try std.testing.expectEqualStrings(".pkg.tar.zst", config.package.extension);
+    }
+}
+
+test "shellybuild compression rejects invalid types ranges and unsupported formats" {
+    const allocator = std.testing.allocator;
+    for ([_][]const u8{ "0", "6", "-1", "9223372036854775807", "3.0", "true", "'3'", "[]" }) |value| {
+        const content = try std.fmt.allocPrint(allocator, "[package]\ncompression_level = {s}\n", .{value});
+        defer allocator.free(content);
+        try std.testing.expectError(error.InvalidCompressionLevel, ShellyBuildConfiguration.initFromBuffers(allocator, content, null));
+    }
+    try std.testing.expectError(error.UnsupportedCompressionPresetFormat, ShellyBuildConfiguration.initFromBuffers(
+        allocator,
+        "[package]\nextension = '.pkg.tar.lz4'\ncompression_level = 3\n",
+        null,
+    ));
 }
 
 test "shellybuild merges system and user files field by field" {

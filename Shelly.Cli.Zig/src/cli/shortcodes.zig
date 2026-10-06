@@ -23,6 +23,22 @@ pub fn translate(
     args: []const []const u8,
 ) !Translation {
     if (args.len == 0) return .{ .unchanged = args };
+    if (std.mem.eql(u8, args[0], "--config") or std.mem.startsWith(u8, args[0], "--config=")) {
+        const count: usize = if (std.mem.eql(u8, args[0], "--config")) 2 else 1;
+        if (args.len <= count) return .{ .unchanged = args };
+        const nested = try translate(allocator, manifest, args[count..]);
+        return switch (nested) {
+            .unchanged => .{ .unchanged = args },
+            .failure => nested,
+            .translated => |translated| .{ .translated = try std.mem.concat(allocator, []const u8, &.{ args[0..count], translated }) },
+            .expanded => |expanded| blk: {
+                const result = try allocator.alloc([]const []const u8, expanded.len);
+                for (expanded, result) |arguments, *destination|
+                    destination.* = try std.mem.concat(allocator, []const u8, &.{ args[0..count], arguments });
+                break :blk .{ .expanded = result };
+            },
+        };
+    }
     const token = args[0];
     if (try translateTopLevelHelp(allocator, manifest, args, token)) |translation|
         return translation;

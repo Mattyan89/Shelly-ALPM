@@ -12,7 +12,16 @@
 
 ## About
 
-Shelly is a modern package manager for Arch Linux designed to be a more user-friendly alternative. Offering a visual interface with a focus on user experience and ease of use. Shelly interfaces directly with `libalpm`. It is a complete reimagination of how a user interacts with their Arch Linux system, providing a more intuitive experience.
+Shelly is a modern package manager for Arch Linux designed to be a more user-friendly alternative. Offering a visual interface with a focus on user experience and ease of use. Shelly supports native package operations through `libalpm` or `Shelly.Rlpm`, with libalpm selected by default. It is a complete reimagination of how a user interacts with their Arch Linux system, providing a more intuitive experience.
+
+## Native backend selection
+
+Default builds include both engines. Select RLPM with
+`shelly config set NativePackageBackend rlpm`, or restore libalpm with
+`shelly config set NativePackageBackend libalpm`. Build the CLI with
+`zig build -Dlibalpm=false` for an RLPM-only binary. See the
+[backend guide](docs/native-package-backends.md) for defaults, packaging,
+verification and the remaining release acceptance gates.
 
 ## Quick Install
 
@@ -59,7 +68,7 @@ paru -Rns shelly
 ## Features
 
 - **Modern-CLI**: Provides a command-line interface for advanced users and automation, with a focus on ease of use.
-- **Native Arch Integration**: Directly interacts with `libalpm` for accurate and fast package management.
+- **Native Arch Integration**: Configurable libalpm or RLPM backend, retaining CachyOS extensions.
 - **Native Wayland Support**: Front end built using GTK4.
 - **Package Management**: Supports searching and filtering for, installing, updating, and removing packages.
 - **Repository Management**: Synchronizes with official repositories to keep package lists up to date.
@@ -80,6 +89,19 @@ When an unavailable AUR package has an exact match in a configured repository,
 Shelly suggests `shelly -Is <package>`. Explicit local builds with
 `shelly build /path/to/PKGBUILD` and removal of installed packages remain
 available without an AUR availability check.
+
+To build an AUR package in a fresh native build root before installing it:
+
+```bash
+shelly -Ia --isolated <package>
+```
+
+Repository build dependencies stay in the guest; the exported package and its
+runtime dependencies are installed on the host. This also supports `--needed`
+and `--version`. As with `shelly build --isolated`, AUR-only build dependencies
+and package signing are not yet supported. `--isolated` cannot be combined with
+`--chroot` or dependency-only installation. See [isolated builds](docs/isolated-builds.md)
+for requirements and limitations.
 
 ## PKGBUILD review
 
@@ -171,7 +193,7 @@ Upcoming features and development targets:
 - **Arch Linux** (or an Arch-based distribution)
 - **zig 0.16.0** (for building)
 - **vala** (for building)
-- **libalpm** (provided by `pacman`)
+- **libalpm** (provided by `pacman`; omitted from the CLI build with `-Dlibalpm=false`)
 
 ### Optional Prerequisites
 
@@ -299,6 +321,12 @@ coordinator installs the built archives after the build completes. Like
 `makepkg -i`, the install transaction adds only the built archives, so
 combine it with `--sync-deps` when the package's dependencies may be missing.
 
+Choose package compression with `shelly build --compression-level 3` (also
+supported with `--isolated`). Presets 1–5 range from conservative resource use
+to maximum compression effort. Set `package.compression_level` in
+`shellybuild.conf` for a persistent preference; omission preserves library
+defaults. See the [preset mappings and tradeoffs](docs/shellybuild.conf.md#package-compression).
+
 Versioned JSON contracts for unattended package-building services are
 available. Probe an installed binary with `shelly --version --json` before
 scheduling a build.
@@ -340,7 +368,7 @@ Shelly is structured into several components:
   libflatpak/GLib-native implementation details.
 - **Shelly.Http**: Standalone HTTP client with a compatibility TLS implementation.
 - **Shelly-Notifications**: Tray service to manage notifactions the Shelly-UI.
-- **Shelly.PackageManager**: Core libalpm/AUR/AppImage logic plus the
+- **Shelly.PackageManager**: Configurable libalpm/RLPM plus AUR/AppImage logic plus the
   backend-neutral Flatpak facade and secure loader.
 
 ### Building for Development

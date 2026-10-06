@@ -25,6 +25,7 @@ pub const variants = [_]types.Variant{.{
         flag("--review-only", &.{}, "Reviews evaluated PKGBUILD inputs and emits JSON without building"),
         stringOption("--review-digest", &.{}, "Requires an accepted 64-character SHA-256 review digest", false),
         stringOption("--package-destination", &.{}, "Writes packages to an existing absolute directory", false),
+        stringOption("--compression-level", &.{}, "Selects archive compression preset 1-5: conservative, fast, balanced, compact, maximum; omission uses configured or library defaults", false),
         flag("--makesrcinfo", &.{}, "Generates SRCINFO on standard output and exits"),
         flag("--sync-deps", &.{"-s"}, "Installs missing dependencies"),
         flag("--check", &.{"-c"}, "Performs check on PKGBUILD and installs check depends"),

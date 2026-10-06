@@ -52,11 +52,18 @@ printf '%s\n' \
 
 run_case() {
   local signal=$1
-  local case_dir="$fixture_dir/$signal"
+  local mode=$2
+  local case_dir="$fixture_dir/$mode-$signal"
+  local -a arguments
+  if [[ $mode == aur ]]; then
+    arguments=(-Ia --isolated --no-confirm elevation-cancel-fixture)
+  else
+    arguments=(build --isolated --json --no-confirm "$fixture_dir/PKGBUILD")
+  fi
   mkdir "$case_dir"
   SHELLY_ELEVATOR="$fixture_dir/fake-elevator" \
     SHELLY_ELEVATION_TEST_DIR="$case_dir" \
-    "$shelly_bin" build --isolated --json --no-confirm "$fixture_dir/PKGBUILD" \
+    "$shelly_bin" "${arguments[@]}" \
     >"$case_dir/stdout" 2>"$case_dir/stderr" &
   active_shelly_pid=$!
 
@@ -85,6 +92,8 @@ run_case() {
   grep -q '"code":"Cancelled"' "$case_dir/stdout"
 }
 
-run_case INT
-run_case TERM
+run_case INT build
+run_case TERM build
+run_case INT aur
+run_case TERM aur
 printf 'initial elevation cancellation integration test passed\n'

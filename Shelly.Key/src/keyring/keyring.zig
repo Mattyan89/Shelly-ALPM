@@ -1,4 +1,5 @@
 const std = @import("std");
+const diagnostics = @import("diagnostics");
 const Io = std.Io;
 
 const elevate = @import("../helpers/elevate.zig");
@@ -8,10 +9,10 @@ const keydir = @import("keydir.zig");
 const keyfiles = @import("keyfiles.zig");
 
 /// Default keyring location, used when `--init` is invoked without a path.
-pub const default_gpgdir = "/etc/pacman.d/gnupg";
+pub const default_gpgdir = @import("paths").keyring;
 
 /// Default source directory for `--populate`, used when `--populate-from` is not given.
-pub const default_populate_from = "/usr/share/pacman/keyrings";
+pub const default_populate_from = @import("paths").keyring_bundles;
 
 /// UID of the locally generated master key, excluded from `--refresh-keys`
 /// because it does not exist on remote servers.
@@ -164,7 +165,7 @@ pub fn lsignKey(
         try stdout.print("Locally signing key {s}...\n", .{key_id});
         try stdout.flush();
         gpg_cli.locallySignKey(key_id) catch {
-            try stdout.print("Could not locally sign key {0f}.\n", .{@import("diagnostics").safe(key_id)});
+            try stdout.print("Could not locally sign key {0f}.\n", .{diagnostics.safe(key_id)});
             try stdout.flush();
             had_failure = true;
             continue;
@@ -249,7 +250,7 @@ pub fn refreshKeys(
 
         if (try refreshSingleKey(allocator, gpg_cli, keyserver, id)) continue;
 
-        try stdout.print("Could not refresh key {0f} from the configured keyserver.\n", .{@import("diagnostics").safe(id)});
+        try stdout.print("Could not refresh key {0f} from the configured keyserver.\n", .{diagnostics.safe(id)});
         try stdout.flush();
         had_failure = true;
     }
