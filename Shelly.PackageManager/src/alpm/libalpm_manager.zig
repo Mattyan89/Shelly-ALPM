@@ -2397,10 +2397,6 @@ pub const Manager = struct {
         }
         self.parallel_download_count = config.parallel_downloads orelse self.parallel_download_count;
         self.check("parallel_downloads", rawLibalpm.alpm_option_set_parallel_downloads(h, self.parallel_download_count));
-        if (config.sandbox_user) |user| self.check("sandboxuser", rawLibalpm.alpm_option_set_sandboxuser(h, user.ptr));
-        self.check("sandbox_filesystem", rawLibalpm.alpm_option_set_disable_sandbox_filesystem(h, @intFromBool(config.disable_sandbox or config.disable_sandbox_filesystem)));
-        self.check("sandbox_syscalls", rawLibalpm.alpm_option_set_disable_sandbox_syscalls(h, @intFromBool(config.disable_sandbox or config.disable_sandbox_syscalls)));
-        if (@hasDecl(rawLibalpm, "alpm_option_set_disable_sandbox_network")) self.check("sandbox_network", rawLibalpm.alpm_option_set_disable_sandbox_network(h, @intFromBool(config.disable_sandbox or config.disable_sandbox_network)));
         self.check("download_timeout", rawLibalpm.alpm_option_set_disable_dl_timeout(h, @intFromBool(config.disable_download_timeout)));
         self.check("syslog", rawLibalpm.alpm_option_set_usesyslog(h, @intFromBool(config.use_system_log)));
 
