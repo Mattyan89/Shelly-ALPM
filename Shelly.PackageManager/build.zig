@@ -200,6 +200,8 @@ pub fn build(b: *std.Build) void {
     const worker_fixture_options = b.addOptions();
     worker_fixture_options.addOptionPath("path", rlpm_dependency.namedLazyPath("worker_fixture"));
     native_backend_tests.root_module.addOptions("worker_fixture", worker_fixture_options);
+    const build_plan_tests = b.addTest(.{ .root_module = native_backend_tests.root_module, .filters = &.{"dependency plan"} });
+    b.step("build-plan-test", "Test native dependency planning and pinned provisioning in private roots").dependOn(&b.addRunArtifact(build_plan_tests).step);
 
     const native_environment_tests = b.addTest(.{
         .root_module = mod,

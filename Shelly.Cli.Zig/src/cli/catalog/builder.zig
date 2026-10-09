@@ -22,6 +22,9 @@ pub const variants = [_]types.Variant{.{
     .description = "Builds a PKGBUILD into an installable package",
     .options = &.{
         flag("--reviewed", &.{"-r"}, "Marks the package as reviewed"),
+        flag("--resolve-dependencies", &.{}, "Resolves a pinned isolated build environment without installing packages"),
+        stringOption("--dependency-plan", &.{}, "Requires the pinned JSON environment plan for an isolated build", false),
+        hiddenFlag("--review-build-environment", "Includes the complete pinned environment in coordinator review"),
         flag("--review-only", &.{}, "Reviews evaluated PKGBUILD inputs and emits JSON without building"),
         stringOption("--review-digest", &.{}, "Requires an accepted 64-character SHA-256 review digest", false),
         stringOption("--package-destination", &.{}, "Writes packages to an existing absolute directory", false),
