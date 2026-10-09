@@ -278,6 +278,7 @@ pub fn cause(err: anyerror) []const u8 {
         error.SandboxUnsupported => "The configured build sandbox is unavailable on this system. Use a system with supported Landlock sandboxing for this build.",
         error.SandboxPathUnopenable => "The sandbox could not open a configured path. Check that it exists and is accessible to the build user.",
         error.SandboxRuleFailed, error.SandboxRestrictFailed => "Could not apply the configured build sandbox restrictions. Review the sandbox configuration and technical details.",
+        error.PkgbuildNotWritable => "Cannot update the calculated package version because the PKGBUILD is not writable. Check its ownership and permissions before generating SRCINFO again.",
         error.BuildDirectoryNotWritable => "The build user cannot write to the build directory. Check its ownership and permissions before retrying.",
         error.InvalidCompressionLevel => "Compression level must be an integer from 1 to 5. Set --compression-level or package.compression_level accordingly.",
         error.UnsupportedCompressionPresetFormat => "Compression presets require a .pkg.tar.zst, .pkg.tar.gz, .pkg.tar.xz, or .pkg.tar.bz2 package extension. Check package.extension in shellybuild.conf.",

@@ -26,7 +26,7 @@ pub const variants = [_]types.Variant{.{
         stringOption("--review-digest", &.{}, "Requires an accepted 64-character SHA-256 review digest", false),
         stringOption("--package-destination", &.{}, "Writes packages to an existing absolute directory", false),
         stringOption("--compression-level", &.{}, "Selects archive compression preset 1-5: conservative, fast, balanced, compact, maximum; omission uses configured or library defaults", false),
-        flag("--makesrcinfo", &.{}, "Generates SRCINFO on standard output and exits"),
+        flag("--makesrcinfo", &.{}, "Generates SRCINFO; when pkgver() exists, prepares sources and updates PKGBUILD version first"),
         flag("--sync-deps", &.{"-s"}, "Installs missing dependencies"),
         flag("--check", &.{"-c"}, "Performs check on PKGBUILD and installs check depends"),
         flag("--no-check", &.{}, "Skips the PKGBUILD check() function"),

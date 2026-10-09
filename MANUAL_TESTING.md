@@ -308,12 +308,22 @@ are skipped when unprivileged.
 ### Sandboxed AUR Builds (Landlock)
 Requires a kernel with Landlock enabled (check `cat /sys/kernel/security/lsm`).
 - [ ] `shelly build --makesrcinfo --reviewed PKGBUILD > .SRCINFO` matches
-  `makepkg --printsrcinfo`, including split-package and architecture-specific
-  fields
+  `makepkg --printsrcinfo` for PKGBUILDs without `pkgver()`, including
+  split-package and architecture-specific fields
 - [ ] `--makesrcinfo` writes progress/review output to stderr and only SRCINFO
   to stdout
-- [ ] `--makesrcinfo` does not run `pkgver()`, `verify()`, `prepare()`,
-  `build()`, `check()`, or `package()`, and does not create package artifacts
+- [ ] With `pkgver()`, `--makesrcinfo` acquires and validates sources, runs
+  `verify()` (unless `--noverify`), `prepare()`, and `pkgver()`, updates the
+  selected PKGBUILD, and emits the refreshed version and split metadata
+- [ ] Changed versions reset `pkgrel` to `1`; unchanged versions preserve it;
+  invalid versions and unwritable PKGBUILDs fail without emitting SRCINFO
+- [ ] Without `pkgver()`, `--makesrcinfo` does not acquire sources or run
+  lifecycle functions
+- [ ] `--makesrcinfo` never runs `build()`, `check()`, or package functions,
+  creates no package artifacts, and preserves existing `src/` and `pkg/` trees
+- [ ] `--makesrcinfo` honors configured source/build destinations, cleans up
+  temporary work directories on success and failure, and reports missing
+  preparation tools or failed source verification on stderr
 - [ ] A split PKGBUILD that conditionally appends an enabled member to
   `pkgname` builds that member when no `--package` selection is supplied
 - [ ] `shelly build --package <dynamic-member> PKGBUILD` builds only that

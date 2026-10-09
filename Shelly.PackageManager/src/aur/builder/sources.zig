@@ -133,7 +133,12 @@ pub fn prepareSources(self: *PackageBuilder, operation: *op_context.Operation) !
             };
             for (view.cached_sources.items) |index| {
                 const source = &prepared[index];
-                try copyLocalSource(self, source.source.name, source.destination);
+                if (source.source.kind == .git) {
+                    const cache_path = try std.fs.path.join(self.allocator, &.{ self.options.source_destination, source.source.name });
+                    defer self.allocator.free(cache_path);
+                    try std.Io.Dir.cwd().deleteTree(self.io, source.destination);
+                    try materializeGitSource(self, operation, source.source, cache_path, source.destination);
+                } else try copyLocalSource(self, source.source.name, source.destination);
             }
         };
     }
@@ -317,6 +322,13 @@ fn exposeSourcesForVerify(self: *PackageBuilder, prepared: []const source_spec.P
             if (source.source.kind == .local and
                 std.mem.eql(u8, source.source.location, source.source.name))
             {
+                self.allocator.free(visible_path);
+                continue;
+            }
+            if (source.source.kind == .git and cache_in_startdir and stat.kind == .directory) {
+                // Acquisition validated this mirror. Keep it visible to verify()
+                // and materialize its selected ref again after verification.
+                try view.cached_sources.append(self.allocator, index);
                 self.allocator.free(visible_path);
                 continue;
             }
