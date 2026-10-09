@@ -43,6 +43,9 @@ packages require a package function for every member.
 
 Each metadata evaluation sources the base PKGBUILD in a fresh Bash environment
 with the configured build flags and makepkg directory/architecture context.
+`SRCDEST` is exported from the resolved source destination for both metadata
+evaluation and lifecycle subprocesses; the sandbox grants that cache read/write
+access even when it is separate from the build tree.
 Previously evaluated declarations are never used as input. Names recognized by
 the static parser are tracked without assigning them, so the snapshot preserves
 unchanged values and explicit unsets as well as shell-created state. This keeps
