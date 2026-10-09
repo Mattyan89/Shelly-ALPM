@@ -29,6 +29,12 @@ callers are available via `shelly --version --json` before scheduling a build.
 through `build --resolve-dependencies --isolated --json` and let a later build
 verify it with `--dependency-plan`. Both `shelly.conf` and `pacman.conf` are supported.
 
+If an isolated build rejects an incomplete dependency plan, stderr, the
+transaction log, and the JSON `error.message` include every recorded unresolved
+requirement, its requiring package or input, and the resolution reason. Missing
+repository packages and missing SHA-256 archive metadata are reported separately.
+This also applies to incomplete plans supplied through `--dependency-plan`.
+
 The elevated process is a coordinator only. It reviews the host PKGBUILD and
 local inputs, materializes only those byte-exact reviewed inputs in the guest,
 provisions the guest with Shelly's selected native backend through the `shellystrap` helper, and

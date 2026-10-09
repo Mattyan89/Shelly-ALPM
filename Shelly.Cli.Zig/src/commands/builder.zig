@@ -1766,7 +1766,7 @@ fn runIsolatedCoordinator(
     defer context.allocator.free(environment_json);
     var environment = try std.json.parseFromSlice(build_plan.Plan, context.allocator, environment_json, .{});
     defer environment.deinit();
-    try environment.value.validate(context.allocator);
+    try validateBuildDependencyPlan(context, &operation, environment.value, review.package_base, request.pkgbuild_path);
     runner.result.?.dependency_plan_digest = try parseReviewDigest(environment.value.planDigest);
     const actual_policy = try buildPolicyDigest(context.allocator, request.shellybuild);
     defer context.allocator.free(actual_policy);
@@ -1777,7 +1777,7 @@ fn runIsolatedCoordinator(
         defer context.allocator.free(accepted_json);
         var accepted = try std.json.parseFromSlice(build_plan.Plan, context.allocator, accepted_json, .{});
         defer accepted.deinit();
-        try accepted.value.validate(context.allocator);
+        try validateBuildDependencyPlan(context, &operation, accepted.value, review.package_base, request.pkgbuild_path);
         if (!std.mem.eql(u8, accepted.value.planDigest, environment.value.planDigest)) return error.DependencyPlanMismatch;
     }
 
@@ -2879,10 +2879,75 @@ fn exitCodeForBuildError(err: anyerror) u8 {
     };
 }
 
+/// Keep the plan's diagnostics alive after the review/plan arenas are released.
+/// The failure event reaches both the renderer and transaction log; the owned
+/// preparation diagnostic also survives into the coordinator's JSON response.
+fn validateBuildDependencyPlan(
+    context: *runtime.RuntimeContext,
+    operation: *const PackageManager.Operation,
+    plan: build_plan.Plan,
+    package_name: []const u8,
+    pkgbuild_path: []const u8,
+) !void {
+    plan.validate(context.allocator) catch |err| {
+        if (err != error.IncompleteDependencyPlan and err != error.MissingArtifactHash) return err;
+        var message: std.Io.Writer.Allocating = .init(context.allocator);
+        defer message.deinit();
+        try message.writer.writeAll(buildErrorMessage(err));
+        for (plan.unresolved) |issue| {
+            const reason = if (std.mem.eql(u8, issue.code, "not_in_repositories"))
+                "not found in configured repositories"
+            else if (std.mem.eql(u8, issue.code, "unsatisfied_dependency"))
+                "no package satisfies the dependency"
+            else if (std.mem.eql(u8, issue.code, "not_in_environment"))
+                "missing from the resolved build environment"
+            else if (std.mem.eql(u8, issue.code, "missing_artifact_sha256"))
+                "repository metadata has no valid SHA-256 archive hash"
+            else
+                "dependency resolution failed";
+            try message.writer.print("\n- {f} (required by {f}): {s} [{f}]", .{
+                diagnostics.safe(issue.requirement), diagnostics.safe(issue.requiredBy), reason, diagnostics.safe(issue.code),
+            });
+        }
+        for (plan.choices) |choice| {
+            try message.writer.print("\n- {f}: a provider must be selected; candidates:", .{diagnostics.safe(choice.requirement)});
+            for (choice.candidates) |candidate| try message.writer.print(" {f}", .{diagnostics.safe(candidate)});
+        }
+        // An externally supplied plan can claim completeness despite bad hashes.
+        // Report every invalid hash, including those not listed in unresolved.
+        for (plan.packages) |package| {
+            if (PackageManager.Manager.build_transaction.validHash(package.sha256 orelse "")) continue;
+            var already_reported = false;
+            for (plan.unresolved) |issue| {
+                if (std.mem.eql(u8, issue.code, "missing_artifact_sha256") and std.mem.eql(u8, issue.requirement, package.name)) {
+                    already_reported = true;
+                    break;
+                }
+            }
+            if (!already_reported) try message.writer.print("\n- {f} (repository {f}): repository metadata has no valid SHA-256 archive hash [missing_artifact_sha256]", .{
+                diagnostics.safe(package.name), diagnostics.safe(package.repository),
+            });
+        }
+        if (plan.packages.len == 0) try message.writer.writeAll("\n- No packages were selected for the build environment.");
+        if (plan.architectures.len == 0) try message.writer.writeAll("\n- No target architecture was recorded in the dependency plan.");
+        if (!plan.isolated) try message.writer.writeAll("\n- The dependency plan does not describe an isolated build environment.");
+
+        if (context.preparation_diagnostic) |destination| {
+            var diagnostic = try PackageManager.pkgbuild.parser.Diagnostic.init(context.allocator, "", pkgbuild_path, package_name, "dependencies", null, err);
+            errdefer diagnostic.deinit();
+            diagnostic.message = try diagnostic.arena.allocator().dupe(u8, message.written());
+            if (destination.*) |*previous| previous.deinit();
+            destination.* = diagnostic;
+        }
+        operation.reportError(err, message.written(), "build.dependencies", null, false);
+        return err;
+    };
+}
+
 fn buildErrorMessage(err: anyerror) []const u8 {
     return switch (err) {
         error.DependencyPlanMismatch => "The dependency plan no longer matches the reviewed inputs, build policy, repositories, or selected packages. Resolve and review a new plan before building.",
-        error.IncompleteDependencyPlan => "The dependency plan is incomplete. Publish missing dependencies or resolve the reported requirements before building.",
+        error.IncompleteDependencyPlan => "The dependency plan is incomplete. Resolve the dependency or repository metadata issues listed below before building.",
         error.UnsupportedDependencyPlan => "This dependency plan schema is unsupported. Resolve a new plan with this version of Shelly.",
         error.InvalidDependencyPlanOptions => "Dependency resolution requires --isolated and --json, and cannot be combined with installation, review-only, or a supplied plan. A supplied plan requires an isolated build.",
         error.MissingArtifactHash => "A selected package has no valid SHA-256 archive hash. Publish repository metadata containing artifact hashes before building.",
@@ -5051,4 +5116,143 @@ test "dependency plan flags reject host installation and stay out of the guest" 
         const guest = try buildIsolatedChildArguments(a, args, "/host/PKGBUILD", "ab" ** 32, false);
         for (guest) |arg| try std.testing.expect(std.mem.indexOf(u8, arg, "dependency-plan") == null);
     }
+}
+
+test "dependency plan failures retain every issue in stderr transaction log and build JSON" {
+    const Runner = struct {
+        result: ?BuildCommandResult = null,
+        child_json: ?[]const u8 = null,
+        child_exit_code: u8 = 1,
+
+        fn run(_: *@This(), context: *runtime.RuntimeContext, operations: *PackageManager.OperationContext, _: *const parser.Invocation) !void {
+            var operation = operations.begin(.{ .backend = .aur, .kind = .build, .subject = "python-virtualenv" });
+            defer operation.finish(.failed);
+            // Match the coordinator's short-lived parsed review/plan storage.
+            var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+            defer arena.deinit();
+            const issues = try arena.allocator().dupe(build_plan.Unresolved, &.{
+                .{ .requirement = "python-hatchling>=1", .requiredBy = "PKGBUILD", .code = "not_in_repositories" },
+                .{ .requirement = "python-platformdirs>=4", .requiredBy = "python-virtualenv", .code = "unsatisfied_dependency" },
+                .{ .requirement = "python-filelock", .requiredBy = "python-virtualenv", .code = "not_in_environment" },
+                .{ .requirement = "python-distlib", .requiredBy = "devario-libs", .code = "missing_artifact_sha256" },
+                .{ .requirement = "transaction", .requiredBy = "environment", .code = "ConflictingDependencies" },
+            });
+            for (issues) |*issue| {
+                issue.requirement = try arena.allocator().dupe(u8, issue.requirement);
+                issue.requiredBy = try arena.allocator().dupe(u8, issue.requiredBy);
+                issue.code = try arena.allocator().dupe(u8, issue.code);
+            }
+            try validateBuildDependencyPlan(context, &operation, .{
+                .reviewDigest = "",
+                .configurationDigest = "",
+                .buildPolicyDigest = "",
+                .backend = "rlpm",
+                .bootstrapProfile = "rlpm-only",
+                .architectures = &.{"x86_64"},
+                .check = false,
+                .repositories = &.{},
+                .requirements = &.{},
+                .unresolved = issues,
+            }, "python-virtualenv", "/build/PKGBUILD");
+        }
+
+        fn setFailure(_: *@This(), _: std.mem.Allocator, _: anyerror) !void {}
+    };
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const directory = try temporary.dir.realPathFileAlloc(io, ".", allocator);
+    defer allocator.free(directory);
+    const log_path = try std.fs.path.join(allocator, &.{ directory, "shelly.log" });
+    defer allocator.free(log_path);
+    const rotated_path = try std.fmt.allocPrint(allocator, "{s}.1", .{log_path});
+    defer allocator.free(rotated_path);
+    const log = @import("../runtime/log.zig");
+    var session = log.SessionLog.tryOpenAt(io, log_path, rotated_path) orelse return error.CouldNotOpenTestLog;
+    defer session.close();
+    var transaction_log = log.TransactionLog.init(&session, allocator);
+    var context: test_support.TestContext = .{};
+    context.init();
+    defer context.deinit();
+    context.context.transaction_log = &transaction_log;
+    var diagnostic: ?PackageManager.pkgbuild.parser.Diagnostic = null;
+    defer if (diagnostic) |*value| value.deinit();
+    context.context.preparation_diagnostic = &diagnostic;
+    const a = context.arena.allocator();
+    const manifest = try @import("../cli/spec.zig").Manifest.load(a);
+    const parsed = try parser.parse(a, &manifest, &.{ "build", "--isolated", "--json", "--no-confirm", "/build/PKGBUILD" });
+    var runner: Runner = .{};
+    try std.testing.expectEqual(@as(u8, 1), try executeJson(&context.context, &parsed.dispatch, &runner));
+
+    const contents = try temporary.dir.readFileAlloc(io, "shelly.log", allocator, .limited(64 * 1024));
+    defer allocator.free(contents);
+    var document = try std.json.parseFromSlice(std.json.Value, allocator, context.stdout.written(), .{});
+    defer document.deinit();
+    try std.testing.expect(!document.value.object.get("success").?.bool);
+    const failure = document.value.object.get("error").?.object;
+    try std.testing.expectEqualStrings("IncompleteDependencyPlan", failure.get("code").?.string);
+    const message = failure.get("message").?.string;
+    for ([_][]const u8{
+        "python-hatchling>=1 (required by PKGBUILD): not found in configured repositories [not_in_repositories]",
+        "python-platformdirs>=4 (required by python-virtualenv): no package satisfies the dependency [unsatisfied_dependency]",
+        "python-filelock (required by python-virtualenv): missing from the resolved build environment [not_in_environment]",
+        "python-distlib (required by devario-libs): repository metadata has no valid SHA-256 archive hash [missing_artifact_sha256]",
+        "transaction (required by environment): dependency resolution failed [ConflictingDependencies]",
+    }) |expected| {
+        try std.testing.expect(std.mem.indexOf(u8, context.stderr.written(), expected) != null);
+        try std.testing.expect(std.mem.indexOf(u8, contents, expected) != null);
+        try std.testing.expect(std.mem.indexOf(u8, message, expected) != null);
+    }
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, context.stderr.written(), "python-hatchling>=1"));
+    try std.testing.expectEqualStrings("dependencies", failure.get("context").?.object.get("field").?.string);
+    try std.testing.expectEqualStrings(log_path, failure.get("context").?.object.get("logPath").?.string);
+}
+
+test "dependency plan validation reports all bad hashes and accepts complete plans quietly" {
+    const allocator = std.testing.allocator;
+    var context: test_support.TestContext = .{};
+    context.init();
+    defer context.deinit();
+    context.context.allocator = allocator;
+    var diagnostic: ?PackageManager.pkgbuild.parser.Diagnostic = null;
+    defer if (diagnostic) |*value| value.deinit();
+    context.context.preparation_diagnostic = &diagnostic;
+    var operations = PackageManager.OperationContext.init(allocator, std.testing.io);
+    defer operations.deinit();
+    var operation = operations.begin(.{ .backend = .aur, .kind = .build });
+    defer operation.finish(.failed);
+    var packages = [_]PackageManager.Manager.build_transaction.Package{
+        .{ .name = "first", .repository = "fixture", .version = "1-1", .architecture = "any", .filename = "first.pkg.tar", .sha256 = null, .depends = &.{}, .provides = &.{}, .groups = &.{} },
+        .{ .name = "second", .repository = "fixture", .version = "1-1", .architecture = "any", .filename = "second.pkg.tar", .sha256 = "bad", .depends = &.{}, .provides = &.{}, .groups = &.{} },
+    };
+    var plan: build_plan.Plan = .{
+        .complete = true,
+        .reviewDigest = "",
+        .configurationDigest = "",
+        .buildPolicyDigest = "",
+        .backend = "rlpm",
+        .bootstrapProfile = "rlpm-only",
+        .architectures = &.{"x86_64"},
+        .check = false,
+        .repositories = &.{},
+        .requirements = &.{},
+        .packages = &packages,
+    };
+    {
+        const digest = try plan.digest(allocator);
+        defer allocator.free(digest);
+        plan.planDigest = digest;
+        try std.testing.expectError(error.MissingArtifactHash, validateBuildDependencyPlan(&context.context, &operation, plan, "demo", "/PKGBUILD"));
+        try std.testing.expect(std.mem.indexOf(u8, diagnostic.?.message, "first (repository fixture)") != null);
+        try std.testing.expect(std.mem.indexOf(u8, diagnostic.?.message, "second (repository fixture)") != null);
+    }
+    diagnostic.?.deinit();
+    diagnostic = null;
+    for (&packages) |*package| package.sha256 = "ab" ** 32;
+    const digest = try plan.digest(allocator);
+    defer allocator.free(digest);
+    plan.planDigest = digest;
+    try validateBuildDependencyPlan(&context.context, &operation, plan, "demo", "/PKGBUILD");
+    try std.testing.expect(diagnostic == null);
 }
