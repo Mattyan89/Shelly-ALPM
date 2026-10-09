@@ -934,7 +934,7 @@ const SrcinfoReal = struct {
         if (!optionEnabled(invocation, "--reviewed") and reviewed_digest == null) {
             var answer = try operation.ask(.{
                 .kind = .review_changes,
-                .prompt = "Generate SRCINFO from this PKGBUILD?",
+                .prompt = "Generate SRCINFO?",
                 .review = .{
                     .subject = request.pkgbuild_path,
                     .findings = review.findings,
@@ -963,20 +963,17 @@ const SrcinfoReal = struct {
             name.* = package_build.pkg_name orelse return error.MissingPackageName;
         const package_base = request.package_builds[0].variables.get("pkgbase") orelse
             requested_names[0];
-        const work_directory = if (request.shellybuild.destinations.build) |build_root|
-            try PackageManager.builder.uniqueWorkDirectory(
-                context.allocator,
-                context.io,
-                build_root,
-                package_base,
-            )
-        else
-            try context.allocator.dupe(u8, request.build_directory);
+        // Source preparation replaces src/: always isolate metadata work from
+        // any existing build tree, even without a configured build root.
+        const work_directory = try PackageManager.builder.uniqueWorkDirectory(
+            context.allocator,
+            context.io,
+            request.shellybuild.destinations.build orelse request.build_directory,
+            package_base,
+        );
         defer context.allocator.free(work_directory);
-        const ephemeral_work_directory = request.shellybuild.destinations.build != null;
-        try ensureConfiguredWorkDirectory(context.io, ephemeral_work_directory, work_directory);
-        defer if (ephemeral_work_directory)
-            std.Io.Dir.cwd().deleteTree(context.io, work_directory) catch {};
+        try std.Io.Dir.cwd().createDirPath(context.io, work_directory);
+        defer std.Io.Dir.cwd().deleteTree(context.io, work_directory) catch {};
 
         const builder = try PackageBuilder.init(
             context.allocator,
@@ -988,13 +985,13 @@ const SrcinfoReal = struct {
                 .start_directory = request.build_directory,
                 .work_directory = work_directory,
                 .package_destination = request.build_directory,
-                .source_destination = request.build_directory,
+                .source_destination = request.shellybuild.destinations.sources orelse request.build_directory,
                 .log_destination = request.build_directory,
                 .pkgbuild_path = request.pkgbuild_path,
                 .clean_after_success = true,
                 .overwrite = false,
                 .run_check = false,
-                .run_verify = false,
+                .run_verify = !optionEnabled(invocation, "--noverify"),
                 .reviewed_pkgbuild_digest = review.digest,
                 .review_digest_is_automation = reviewed_digest != null,
                 .install_scripts = review.install_scripts,
@@ -3292,7 +3289,7 @@ test "package selection intent distinguishes implicit all from explicit members"
     try std.testing.expect(hasPackageSelection(&selected.dispatch));
 }
 
-test "makesrcinfo emits clean stdout and never runs lifecycle functions" {
+test "makesrcinfo updates pkgver with clean stdout and preserves existing sources" {
     const spec = @import("../cli/spec.zig");
     var test_context: test_support.TestContext = .{};
     test_context.init();
@@ -3312,7 +3309,10 @@ test "makesrcinfo emits clean stdout and never runs lifecycle functions" {
             "_enable_plasmoid=${{SYNCTHING_TRAY_ENABLE_PLASMOID:-1}}\n" ++
             "makedepends=('cmake')\n" ++
             "[[ $_enable_plasmoid ]] && makedepends+=('libplasma' 'extra-cmake-modules')\n" ++
-            "pkgver() {{ touch '{s}'; printf 2; }}\n" ++
+            "verify() {{ echo verify-output; printf verified > \"$SRCDEST/verified\"; }}\n" ++
+            "prepare() {{ echo prepare-output; touch prepared; }}\n" ++
+            "pkgver() {{ test -f prepared; printf 2; }}\n" ++
+            "check() {{ touch '{s}'; }}\n" ++
             "build() {{ touch '{s}'; }}\n" ++
             "package() {{ touch '{s}'; }}\n",
         .{ marker_path, marker_path, marker_path },
@@ -3322,10 +3322,14 @@ test "makesrcinfo emits clean stdout and never runs lifecycle functions" {
     pkgbuild.close(std.testing.io);
 
     try temporary.dir.createDirPath(std.testing.io, ".config/shelly");
+    const source_cache = try std.fs.path.join(test_context.arena.allocator(), &.{ directory_path, "source-cache" });
+    const configuration = try std.fmt.allocPrint(test_context.arena.allocator(), "[build.env]\nBUILD_ENV_DESCRIPTION = 'Dynamic description'\n[destinations]\nsources = '{s}'\n", .{source_cache});
     try temporary.dir.writeFile(std.testing.io, .{
         .sub_path = ".config/shelly/shellybuild.conf",
-        .data = "[build.env]\nBUILD_ENV_DESCRIPTION = 'Dynamic description'\n",
+        .data = configuration,
     });
+    try temporary.dir.createDirPath(std.testing.io, "src");
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "src/keep", .data = "existing build" });
     const environ = try testEnvironWithHome(std.testing.allocator, directory_path);
     defer environ.block.deinit(std.testing.allocator);
     test_context.context.environ = environ;
@@ -3364,7 +3368,7 @@ test "makesrcinfo emits clean stdout and never runs lifecycle functions" {
         try executeMakeSrcinfo(&test_context.context, &outcome.dispatch),
     );
     try std.testing.expectEqualStrings(
-        "pkgbase = demo\n\tpkgdesc = Dynamic description\n\tpkgver = 1\n\tpkgrel = 1\n" ++
+        "pkgbase = demo\n\tpkgdesc = Dynamic description\n\tpkgver = 2\n\tpkgrel = 1\n" ++
             "\tarch = any\n\tmakedepends = cmake\n\tmakedepends = libplasma\n" ++
             "\tmakedepends = extra-cmake-modules\n\npkgname = demo\n",
         test_context.stdout.writer.buffered(),
@@ -3378,6 +3382,55 @@ test "makesrcinfo emits clean stdout and never runs lifecycle functions" {
         error.FileNotFound,
         std.Io.Dir.cwd().access(std.testing.io, marker_path, .{}),
     );
+    try temporary.dir.access(std.testing.io, "source-cache/verified", .{});
+    const kept = try temporary.dir.readFileAlloc(std.testing.io, "src/keep", std.testing.allocator, .unlimited);
+    defer std.testing.allocator.free(kept);
+    try std.testing.expectEqualStrings("existing build", kept);
+    const updated = try temporary.dir.readFileAlloc(std.testing.io, "PKGBUILD", std.testing.allocator, .unlimited);
+    defer std.testing.allocator.free(updated);
+    try std.testing.expect(std.mem.indexOf(u8, updated, "pkgver='2'\n") != null);
+}
+
+test "makesrcinfo honors noverify and emits no stdout on preparation failure" {
+    const spec = @import("../cli/spec.zig");
+    for ([_]bool{ false, true }) |noverify| {
+        var test_context: test_support.TestContext = .{};
+        test_context.init();
+        defer test_context.deinit();
+        var temporary = std.testing.tmpDir(.{ .iterate = true });
+        defer temporary.cleanup();
+        const allocator = test_context.arena.allocator();
+        const directory = try temporary.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+        const path = try std.fs.path.join(allocator, &.{ directory, "PKGBUILD" });
+        try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "PKGBUILD", .data =
+            \\pkgname=demo
+            \\pkgver=1
+            \\pkgrel=7
+            \\arch=('any')
+            \\verify() { echo verification-failed; exit 42; }
+            \\pkgver() { printf r42.gabcdef0; }
+            \\package() { exit 42; }
+        });
+        const environ = try testEnvironWithHome(std.testing.allocator, directory);
+        defer environ.block.deinit(std.testing.allocator);
+        test_context.context.environ = environ;
+        const manifest = try spec.Manifest.load(allocator);
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(allocator, &.{ "build", "--makesrcinfo", "--reviewed", "--no-confirm", path });
+        if (noverify) try args.append(allocator, "--noverify");
+        const outcome = try parser.parse(allocator, &manifest, args.items);
+        const code = try executeMakeSrcinfo(&test_context.context, &outcome.dispatch);
+        if (noverify) {
+            try std.testing.expectEqual(@as(u8, 0), code);
+            try std.testing.expect(std.mem.indexOf(u8, test_context.stdout.writer.buffered(), "pkgver = r42.gabcdef0\n\tpkgrel = 1\n") != null);
+        } else {
+            try std.testing.expect(code != 0);
+            try std.testing.expectEqualStrings("", test_context.stdout.writer.buffered());
+        }
+        var entries = temporary.dir.iterate();
+        while (try entries.next(std.testing.io)) |entry|
+            try std.testing.expect(!std.mem.startsWith(u8, entry.name, "demo-"));
+    }
 }
 
 test "sync deps options parse under both spellings" {

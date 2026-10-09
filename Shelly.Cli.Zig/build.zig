@@ -120,7 +120,7 @@ pub fn build(b: *std.Build) void {
         .name = "builder-command-test",
         .root_module = builder_test_module,
         .filters = &.{
-            "makesrcinfo emits clean stdout and never runs lifecycle functions",
+            "makesrcinfo",
             "compression presets",
             "review-only accepts Heroic array trimming",
             "review-only accepts filesystem here-strings",
